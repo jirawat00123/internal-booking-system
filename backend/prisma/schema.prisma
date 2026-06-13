@@ -9,10 +9,42 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 3. ออกแบบตารางในฐานข้อมูล (ทดสอบสร้างตาราง User)
+// 👤 ตารางเก็บข้อมูลพนักงาน/ผู้ใช้งาน (รวมร่างและแก้ตัวซ้ำแล้ว)
 model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  name      String?
+  password  String    // เก็บพาสเวิร์ด (เดี๋ยวเราจะเข้ารหัสทีหลัง)
+  role      String    @default("USER") // ระบุว่าเป็น USER หรือ ADMIN
+  bookings  Booking[] // ความสัมพันธ์: 1 คน สามารถจองได้หลายครั้ง
+  createdAt DateTime  @default(now())
+}
+
+// 🏢 ตารางเก็บข้อมูลห้องประชุม หรือ ของที่เปิดให้จอง
+model Room {
+  id          Int       @id @default(autoincrement())
+  name        String    // ชื่อห้อง หรือ ชื่ออุปกรณ์
+  description String?   // รายละเอียด
+  capacity    Int?      // จำนวนคนที่รองรับได้ (ถ้ามี)
+  isAvailable Boolean   @default(true) // สถานะว่าเปิดให้จองไหม
+  bookings    Booking[] // ความสัมพันธ์: 1 ห้อง ถูกจองได้หลายรอบ
+  createdAt   DateTime  @default(now())
+}
+
+// 📅 ตารางเก็บประวัติการจองคิว
+model Booking {
   id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
+  startTime DateTime // เวลาเริ่มจอง
+  endTime   DateTime // เวลาสิ้นสุดการจอง
+  status    String   @default("PENDING") // สถานะ: PENDING, APPROVED, CANCELLED
+  
+  // เชื่อมความสัมพันธ์ว่าใครเป็นคนจอง
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  
+  // เชื่อมความสัมพันธ์ว่าจองห้อง/ของชิ้นไหน
+  roomId    Int
+  room      Room     @relation(fields: [roomId], references: [id])
+
   createdAt DateTime @default(now())
 }
