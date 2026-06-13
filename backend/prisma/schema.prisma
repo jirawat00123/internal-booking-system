@@ -1,0 +1,18 @@
+// 1. บอกให้ระบบรู้ว่าจะสร้างเครื่องมือเชื่อมต่อกับ Node.js
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 2. บอกให้ระบบรู้ว่าฐานข้อมูลเราคือ PostgreSQL และดึงรหัสผ่านจากไฟล์ .env
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 3. ออกแบบตารางในฐานข้อมูล (ทดสอบสร้างตาราง User)
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+}

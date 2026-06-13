@@ -20,5 +20,9 @@
   "bugs": {
     "url": "https://github.com/jirawat00123/internal-booking-system/issues"
   },
-  "homepage": "https://github.com/jirawat00123/internal-booking-system#readme"
+  "homepage": "https://github.com/jirawat00123/internal-booking-system#readme",
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "prisma": "^5.22.0"
+  }
 }
