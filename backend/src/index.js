@@ -115,6 +115,71 @@ app.post('/api/bookings', authenticateToken, async (req, res) => {
   }
 });
 
+// 🗑️ API ยกเลิกการจอง (ลบข้อมูล)
+app.delete('/api/bookings/:id', authenticateToken, async (req, res) => {
+  try {
+    const bookingId = parseInt(req.params.id); // รับ ID ของการจองจาก URL
+    const userId = req.user.userId; // รับ ID ของผู้ใช้ที่ล็อกอินอยู่จากคีย์การ์ด (Token)
+
+    // 1. ค้นหาว่ามีการจองนี้ในระบบไหม
+    const existingBooking = await prisma.booking.findUnique({
+      where: { id: bookingId }
+    });
+
+    if (!existingBooking) {
+      return res.status(404).json({ error: 'ไม่พบข้อมูลการจองนี้ในระบบ' });
+    }
+
+    // 2. เช็กว่าใช่เจ้าของคิวจองจริงๆ หรือไม่
+    if (existingBooking.userId !== userId) {
+      return res.status(403).json({ error: 'หยุดนะ! คุณไม่มีสิทธิ์ยกเลิกการจองของคนอื่น 😠' });
+    }
+
+    // 3. ถ้าผ่านด่านทั้งหมด ก็สั่งลบได้เลย
+    await prisma.booking.delete({
+      where: { id: bookingId }
+    });
+
+    res.json({ message: 'ยกเลิกการจองสำเร็จเรียบร้อยครับ! 🗑️' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการยกเลิกการจอง' });
+  }
+});
+
+// 🔍 API ค้นหาห้องว่างตามช่วงเวลา
+app.post('/api/rooms/available', authenticateToken, async (req, res) => {
+  try {
+    const { startTime, endTime } = req.body;
+    
+    // แปลงเวลาที่ส่งมาให้ระบบเข้าใจ
+    const searchStartTime = new Date(startTime);
+    const searchEndTime = new Date(endTime);
+
+    // ใช้คำสั่ง Prisma ค้นหาห้องที่ "ไม่มี" (NOT) การจองที่เวลาทับซ้อนกัน
+    const availableRooms = await prisma.room.findMany({
+      where: {
+        NOT: {
+          bookings: {
+            some: {
+              startTime: { lt: searchEndTime },
+              endTime: { gt: searchStartTime }
+            }
+          }
+        }
+      }
+    });
+
+    res.json({ 
+      message: `ค้นพบห้องว่าง ${availableRooms.length} ห้อง`, 
+      rooms: availableRooms 
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'เกิดข้อผิดพลาดในการค้นหาห้อง' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`✅ Server is running on http://localhost:${port}`);
 });
