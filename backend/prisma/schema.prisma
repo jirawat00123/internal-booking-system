@@ -9,42 +9,132 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 👤 ตารางเก็บข้อมูลพนักงาน/ผู้ใช้งาน (รวมร่างและแก้ตัวซ้ำแล้ว)
+// 👑 ตารางสิทธิ์ผู้ใช้งาน (Role) - แยกออกมาเพื่อเอาไว้ผูกกับตาราง PIN
+model Role {
+  id        Int         @id @default(autoincrement())
+  name      String      @unique // ตัวอย่างข้อมูล: "ADMIN", "USER", "GUARD"
+  users     User[]
+  pinAccess PinAccess[]
+
+  @@map("roles")
+}
+
+// 👤 ตารางเก็บข้อมูลพนักงาน/ผู้ใช้งาน (อัปเดตให้รองรับระบบจิ้มชื่อพนักงาน)
 model User {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
-  name      String?
-  password  String    // เก็บพาสเวิร์ด (เดี๋ยวเราจะเข้ารหัสทีหลัง)
-  role      String    @default("USER") // ระบุว่าเป็น USER หรือ ADMIN
-  bookings  Booking[] // ความสัมพันธ์: 1 คน สามารถจองได้หลายครั้ง
-  createdAt DateTime  @default(now())
+  id              Int              @id @default(autoincrement())
+  email           String           @unique
+  name            String?
+  password        String?          // 🔴 แก้เป็น String? เพื่อให้พนักงานทั่วไป "ไม่ต้องมีรหัสผ่าน"
+  roleId          Int              @map("role_id")
+  role            Role             @relation(fields: [roleId], references: [id])
+  roomBookings    RoomBooking[]    // ความสัมพันธ์: จองห้องได้หลายครั้ง
+  vehicleBookings VehicleBooking[] // 🟢 เพิ่มความสัมพันธ์: จองรถได้หลายครั้ง
+  createdAt       DateTime         @default(now())
+
+  @@map("users")
 }
 
-// 🏢 ตารางเก็บข้อมูลห้องประชุม หรือ ของที่เปิดให้จอง
+// 🏢 ตารางเก็บข้อมูลห้องประชุม
 model Room {
-  id          Int       @id @default(autoincrement())
-  name        String    // ชื่อห้อง หรือ ชื่ออุปกรณ์
-  description String?   // รายละเอียด
-  capacity    Int?      // จำนวนคนที่รองรับได้ (ถ้ามี)
-  isAvailable Boolean   @default(true) // สถานะว่าเปิดให้จองไหม
-  bookings    Booking[] // ความสัมพันธ์: 1 ห้อง ถูกจองได้หลายรอบ
-  createdAt   DateTime  @default(now())
+  id           Int           @id @default(autoincrement())
+  name         String        // ชื่อห้อง
+  description  String?       // รายละเอียด
+  capacity     Int?          // จำนวนคนที่รองรับได้
+  isAvailable  Boolean       @default(true) // สถานะเปิดให้จองไหม
+  roomBookings RoomBooking[] // ความสัมพันธ์: 1 ห้อง ถูกจองได้หลายรอบ
+  createdAt    DateTime      @default(now())
+
+  @@map("rooms")
 }
 
-// 📅 ตารางเก็บประวัติการจองคิว
-model Booking {
-  id        Int      @id @default(autoincrement())
-  startTime DateTime // เวลาเริ่มจอง
-  endTime   DateTime // เวลาสิ้นสุดการจอง
-  status    String   @default("PENDING") // สถานะ: PENDING, APPROVED, CANCELLED
-  
-  // เชื่อมความสัมพันธ์ว่าใครเป็นคนจอง
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
-  
-  // เชื่อมความสัมพันธ์ว่าจองห้อง/ของชิ้นไหน
-  roomId    Int
-  room      Room     @relation(fields: [roomId], references: [id])
+// 📅 ตารางเก็บประวัติการจองคิวห้องประชุม (เปลี่ยนชื่อจาก Booking เป็น RoomBooking เพื่อไม่ให้ตีกับรถ)
+model RoomBooking {
+  id        Int       @id @default(autoincrement())
+  startTime DateTime  @map("start_time")
+  endTime   DateTime  @map("end_time")
+  status    String    @default("PENDING") // PENDING, APPROVED, CANCELLED
+  userId    Int       @map("user_id")
+  user      User      @relation(fields: [userId], references: [id])
+  roomId    Int       @map("room_id")
+  room      Room      @relation(fields: [roomId], references: [id])
+  createdAt DateTime  @default(now()) @map("created_at")
+  roomLogs  RoomLog[]
 
-  createdAt DateTime @default(now())
+  @@map("room_bookings")
+}
+
+// 🚗 ตารางเก็บข้อมูลยานพาหนะ (เพิ่มใหม่)
+model Vehicle {
+  id              Int              @id @default(autoincrement())
+  name            String           // เช่น "Toyota Camry", "EV Van"
+  plateNumber     String           @map("plate_number") // ทะเบียนรถ
+  status          String           @default("AVAILABLE") // AVAILABLE, MAINTENANCE (ส่งซ่อม)
+  vehicleBookings VehicleBooking[]
+  createdAt       DateTime         @default(now())
+
+  @@map("vehicles")
+}
+
+// 📅 ตารางเก็บประวัติการจองคิวรถยนต์ (เพิ่มใหม่)
+model VehicleBooking {
+  id           Int          @id @default(autoincrement())
+  startTime    DateTime     @map("start_time")
+  endTime      DateTime     @map("end_time")
+  status       String       @default("PENDING")
+  startMileage Int?         @map("start_mileage") // รปภ. จดเลขไมล์ตอนออก
+  endMileage   Int?         @map("end_mileage")   // รปภ. จดเลขไมล์ตอนคืน
+  userId       Int          @map("user_id")
+  user         User         @relation(fields: [userId], references: [id])
+  vehicleId    Int          @map("vehicle_id")
+  vehicle      Vehicle      @relation(fields: [vehicleId], references: [id])
+  createdAt    DateTime     @default(now()) @map("created_at")
+  vehicleLogs  VehicleLog[]
+  attachments  Attachment[]
+
+  @@map("vehicle_bookings")
+}
+
+// 📝 ตารางเก็บประวัติล็อกของห้องประชุม (เพิ่มใหม่)
+model RoomLog {
+  id        Int         @id @default(autoincrement())
+  bookingId Int         @map("booking_id")
+  booking   RoomBooking @relation(fields: [bookingId], references: [id])
+  action    String      // เช่น "CHECKIN", "CHECKOUT"
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  @@map("room_logs")
+}
+
+// 📝 ตารางเก็บประวัติล็อกของรถยนต์ (เพิ่มใหม่)
+model VehicleLog {
+  id        Int            @id @default(autoincrement())
+  bookingId Int            @map("booking_id")
+  booking   VehicleBooking @relation(fields: [bookingId], references: [id])
+  action    String         // เช่น "DRIVE_OUT", "RETURNED"
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@map("vehicle_logs")
+}
+
+// 📎 ตารางเก็บไฟล์แนบ (เพิ่มใหม่ เช่น รูปถ่ายรอยแผลรอบรถก่อนขับออก)
+model Attachment {
+  id        Int            @id @default(autoincrement())
+  bookingId Int            @map("booking_id")
+  booking   VehicleBooking @relation(fields: [bookingId], references: [id])
+  url       String         // ที่อยู่ลิงก์รูปภาพ
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@map("attachments")
+}
+
+// 🔑 ตารางรหัสผ่านเข้าควบคุมระบบ (เพิ่มใหม่ตามสั่งเป๊ะๆ)
+model PinAccess {
+  id        Int      @id @default(autoincrement())
+  roleId    Int      @map("role_id")
+  role      Role     @relation(fields: [roleId], references: [id])
+  pinCode   String   @map("pin_code")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("pin_access")
 }
