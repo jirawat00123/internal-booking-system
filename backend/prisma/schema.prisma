@@ -9,7 +9,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// 👑 ตารางสิทธิ์ผู้ใช้งาน (Role) - แยกออกมาเพื่อเอาไว้ผูกกับตาราง PIN
+// 👑 ตารางสิทธิ์ผู้ใช้งาน (Role)
 model Role {
   id        Int         @id @default(autoincrement())
   name      String      @unique // ตัวอย่างข้อมูล: "ADMIN", "USER", "GUARD"
@@ -19,18 +19,24 @@ model Role {
   @@map("roles")
 }
 
-// 👤 ตารางเก็บข้อมูลพนักงาน/ผู้ใช้งาน (อัปเดตให้รองรับระบบจิ้มชื่อพนักงาน)
+// 👤 ตารางเก็บข้อมูลพนักงาน/ผู้ใช้งาน
 model User {
   id              Int              @id @default(autoincrement())
-  email           String           @unique
-  name            String?
-  password        String?          // 🔴 แก้เป็น String? เพื่อให้พนักงานทั่วไป "ไม่ต้องมีรหัสผ่าน"
-  roleId          Int              @map("role_id")
+  email           String?          @unique
+  password        String?          // ให้เป็นค่าว่างได้สำหรับ User ธรรมดาที่ล็อกอินผ่านรหัสพนักงานอย่างเดียว
+  
+  employeeId      String?          @unique
+  firstName       String?
+  lastName        String?
+  position        String?
+  department      String?
+  division        String?
+  
+  roleId          Int
   role            Role             @relation(fields: [roleId], references: [id])
-  roomBookings    RoomBooking[]    // ความสัมพันธ์: จองห้องได้หลายครั้ง
-  vehicleBookings VehicleBooking[] // 🟢 เพิ่มความสัมพันธ์: จองรถได้หลายครั้ง
-  createdAt       DateTime         @default(now())
-
+  roomBookings    RoomBooking[]
+  vehicleBookings VehicleBooking[]
+  
   @@map("users")
 }
 
@@ -47,7 +53,7 @@ model Room {
   @@map("rooms")
 }
 
-// 📅 ตารางเก็บประวัติการจองคิวห้องประชุม (เปลี่ยนชื่อจาก Booking เป็น RoomBooking เพื่อไม่ให้ตีกับรถ)
+// 📅 ตารางเก็บประวัติการจองคิวห้องประชุม
 model RoomBooking {
   id        Int       @id @default(autoincrement())
   startTime DateTime  @map("start_time")
@@ -63,19 +69,24 @@ model RoomBooking {
   @@map("room_bookings")
 }
 
-// 🚗 ตารางเก็บข้อมูลยานพาหนะ (เพิ่มใหม่)
+// 🚗 ตารางเก็บข้อมูลยานพาหนะ (อัปเดตแก้สายความสัมพันธ์เรียบร้อยแล้ว)
 model Vehicle {
-  id              Int              @id @default(autoincrement())
-  name            String           // เช่น "Toyota Camry", "EV Van"
-  plateNumber     String           @map("plate_number") // ทะเบียนรถ
-  status          String           @default("AVAILABLE") // AVAILABLE, MAINTENANCE (ส่งซ่อม)
+  id          Int              @id @default(autoincrement()) // ลำดับ (รันตัวเลขให้อัตโนมัติ)
+  brand       String           // ยี่ห้อ (เช่น Toyota, Honda)
+  model       String           // รุ่น (เช่น Camry, Civic)
+  type        String           // ประเภทรถ (เช่น รถเก๋ง, รถตู้)
+  plateNumber String           // ทะเบียนรถ (เช่น กข-1234)
+  province    String           // จังหวัด (เช่น กรุงเทพมหานคร)
+  color       String           // สี (เช่น ขาว, ดำ)
+  imageUrl    String?          // รูปรถ (เก็บเป็นลิงก์ URL)
+  
+  // 🔗 เชื่อมโยงกลับไปยังตารางการจองรถ (Prisma บังคับให้ใส่ให้ครบสองฝั่ง)
   vehicleBookings VehicleBooking[]
-  createdAt       DateTime         @default(now())
 
   @@map("vehicles")
 }
 
-// 📅 ตารางเก็บประวัติการจองคิวรถยนต์ (เพิ่มใหม่)
+// 📅 ตารางเก็บประวัติการจองคิวรถยนต์
 model VehicleBooking {
   id           Int          @id @default(autoincrement())
   startTime    DateTime     @map("start_time")
@@ -94,7 +105,7 @@ model VehicleBooking {
   @@map("vehicle_bookings")
 }
 
-// 📝 ตารางเก็บประวัติล็อกของห้องประชุม (เพิ่มใหม่)
+// 📝 ตารางเก็บประวัติล็อกของห้องประชุม
 model RoomLog {
   id        Int         @id @default(autoincrement())
   bookingId Int         @map("booking_id")
@@ -105,7 +116,7 @@ model RoomLog {
   @@map("room_logs")
 }
 
-// 📝 ตารางเก็บประวัติล็อกของรถยนต์ (เพิ่มใหม่)
+// 📝 ตารางเก็บประวัติล็อกของรถยนต์
 model VehicleLog {
   id        Int            @id @default(autoincrement())
   bookingId Int            @map("booking_id")
@@ -116,7 +127,7 @@ model VehicleLog {
   @@map("vehicle_logs")
 }
 
-// 📎 ตารางเก็บไฟล์แนบ (เพิ่มใหม่ เช่น รูปถ่ายรอยแผลรอบรถก่อนขับออก)
+// 📎 ตารางเก็บไฟล์แนบ (เช่น รูปถ่ายรอยแผลรอบรถก่อนขับออก)
 model Attachment {
   id        Int            @id @default(autoincrement())
   bookingId Int            @map("booking_id")
@@ -127,7 +138,7 @@ model Attachment {
   @@map("attachments")
 }
 
-// 🔑 ตารางรหัสผ่านเข้าควบคุมระบบ (เพิ่มใหม่ตามสั่งเป๊ะๆ)
+// 🔑 ตารางรหัสผ่านเข้าควบคุมระบบ (PIN สำหรับ ADMIN / GUARD)
 model PinAccess {
   id        Int      @id @default(autoincrement())
   roleId    Int      @map("role_id")
