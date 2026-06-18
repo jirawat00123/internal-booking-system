@@ -6,50 +6,65 @@ const { JWT_SECRET, authenticateToken } = require('../middlewares/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// 🚀 API Setup ข้อมูลตั้งต้น (ผมขอคอมเมนต์ปิดไว้นะครับ เพราะเราใช้ npx prisma db seed ไปแล้ว 56 คน!)
-/* router.post('/setup', async (req, res) => {
-  // ... โค้ดเดิม ...
-});
-*/
-
-// 🔑 API Login (อัปเดตใหม่ให้ใช้ รหัสพนักงาน และแยกเงื่อนไขตามสิทธิ์)
+// 🔑 API Login (ปรับปรุงให้รองรับโครงสร้างตารางใหม่และการเชื่อมข้อมูลพนักงาน)
 router.post('/login', async (req, res) => {
-  // 1. รับค่าที่เพื่อน Frontend จะส่งมาให้ (เปลี่ยนจาก email, pin เป็น employeeId, password)
-  const { employeeId, password } = req.body; 
+  // 1. เปลี่ยนมารับค่า employeeCode ตามที่ระบุไว้ในแบบแปลนและหน้าปก Swagger
+  const { employeeCode } = req.body; 
 
   try {
-    if (!employeeId) return res.status(400).json({ error: "กรุณากรอกรหัสพนักงาน" });
-
-    // 2. ค้นหาพนักงานจาก "รหัสพนักงาน"
-    const user = await prisma.user.findUnique({ 
-      where: { employeeId: employeeId }, 
-      include: { role: true } 
-    });
-
-    if (!user) return res.status(404).json({ error: "ไม่พบรหัสพนักงานนี้ในระบบ" });
-
-    // 3. 🚦 เช็กเงื่อนไข: แอดมินกับ รปภ. ต้องใส่รหัสผ่าน (ส่วนพนักงานทั่วไป ปล่อยผ่านไปข้อ 4 เลย)
-    if (user.role.name === 'ADMIN' || user.role.name === 'GUARD') {
-      if (!password) return res.status(400).json({ error: "สิทธิ์ระดับนี้ จำเป็นต้องใส่รหัสผ่าน" });
-      
-      // เช็กรหัสผ่าน (อิงจากตาราง User ที่เรา Seed ไว้)
-      if (user.password !== password) {
-        return res.status(401).json({ error: "รหัสผ่านไม่ถูกต้อง" });
-      }
+    if (!employeeCode) {
+      return res.status(400).json({ error: "กรุณากรอกรหัสพนักงาน" });
     }
 
-    // 4. 🎟️ สร้าง Token (บัตรคิว)
+    // 2. ค้นหาพนักงานจาก "รหัสพนักงาน (employeeCode)" ก่อนเพื่อเอา id ไปหา User
+    const employee = await prisma.employee.findUnique({
+      where: { employeeCode: employeeCode },
+      include: {
+        // ดึงข้อมูลบัญชีผู้ใช้ (user) และตำแหน่งพนักงานพ่วงมาด้วย
+        user: true,
+        position: true
+      }
+    });
+
+    // ถ้าไม่เจอรหัสพนักงานในระบบ
+    if (!employee) {
+      return res.status(404).json({ error: "ไม่พบรหัสพนักงานนี้ในระบบ" });
+    }
+
+    // ถ้าเจอพนักงาน แต่พนักงานคนนี้ไม่มีสิทธิ์เข้าใช้ระบบ (ไม่มีข้อมูลในตาราง user)
+    if (!employee.user) {
+      return res.status(403).json({ error: "พนักงานท่านนี้ยังไม่ได้เปิดสิทธิ์การใช้งานระบบ" });
+    }
+
+    const userAccount = employee.user;
+
+    // เช็กสถานะว่าบัญชีผู้ใช้ถูกระงับหรือไม่
+    if (!userAccount.active) {
+      return res.status(403).json({ error: "บัญชีผู้ใช้งานนี้ถูกระงับการใช้งาน" });
+    }
+
+    // 3. 🚦 (หมายเหตุระบบล็อกอินเวอร์ชันอัปเดต) 
+    // เนื่องจากฐานข้อมูลตามเอกสาร PDF ชุดปัจจุบันไม่ได้ระบุฟิลด์สำหรับการเก็บ Password 
+    // ระบบจะอนุญาตให้ตรวจสอบผ่านรหัสพนักงาน (employeeCode) เป็นหลักเพื่อเข้าสู่ระบบ
+    // สิทธิ์การทำงาน (ADMIN / USER / GUARD) จะถูกแยกจากฟิลด์ roles ในตาราง User ทันที
+
+    // 4. 🎟️ สร้าง Token (ฝังข้อมูลที่จำเป็นให้ Frontend เอาไปเช็กต่อได้ง่ายขึ้น)
     const token = jwt.sign(
-      { userId: user.id, role: user.role.name, employeeId: user.employeeId }, 
+      { 
+        userId: userAccount.id, 
+        role: userAccount.roles, 
+        employeeCode: employee.employeeCode,
+        fullName: employee.fullName
+      }, 
       JWT_SECRET, 
       { expiresIn: '1d' }
     );
     
-    // 5. ส่งกลับไปบอกเพื่อนหน้าบ้านว่าสำเร็จแล้ว!
+    // 5. ส่งกลับไปบอกเพื่อนหน้าบ้าน
     res.json({ 
       message: "เข้าสู่ระบบสำเร็จ", 
       token: token,
-      role: user.role.name 
+      role: userAccount.roles 
     });
 
   } catch (error) {
@@ -58,24 +73,42 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// 👤 API เช็กโปรไฟล์ของคนที่ถือ Token ปัจจุบัน (อัปเดตให้ส่งข้อมูลชุดใหม่)
+// 👤 API เช็กโปรไฟล์ของคนที่ถือ Token ปัจจุบัน (ปรับปรุงให้ดึงข้ามตารางเพื่อเอาชื่อ-ตำแหน่งมาโชว์)
 router.get('/me', authenticateToken, async (req, res) => {
   try {
+    // ดึงข้อมูลบัญชีผู้ใช้ พร้อมดึงข้อมูลจากตารางพนักงาน (employee) แผนก และตำแหน่งพ่วงมาเป็นทอดๆ
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
-      include: { role: true } 
+      include: {
+        employee: {
+          include: {
+            position: {
+              include: {
+                department: true
+              }
+            }
+          }
+        }
+      }
     });
     
-    if (!user) return res.status(404).json({ error: "ไม่พบข้อมูลผู้ใช้งานนี้" });
+    if (!user || !user.employee) {
+      return res.status(404).json({ error: "ไม่พบข้อมูลผู้ใช้งานนี้" });
+    }
     
-    // อัปเดตช่องข้อมูลให้ตรงกับ Schema ปัจจุบันของเรา (firstName, lastName)
+    const emp = user.employee;
+    const pos = emp.position;
+    const dept = pos ? pos.department : null;
+
+    // ส่งโครงสร้างข้อมูลชุดใหม่กลับไปให้หน้าบ้านเอาไปแปะบนแถบเมนูหรือหน้าโปรไฟล์
     res.json({
       id: user.id,
-      employeeId: user.employeeId,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      position: user.position,
-      role: user.role.name
+      employeeCode: emp.employeeCode,
+      fullName: emp.fullName,
+      positionName: pos ? pos.positionName : "ไม่ระบุตำแหน่ง",
+      departmentName: dept ? dept.departmentName : "ไม่ระบุแผนก",
+      role: user.roles,
+      active: user.active
     });
 
   } catch (error) {

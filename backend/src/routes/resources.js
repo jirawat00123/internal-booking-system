@@ -47,7 +47,8 @@ router.post('/vehicles', authenticateToken, async (req, res, next) => {
       return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง: ฟังก์ชันนี้สำหรับผู้ดูแลระบบ (ADMIN) เท่านั้น" });
     }
 
-    const { brand, model, type, plateNumber, province, color, imageUrl } = req.body;
+    // 🔄 ปรับใช้ uploadUrl ตามโครงสร้าง Database ใหม่
+    const { brand, model, type, plateNumber, province, color, uploadUrl } = req.body;
 
     // ตรวจสอบว่าหน้าบ้านส่งข้อมูลสำคัญมาครบถ้วนไหม
     if (!brand || !model || !type || !plateNumber || !province || !color) {
@@ -62,7 +63,7 @@ router.post('/vehicles', authenticateToken, async (req, res, next) => {
         plateNumber,
         province,
         color,
-        imageUrl: imageUrl || null // ถ้าหน้าบ้านไม่มีรูปส่งมา ให้บันทึกเป็น null ไว้ก่อน
+        uploadUrl: uploadUrl || null // ถ้าหน้าบ้านไม่มีรูปส่งมา ให้บันทึกเป็น null ไว้ก่อน
       }
     });
 
@@ -81,11 +82,13 @@ router.put('/vehicles/:id', authenticateToken, async (req, res, next) => {
     }
 
     const vehicleId = parseInt(req.params.id); // ดึง ID รถจาก URL เช่น /api/resources/vehicles/5
-    const { brand, model, type, plateNumber, province, color, imageUrl } = req.body;
+    
+    // 🔄 ปรับใช้ uploadUrl ให้ตรงกับตอนรับค่าใหม่
+    const { brand, model, type, plateNumber, province, color, uploadUrl } = req.body;
 
     const updatedVehicle = await prisma.vehicle.update({
       where: { id: vehicleId },
-      data: { brand, model, type, plateNumber, province, color, imageUrl }
+      data: { brand, model, type, plateNumber, province, color, uploadUrl }
     });
 
     res.json({ message: "อัปเดตข้อมูลรถเรียบร้อยแล้ว!", data: updatedVehicle });
