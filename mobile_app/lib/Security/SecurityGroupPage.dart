@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
- 
 
 class SecurityGroupPage extends StatelessWidget {
   const SecurityGroupPage({super.key});
@@ -24,9 +23,9 @@ class SecurityGroupPage extends StatelessWidget {
 
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+              padding: const EdgeInsets.symmetric(horizontal: 40.0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start, // จัดทุกอย่างชิดซ้ายตามรูป
                 children: [
                   const SizedBox(height: 16),
                   
@@ -35,7 +34,6 @@ class SecurityGroupPage extends StatelessWidget {
                     alignment: Alignment.topRight,
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        // กลับไปหน้าเลือกสิทธิ์ (ปิดหน้าปัจจุบันทิ้ง)
                         Navigator.pop(context);
                       },
                       icon: const Icon(Icons.logout, color: Colors.white, size: 16),
@@ -44,7 +42,7 @@ class SecurityGroupPage extends StatelessWidget {
                         style: TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'Kanit'),
                       ),
                       style: OutlinedButton.styleFrom(
-                        backgroundColor: Colors.white.withOpacity(0.2),
+                        backgroundColor: Colors.white.withOpacity(0.15), // ปรับให้โปร่งใสขึ้นนิดหน่อยตามแบบ
                         side: BorderSide(color: Colors.white.withOpacity(0.5)),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
@@ -55,50 +53,48 @@ class SecurityGroupPage extends StatelessWidget {
                     ),
                   ),
                   
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 60),
 
-
-                  const SizedBox(height: 40),
-
-                  // โลโก้
-                  Center(
-                    child: Image.asset(
-                      'assets/MMK_logo.png', 
-                      width: screenWidth * 0.6, // กว้าง 60% ของจอ
-                      fit: BoxFit.contain,
-                    ),
+                  // โลโก้ (เอา Center ออก เพื่อให้ชิดซ้าย)
+                  Image.asset(
+                    'assets/MMK_logo.png', 
+                    width: screenWidth * 0.5, // ปรับให้กว้างขึ้นตามสัดส่วนในรูป
+                    fit: BoxFit.contain,
                   ),
-                  const SizedBox(height: 16),
-
-                  Container(
-                          height: 2,
-                          width: screenWidth * 0.8,
-                          color: Colors.white.withOpacity(0.9),
-                        ),
                   
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 12),
+
+                  // เส้นบางๆ ใต้โลโก้ (จัดชิดซ้าย)
+                  Container(
+                    
+                    height: 2, // ปรับให้เส้นบางลง
+                    width: screenWidth * 0.8,
+                    color: Colors.white.withOpacity(0.6),
+                  ),
+                  
+                  const SizedBox(height: 24),
 
                   // ข้อความ Welcome
                   const Text(
-                    'Welcome Security',
+                    'Welcome  Security', // เพิ่มช่องว่างนิดนึงให้เหมือนแบบ
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                       fontFamily: 'Kanit',
                     ),
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 32),
 
-                  // เมนูการใช้งาน (มีแค่กล่องเดียว)
+                  // เมนูการใช้งาน
                   Expanded(
                     child: ListView(
                       physics: const BouncingScrollPhysics(),
                       children: [
                         SecurityMenuCard(
-                          icon: Icons.car_rental, // ไอคอนรูปรถ
-                          title: 'ระบบจัดการรถ เข้า-ออก',
+                          icon: Icons.directions_car_outlined, // เปลี่ยนไอคอนให้ใกล้เคียงรูปรถด้านหน้ามากขึ้น
+                          title: 'ระบบจัดการรถ\nเข้า-ออก', // ตัดขึ้นบรรทัดใหม่ให้ตรงตามดีไซน์
                           onTap: () {
                             // TODO: ลิงก์ไปหน้าระบบจัดการรถ รปภ.
                           },
@@ -112,22 +108,22 @@ class SecurityGroupPage extends StatelessWidget {
                     child: Column(
                       children: [
                         Container(
-                          height: 2,
+                          height: 1, // ปรับให้เส้นบางลง
                           width: screenWidth * 0.8,
                           color: Colors.white.withOpacity(0.9),
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
                         const Text(
                           'MENAM MECHANIKA © 2026',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 10,
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1,
                             fontFamily: 'Kanit',
                           ),
                         ),
-                        const SizedBox(height: 75),
+                        const SizedBox(height: 40), // ปรับระยะห่างด้านล่างให้พอดีขอบจอ
                       ],
                     ),
                   ),
@@ -174,16 +170,16 @@ class SecurityMenuCard extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0), // เพิ่ม padding บนล่างให้การ์ดดูโปร่งขึ้น
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14), // ขยายกล่องไอคอน
                   decoration: BoxDecoration(
                     color: const Color(0xFFE8F1F5),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(icon, size: 28, color: const Color(0xFF00529B)),
+                  child: Icon(icon, size: 32, color: const Color(0xFF00529B)), // ขยายไอคอน
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -191,6 +187,7 @@ class SecurityMenuCard extends StatelessWidget {
                     title,
                     style: const TextStyle(
                       fontSize: 16,
+                      height: 1.3, // ปรับระยะห่างระหว่างบรรทัด
                       fontWeight: FontWeight.bold,
                       color: Colors.black87,
                       fontFamily: 'Kanit',

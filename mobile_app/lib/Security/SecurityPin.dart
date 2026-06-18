@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'PinError.dart'; 
+import '../PinError.dart'; 
 import 'SecurityGroupPage.dart'; // ดึงหน้าเมนูรปภ.มาเตรียมไว้
 
 class Security_Pinpage extends StatefulWidget {
@@ -12,7 +12,7 @@ class Security_Pinpage extends StatefulWidget {
 class _Security_PinpageState extends State<Security_Pinpage > {
   String pin = ""; 
   bool isObscured = true; 
-  final String correctPin = "654321"; // 💡 รหัส PIN จำลองของ รปภ.
+  final String correctPin = "654321"; 
 
   void _addPin(String number) {
     if (pin.length < 6) {
@@ -42,8 +42,6 @@ class _Security_PinpageState extends State<Security_Pinpage > {
 
   @override
   Widget build(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
-
     return Scaffold(
       body: Stack(
         children: [
@@ -133,7 +131,6 @@ class _Security_PinpageState extends State<Security_Pinpage > {
 
                         const SizedBox(height: 40),
 
-                        // ปุ่มเปิด/ปิดตา (ดูรหัส)
                         GestureDetector(
                           onTap: () {
                             setState(() {
@@ -148,8 +145,7 @@ class _Security_PinpageState extends State<Security_Pinpage > {
                         ),
 
                         const Spacer(flex: 1),
-
-                        // แป้นตัวเลข Numpad
+  
                         _buildNumpadRow(['1', '2', '3']),
 
                         _buildNumpadRow(['4', '5', '6']),
@@ -173,7 +169,7 @@ class _Security_PinpageState extends State<Security_Pinpage > {
 
                         const Spacer(flex: 2),
 
-                        // 🚀 ปุ่ม "ดำเนินการต่อ" พร้อมระบบเช็กถูก/ผิด
+  
                         SizedBox(
                           width: 375 - 48,
                           height: 50,
@@ -181,26 +177,20 @@ class _Security_PinpageState extends State<Security_Pinpage > {
                             onPressed: () {
                               if (pin.length == 6) {
                                 if (pin == correctPin) {
-                                  
-                                  // 💡 1. เคลียร์รหัสทิ้ง ป้องกันคนกดย้อนกลับมาเจอ
                                   setState(() { 
                                     pin = ""; 
                                   });
-
-                                  // 🚀 2. เด้งไปหน้า AdminGroupPage (ใช้ pushReplacement เพื่อปิดหน้า PIN ทิ้ง)
+                                  
                                   Navigator.pushReplacement(
                                     context,
                                     MaterialPageRoute(
                                       builder: (context) => const SecurityGroupPage(),
                                     ),
-                                  );
-                                  
-                                } else {
-                                  // กรณีรหัส "ผิด" เรียก Popup แดง
+                                  );                                  
+                                } else {                                  
                                   _showErrorDialog(); 
                                 }
                               } else {
-                                // กรณีกดไม่ครบ 6 ตัว
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('กรุณากรอกรหัส PIN ให้ครบ 6 หลัก', style: TextStyle(fontFamily: 'Kanit')),
