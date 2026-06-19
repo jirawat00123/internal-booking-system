@@ -72,7 +72,6 @@ async function main() {
     { code: 'SEC001', name: 'สมหมาย รปภ (Guard)', posName: 'จป.เทคนิค', role: 'GUARD' }, // ใช้ตำแหน่งที่ใกล้เคียง รปภ.
     { code: 'ENG001', name: 'สมเกียรติ วิศวกร (User)', posName: 'วิศวกรผลิต', role: 'USER' },
     { code: 'ACC001', name: 'สมศรี บัญชี (User)', posName: 'เจ้าหน้าที่บัญชีและการเงิน', role: 'USER' },
-
     { code: 'MC-WK0006', name: 'นายจิระพงค์ ธิบดี', posName: 'หัวหน้าช่างประกอบและติดตั้ง', role: 'USER' },
     { code: 'MC-WK0010', name: 'นายสายฝน มณีชัย', posName: 'หัวหน้าช่างเชื่อมประกอบ', role: 'USER' },
     { code: 'MC-WK0012', name: 'นายศรศิริ บุญแก้ว', posName: 'หัวหน้าช่างเชื่อมประกอบ', role: 'USER' },

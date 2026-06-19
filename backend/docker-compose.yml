@@ -1,17 +1,19 @@
-version: '3.8'
+version: "3.8"
+
 services:
   db:
+    platform: linux/amd64
     image: postgres:15
-    container_name: booking_postgres
+    container_name: booking_db
     restart: always
     environment:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: password123
-      POSTGRES_DB: booking_db
+      POSTGRES_DB: booking_system
     ports:
-      - "5433:5432"
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
 
 volumes:
-  postgres_data:
+  pgdata:
