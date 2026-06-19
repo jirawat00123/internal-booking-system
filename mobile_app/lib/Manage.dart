@@ -14,16 +14,16 @@ class _ManagePageState extends State<ManagePage> {
 
   // รายการข้อมูลจำลอง
   final List<String> _positions = [
-    'Information Technology',
+    'Information Technology (IT)',
     'Human Resources',
     'Accounting',
     'Engineering',
   ];
 
   final List<String> _names = [
-    'นายธีรวัฒน์ พรหมสิงห์',
+    'นายธีรวัฒน์ พรหมสิงห์ (เอก)',
     'นายสมชาย ใจดี',
-    'นางสาวสมศรี มีสุข',
+    'นางสาวสมศรี มีสุข'
   ];
 
   // 1. ฟังก์ชันโชว์กล่องแจ้งเตือน "ข้อมูลไม่ครบถ้วน" (สีแดง)
@@ -81,7 +81,7 @@ class _ManagePageState extends State<ManagePage> {
   }
 
   // ==========================================================
-  // 💡 2. ส่วนที่เพิ่มเข้ามาใหม่: ฟังก์ชันโชว์กล่อง "ยืนยันการดำเนินการ" (ตามรูปภาพล่าสุด)
+  // 💡 2. ส่วนที่เพิ่มเข้ามาใหม่: ฟังก์ชันโชว์กล่อง "ยืนยันการดำเนินการ"
   // ==========================================================
   void _showConfirmDialog() {
     showDialog(
@@ -89,12 +89,19 @@ class _ManagePageState extends State<ManagePage> {
       barrierDismissible: false,
       builder: (BuildContext context) {
         return Dialog(
+          backgroundColor: Colors.transparent, // ปรับให้โปร่งใสเพื่อให้ Container จัดการพื้นหลังเอง
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24), // ขอบมนโค้งลึกตามสไตล์ตระกูลสิทธิ์การเข้าถึง
+            borderRadius: BorderRadius.circular(24), 
           ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             width: 340,
+            // ✅ เพิ่มพื้นหลังรูปภาพตรงนี้
+            decoration: BoxDecoration(
+              color: Colors.white, // สีพื้นหลังเผื่อรูปโหลดไม่ขึ้น
+              borderRadius: BorderRadius.circular(24),
+  
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -134,12 +141,12 @@ class _ManagePageState extends State<ManagePage> {
                 ),
                 const SizedBox(height: 20),
 
-                // ตารางแสดงผลสรุปข้อมูลที่ผู้ใช้เลือกจริง (สไตล์การ์ดขอบมนสีฟ้าโปร่งแสง)
+                // ตารางแสดงผลสรุปข้อมูลที่ผู้ใช้เลือกจริง
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF4F8FA),
+                    color: Colors.white.withOpacity(0.85), // ปรับให้โปร่งใสเล็กน้อยเพื่อให้เห็นพื้นหลัง
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: const Color(0xFFE2EFF2)),
                   ),
@@ -214,11 +221,12 @@ class _ManagePageState extends State<ManagePage> {
                       width: double.infinity,
                       height: 46,
                       child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context), // สั่งปิดป๊อปอัปเพื่อกลับไปเลือกฟอร์มใหม่
+                        onPressed: () => Navigator.pop(context), 
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: Color(0xFF0096C7), width: 1.2),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                           foregroundColor: const Color(0xFF0096C7),
+                          backgroundColor: Colors.white.withOpacity(0.8), // เติมสีขาวโปร่งแสงเพื่อให้ปุ่มไม่จมไปกับพื้นหลัง
                         ),
                         child: const Text('ยกเลิก', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                       ),
@@ -239,12 +247,12 @@ class _ManagePageState extends State<ManagePage> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Background Image Layer
+          // 1. Background Image Layer (หน้าหลัก)
           Container(
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/images/bgmmk.png'), 
+                image: AssetImage('assets/bg.png'), 
                 fit: BoxFit.cover,
               ),
             ),
@@ -324,16 +332,16 @@ class _ManagePageState extends State<ManagePage> {
                           ),
                           const SizedBox(height: 40),
 
-                          // ปุ่ม "ดำเนินการต่อ" พร้อมระบบเปลี่ยนเงื่อนไขตรวจเช็กข้อมูล
+                          // ปุ่ม "ดำเนินการต่อ" 
                           SizedBox(
                             width: 240, 
                             height: 48,
                             child: ElevatedButton(
                               onPressed: () {
                                 if (_selectedPosition == null || _selectedName == null) {
-                                  _showErrorDialog(); // ถ้าข้อมูลไม่ครบ ขึ้นป๊อปอัปแจ้งเตือนสีแดง
+                                  _showErrorDialog(); 
                                 } else {
-                                  _showConfirmDialog(); // 💡 ถ้าข้อมูลเลือกครบถ้วนแล้ว โชว์กล่องยืนยันสีกรม-ฟ้าทันที!
+                                  _showConfirmDialog(); 
                                 }
                               },
                               style: ElevatedButton.styleFrom(
