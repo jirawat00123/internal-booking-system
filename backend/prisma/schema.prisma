@@ -1,10 +1,10 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-}
-
-generator client {
-  provider = "prisma-client-js"
 }
 
 // ==========================================
@@ -90,12 +90,12 @@ model AuditLog {
 
 // 6. ตารางห้องประชุม (Rooms)
 model Room {
-  id        Int           @id @default(autoincrement())
-  roomName  String        @map("room_name")
-  location  String
-  capacity  Int
-  status    RoomStatus    @default(AVAILABLE)
-  bookings  RoomBooking[]
+  id       Int           @id @default(autoincrement())
+  roomName String        @map("room_name")
+  location String
+  capacity Int
+  status   RoomStatus    @default(AVAILABLE)
+  bookings RoomBooking[]
 
   @@map("rooms")
 }
