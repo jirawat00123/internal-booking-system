@@ -73,6 +73,7 @@ model User {
   employeeId Int      @map("employee_id")
   employee   Employee @relation(fields: [employeeId], references: [id])
   roles      Role     @default(USER)
+  pin        String?
   active     Boolean  @default(true)
 
   @@map("users")
