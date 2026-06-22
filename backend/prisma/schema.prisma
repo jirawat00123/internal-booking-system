@@ -81,6 +81,7 @@ model User {
 // 5. ตารางบันทึกประวัติการใช้งานระบบ (Audit Logs)
 model AuditLog {
   id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id") //เพิ่มบรรทัดนี้ครับ (ใส่ ? เพื่อบอกว่าปล่อยว่างได้ เพราะ Login PIN เราไม่ได้ระบุตัวตนคน)
   action    String
   module    String
   createdAt DateTime @default(now()) @map("created_at")
