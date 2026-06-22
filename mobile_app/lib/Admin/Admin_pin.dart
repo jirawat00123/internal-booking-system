@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import '../PinError.dart'; // 💡 นำเข้าหน้า Popup Error ที่แยกไฟล์ไว้
-import 'AdminGroupPage.dart'; // 💡 เพิ่มบรรทัดนี้
+import 'package:http/http.dart' as http;
+import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
+import '../PinError.dart'; 
+import 'AdminGroupPage.dart'; 
 
 class Admin_pinPage extends StatefulWidget {
   const Admin_pinPage({super.key});
@@ -12,7 +14,7 @@ class Admin_pinPage extends StatefulWidget {
 class _Admin_pinPageState extends State<Admin_pinPage> {
   String pin = ""; 
   bool isObscured = true; 
-  final String correctPin = "123456"; // 💡 กำหนดรหัส PIN แอดมินที่ถูกต้องตรงนี้ครับ
+  bool isLoading = false; // 💡 เพิ่มตัวแปรเช็กสถานะกำลังโหลด
 
   void _addPin(String number) {
     if (pin.length < 6) {
@@ -45,6 +47,64 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
         );
       },
     );
+  }
+
+  // 🚀 ฟังก์ชันยิง API ตรวจสอบ PIN
+  Future<void> _verifyPin() async {
+    setState(() {
+      isLoading = true; // เริ่มหมุนโหลด
+    });
+
+    try {
+      // 💡 ข้อควรระวังเรื่อง IP Address:
+      // ถ้าใช้ Android Emulator ให้ใช้: http://10.0.2.2:3000/api/login-pin
+      // ถ้าใช้ iOS Simulator หรือ Web ให้ใช้: http://localhost:3000/api/login-pin
+      final url = Uri.parse('http://localhost:3000/api/login-pin'); 
+      
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'pin': pin}),
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        
+        // 🛑 ด่านตรวจสิทธิ์: เช็กว่า role ที่ตอบกลับมาเป็น ADMIN จริงๆ ใช่ไหม?
+        if (responseData['role'] == 'ADMIN') {
+          
+          // ถ้าใช่ ADMIN ถึงจะให้ไปหน้าต่อไป
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => AdminGroupPage()), 
+          );
+          
+        } else {
+          // ถ้าเป็นสิทธิ์อื่น (เช่น SECURITY) ให้เด้งเตือนและไม่ให้ไปต่อ
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('รหัส PIN นี้ไม่ใช่ของ Admin กรุณาลองใหม่'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        // ถ้ารหัสผิด (Code 401)
+        setState(() { isLoading = false; });
+        _showErrorDialog(); 
+      }
+    } catch (error) {
+      // กรณีเซิร์ฟเวอร์ปิดอยู่ หรือเน็ตหลุด
+      setState(() { isLoading = false; });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่', style: TextStyle(fontFamily: 'Kanit')),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -162,9 +222,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
 
                         // แป้นตัวเลข Numpad
                         _buildNumpadRow(['1', '2', '3']),
-
                         _buildNumpadRow(['4', '5', '6']),
-
                         _buildNumpadRow(['7', '8', '9']),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -184,34 +242,15 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
 
                         const Spacer(flex: 2),
 
-                        // 🚀 ปุ่ม "ดำเนินการต่อ" พร้อมระบบเช็กถูก/ผิด
+                        // 🚀 ปุ่ม "ดำเนินการต่อ" 
                         SizedBox(
                           width: 375 - 48,
                           height: 50,
                           child: ElevatedButton(
-                            onPressed: () {
+                            onPressed: isLoading ? null : () { // ถ้ากำลังโหลดอยู่ให้ปุ่มกดไม่ได้
                               if (pin.length == 6) {
-                                if (pin == correctPin) {
-                                  
-                                  // 💡 1. เคลียร์รหัสทิ้ง ป้องกันคนกดย้อนกลับมาเจอ
-                                  setState(() { 
-                                    pin = ""; 
-                                  });
-
-                                  // 🚀 2. เด้งไปหน้า AdminGroupPage (ใช้ pushReplacement เพื่อปิดหน้า PIN ทิ้ง)
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const AdminGroupPage(),
-                                    ),
-                                  );
-                                  
-                                } else {
-                                  // กรณีรหัส "ผิด" เรียก Popup แดง
-                                  _showErrorDialog(); 
-                                }
+                                _verifyPin(); // เรียกฟังก์ชันเช็ก API
                               } else {
-                                // กรณีกดไม่ครบ 6 ตัว
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text('กรุณากรอกรหัส PIN ให้ครบ 6 หลัก', style: TextStyle(fontFamily: 'Kanit')),
@@ -222,9 +261,16 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF0096C7),
+                              disabledBackgroundColor: Colors.grey.shade400, // สีปุ่มตอนจางลง
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            child: const Text('ดำเนินการต่อ', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+                            child: isLoading
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                  )
+                                : const Text('ดำเนินการต่อ', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                           ),
                         ),
 
