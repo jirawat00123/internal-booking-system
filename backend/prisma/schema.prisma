@@ -1,10 +1,10 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-}
-
-generator client {
-  provider = "prisma-client-js"
 }
 
 // ==========================================
@@ -45,11 +45,11 @@ model Department {
 
 // 2. ตารางตำแหน่ง (Positions)
 model Position {
-  id           Int        @id @default(autoincrement())
-  positionName String     @map("position_name")
-  departmentId Int        @map("department_id")
-  department   Department @relation(fields: [departmentId], references: [id])
-  employees    Employee[]
+  id             Int        @id @default(autoincrement())
+  positionName   String     @map("position_name")
+  departmentId   Int        @map("department_id")
+  department     Department @relation(fields: [departmentId], references: [id])
+  employees      Employee[]
 
   @@map("positions")
 }
@@ -90,12 +90,12 @@ model AuditLog {
 
 // 6. ตารางห้องประชุม (Rooms)
 model Room {
-  id        Int           @id @default(autoincrement())
-  roomName  String        @map("room_name")
-  location  String
-  capacity  Int
-  status    RoomStatus    @default(AVAILABLE)
-  bookings  RoomBooking[]
+  id       Int           @id @default(autoincrement())
+  roomName String        @map("room_name")
+  location String
+  capacity Int
+  status   RoomStatus    @default(AVAILABLE)
+  bookings RoomBooking[]
 
   @@map("rooms")
 }
@@ -155,19 +155,19 @@ model VehicleBooking {
 
 // 10. ตารางบันทึกการ นำรถออก-คืนรถ (Vehicle Logs)
 model VehicleLog {
-  id               Int            @id @default(autoincrement())
-  vehicleBookingId Int            @map("vehicle_booking_id")
-  booking          VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
-  checkoutBy       String         @map("checkout_by")
-  checkoutTime     DateTime       @map("checkout_time")
-  checkoutMileage  Int            @map("checkout_mileage")
-  checkoutFuelLevel String        @map("checkout_fuel_level")
-  returnBy         String?        @map("return_by")
-  returnMileage    Int?           @map("return_mileage")
-  returnFuelLevel  String?        @map("return_fuel_level")
-  remark           String?
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
+  id                Int            @id @default(autoincrement())
+  vehicleBookingId  Int            @map("vehicle_booking_id")
+  booking           VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
+  checkoutBy        String         @map("checkout_by")
+  checkoutTime      DateTime       @map("checkout_time")
+  checkoutMileage   Int            @map("checkout_mileage")
+  checkoutFuelLevel String         @map("checkout_fuel_level")
+  returnBy          String?        @map("return_by")
+  returnMileage     Int?           @map("return_mileage")
+  returnFuelLevel   String?        @map("return_fuel_level")
+  remark            String?
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
 
   @@map("vehicle_logs")
 }

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'Select.dart'; // เชื่อมไปหาหน้า LoginSelectionPage
 
-void main() {
-  runApp(const WelcomeApp());
-}
+
 
 class WelcomeApp extends StatelessWidget {
   const WelcomeApp({super.key});

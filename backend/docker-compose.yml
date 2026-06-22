@@ -3,7 +3,7 @@ version: "3.8"
 services:
   db:
     platform: linux/amd64 
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: booking_db
     restart: always
     environment:
