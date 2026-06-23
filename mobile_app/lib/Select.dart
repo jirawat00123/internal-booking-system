@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'Digital.dart'; 
-
-
+import 'Security/SecurityPin.dart';
 
 
 class LoginSelectionPage extends StatelessWidget {
@@ -98,7 +97,7 @@ class LoginSelectionPage extends StatelessWidget {
                                   subtitle: 'ตรวจสอบและบันทึกรถเข้า-ออก',
                                   onTap: () {
                                     // 🚀 เอาดีเลย์ออก
-                                    Navigator.push;
+                                    Navigator.push(context, MaterialPageRoute(builder: (context) => const Security_Pinpage()));
                                   },
                                 ),
                                 const SizedBox(height: 16),
