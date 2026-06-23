@@ -1,50 +1,188 @@
-// 1. บอกให้ระบบรู้ว่าจะสร้างเครื่องมือเชื่อมต่อกับ Node.js
 generator client {
   provider = "prisma-client-js"
 }
 
-// 2. บอกให้ระบบรู้ว่าฐานข้อมูลเราคือ PostgreSQL และดึงรหัสผ่านจากไฟล์ .env
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// 👤 ตารางเก็บข้อมูลพนักงาน/ผู้ใช้งาน (รวมร่างและแก้ตัวซ้ำแล้ว)
+// ==========================================
+// ENUMS (ประเภทข้อมูลแบบตัวเลือก)
+// ==========================================
+
+enum Role {
+  ADMIN
+  USER
+  GUARD
+}
+
+enum RoomStatus {
+  AVAILABLE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  IN_USE       @map("IN USE")
+  MAINTENANCE
+  INACTIVE
+}
+
+// ==========================================
+// MODELS (โครงสร้างตารางฐานข้อมูล)
+// ==========================================
+
+// 1. ตารางแผนก (Departments)
+model Department {
+  id             Int        @id @default(autoincrement())
+  departmentName String     @map("department_name")
+  positions      Position[]
+
+  @@map("departments")
+}
+
+// 2. ตารางตำแหน่ง (Positions)
+model Position {
+  id           Int        @id @default(autoincrement())
+  positionName String     @map("position_name")
+  departmentId Int        @map("department_id")
+  department   Department @relation(fields: [departmentId], references: [id])
+  employees    Employee[]
+
+  @@map("positions")
+}
+
+// 3. ตารางข้อมูลพนักงาน (Employees)
+model Employee {
+  id           Int              @id @default(autoincrement())
+  employeeCode String           @unique @map("employee_code")
+  fullName     String           @map("full_name")
+  positionId   Int              @map("position_id")
+  position     Position         @relation(fields: [positionId], references: [id])
+  users        User[]
+  bookings     VehicleBooking[] @relation("DriverEmployee")
+
+  @@map("employees")
+}
+
+// 4. ตารางบัญชีผู้ใช้งานระบบ (Users)
 model User {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
-  name      String?
-  password  String    // เก็บพาสเวิร์ด (เดี๋ยวเราจะเข้ารหัสทีหลัง)
-  role      String    @default("USER") // ระบุว่าเป็น USER หรือ ADMIN
-  bookings  Booking[] // ความสัมพันธ์: 1 คน สามารถจองได้หลายครั้ง
-  createdAt DateTime  @default(now())
+  id         Int      @id @default(autoincrement())
+  employeeId Int      @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  roles      Role     @default(USER)
+  active     Boolean  @default(true)
+
+  @@map("users")
 }
 
-// 🏢 ตารางเก็บข้อมูลห้องประชุม หรือ ของที่เปิดให้จอง
-model Room {
-  id          Int       @id @default(autoincrement())
-  name        String    // ชื่อห้อง หรือ ชื่ออุปกรณ์
-  description String?   // รายละเอียด
-  capacity    Int?      // จำนวนคนที่รองรับได้ (ถ้ามี)
-  isAvailable Boolean   @default(true) // สถานะว่าเปิดให้จองไหม
-  bookings    Booking[] // ความสัมพันธ์: 1 ห้อง ถูกจองได้หลายรอบ
-  createdAt   DateTime  @default(now())
-}
-
-// 📅 ตารางเก็บประวัติการจองคิว
-model Booking {
+// 5. ตารางบันทึกประวัติการใช้งานระบบ (Audit Logs)
+model AuditLog {
   id        Int      @id @default(autoincrement())
-  startTime DateTime // เวลาเริ่มจอง
-  endTime   DateTime // เวลาสิ้นสุดการจอง
-  status    String   @default("PENDING") // สถานะ: PENDING, APPROVED, CANCELLED
-  
-  // เชื่อมความสัมพันธ์ว่าใครเป็นคนจอง
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
-  
-  // เชื่อมความสัมพันธ์ว่าจองห้อง/ของชิ้นไหน
-  roomId    Int
-  room      Room     @relation(fields: [roomId], references: [id])
+  userId    Int?     @map("user_id") //เพิ่มบรรทัดนี้ครับ (ใส่ ? เพื่อบอกว่าปล่อยว่างได้ เพราะ Login PIN เราไม่ได้ระบุตัวตนคน)
+  action    String
+  module    String
+  createdAt DateTime @default(now()) @map("created_at")
 
-  createdAt DateTime @default(now())
+  @@map("audit_logs")
+}
+
+// 6. ตารางห้องประชุม (Rooms)
+model Room {
+  id       Int           @id @default(autoincrement())
+  roomName String        @map("room_name")
+  location String
+  capacity Int
+  status   RoomStatus    @default(AVAILABLE)
+  bookings RoomBooking[]
+
+  @@map("rooms")
+}
+
+// 7. ตารางการจองห้องประชุม (Room Bookings)
+model RoomBooking {
+  id          Int      @id @default(autoincrement())
+  roomId      Int      @map("room_id")
+  room        Room     @relation(fields: [roomId], references: [id])
+  bookingDate DateTime @map("booking_date")
+  startTime   DateTime @map("start_time")
+  endTime     DateTime @map("end_time")
+  purpose     String
+  status      String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("room_bookings")
+}
+
+// 8. ตารางรถยนต์ (Vehicles)
+model Vehicle {
+  id          Int              @id @default(autoincrement())
+  brand       String
+  model       String
+  type        String
+  plateNumber String           @map("plate_number")
+  province    String
+  color       String
+  uploadUrl   String?          @map("upload_url")
+  status      VehicleStatus    @default(AVAILABLE)
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  bookings    VehicleBooking[]
+
+  @@map("vehicles")
+}
+
+// 9. ตารางการจองรถยนต์ (Vehicle Bookings)
+model VehicleBooking {
+  id             Int          @id @default(autoincrement())
+  vehicleId      Int          @map("vehicle_id")
+  vehicle        Vehicle      @relation(fields: [vehicleId], references: [id])
+  driverEmployee Int          @map("driver_employee")
+  driver         Employee     @relation("DriverEmployee", fields: [driverEmployee], references: [id])
+  destination    String
+  startDatetime  DateTime     @map("start_datetime")
+  endDatetime    DateTime     @map("end_datetime")
+  purpose        String
+  status         String
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  vehicleLogs    VehicleLog[]
+  attachments    Attachment[]
+
+  @@map("vehicle_bookings")
+}
+
+// 10. ตารางบันทึกการ นำรถออก-คืนรถ (Vehicle Logs)
+model VehicleLog {
+  id               Int            @id @default(autoincrement())
+  vehicleBookingId Int            @map("vehicle_booking_id")
+  booking          VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
+  checkoutBy       String         @map("checkout_by")
+  checkoutTime     DateTime       @map("checkout_time")
+  checkoutMileage  Int            @map("checkout_mileage")
+  checkoutFuelLevel String        @map("checkout_fuel_level")
+  returnBy         String?        @map("return_by")
+  returnMileage    Int?           @map("return_mileage")
+  returnFuelLevel  String?        @map("return_fuel_level")
+  remark           String?
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  @@map("vehicle_logs")
+}
+
+// 11. ตารางไฟล์แนบสำหรับการจองรถ เช่น ใบขับขี่ หรือ รูปภาพ (Attachments)
+model Attachment {
+  id               Int            @id @default(autoincrement())
+  vehicleBookingId Int            @map("vehicle_booking_id")
+  booking          VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
+  fileName         String         @map("file_name")
+  filePath         String         @map("file_path")
+  fileType         String         @map("file_type")
+  uploadedBy       String         @map("uploaded_by")
+  createdAt        DateTime       @default(now()) @map("created_at")
+
+  @@map("attachments")
 }
