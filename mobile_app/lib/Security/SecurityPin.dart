@@ -67,7 +67,10 @@ class _Security_PinpageState extends State<Security_Pinpage> {
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'pin': pin}),
+        body: jsonEncode({
+          'pin': pin,
+          'expectedRole': 'SECURITY' // 👈 กระซิบบอกหลังบ้านว่า นี่คือหน้าจอของ รปภ. นะ!
+        }), 
       ).timeout(const Duration(seconds: 5)); // ให้เวลารอแค่ 5 วิ
 
       print('📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}'); // 👈 ดักฟังว่าหลังบ้านตอบไหม
