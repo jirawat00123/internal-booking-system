@@ -6,7 +6,7 @@ const { JWT_SECRET, authenticateToken } = require('../middlewares/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// 🔑 API 1: Login พนักงาน
+// 🔑 API 1: Login พนักงาน (Employee)
 router.post('/login', async (req, res) => {
   const { employeeCode } = req.body; 
   try {
@@ -31,15 +31,15 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// 🔑 API 2: Login PIN (🟢 อัปเดต: รองรับ SECURITY แล้ว พร้อมแยกระบบประตู)
+// 🔑 API 2: Login PIN (🟢 เวอร์ชันรวมร่าง: รองรับทั้ง ADMIN และ SECURITY พร้อมแยกระบบประตู)
 router.post('/login-pin', async (req, res) => {
   try {
-    // รับค่า expectedRole มาจากแอปเพื่อเช็กว่าเป็นประตูของใคร
+    // รับค่า expectedRole มาจากแอปมือถือเพื่อเช็กว่าเป็นประตูของใคร
     const { pin, expectedRole } = req.body; 
     let assignedRole = null;
     let assignedDept = null;
 
-    // 🟢 คืนชีพให้ Security กลับมาใช้งานได้
+    // 🛡️ ตรวจสอบรหัส PIN
     if (pin === '001122') { 
       assignedRole = 'SECURITY'; 
       assignedDept = 'SECURITY'; 
@@ -56,12 +56,12 @@ router.post('/login-pin', async (req, res) => {
       return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง' }); 
     }
 
-    // 🛑 ด่านตรวจสิทธิ์: ถ้ามาเข้าประตู SECURITY แต่เอารหัส ADMIN มาใส่ (หรือสลับกัน) ให้เตะออก
+    // 🛑 ด่านตรวจสิทธิ์: ป้องกันการเข้าผิดประตู (เช่น เอารหัส ADMIN ไปใส่หน้าแอป SECURITY)
     if (expectedRole && assignedRole !== expectedRole) {
       return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
     }
 
-    // 🚀 ระบบบันทึกประวัติ (Log)
+    // 🚀 ระบบบันทึกประวัติ (Log) ลงฐานข้อมูล
     try {
       await prisma.auditLog.create({
         data: {
@@ -74,6 +74,7 @@ router.post('/login-pin', async (req, res) => {
       console.error("⚠️ ไม่สามารถบันทึก Log ลง Database ได้:", logError.message);
     }
 
+    // 🎟️ สร้าง Token สำหรับยืนยันตัวตน
     const token = jwt.sign({ role: assignedRole, department: assignedDept }, JWT_SECRET, { expiresIn: '12h' });
     
     return res.status(200).json({ 
