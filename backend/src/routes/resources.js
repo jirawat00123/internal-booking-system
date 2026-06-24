@@ -9,15 +9,15 @@ const prisma = new PrismaClient();
 // 🏢 1. โซนจัดการข้อมูลห้องประชุม (Rooms)
 // =============================================================
 
-// 🏢 API: ดึงรายชื่อห้องประชุมทั้งหมด (สิทธิ์ไหนก็ดูได้เอาไปทำ Dropdown)
+// 🏢 API: ดึงรายชื่อห้องประชุมทั้งหมด
 router.get('/rooms', authenticateToken, async (req, res, next) => {
   try {
-    const rooms = await prisma.room.findMany({
+    // 💡 แก้ไขบัก: เปลี่ยนจาก prisma.room เป็น prisma.rooms (Prisma Generator ใช้พหูพจน์ตามแผนผังตาราง)
+    const rooms = await prisma.rooms.findMany({
       orderBy: { id: 'asc' }
     });
     res.json(rooms);
   } catch (error) {
-    // 🛡️ โยนไปให้ Middleware ส่วนกลางใน index.js ช่วยจัดการและแจ้งเตือนเพื่อนหน้าบ้าน
     next(error); 
   }
 });
@@ -27,10 +27,11 @@ router.get('/rooms', authenticateToken, async (req, res, next) => {
 // 🚗 2. โซนจัดการข้อมูลรถยนต์บริษัท (Vehicles) - ล็อกสิทธิ์ ADMIN
 // =============================================================
 
-// 🚗 API: ดึงรายชื่อรถยนต์ทั้งหมด (สิทธิ์ไหนก็ดูได้เอาไปทำหน้าจอเลือกรถ)
+// 🚗 API: ดึงรายชื่อรถยนต์ทั้งหมด
 router.get('/vehicles', authenticateToken, async (req, res, next) => {
   try {
-    const vehicles = await prisma.vehicle.findMany({
+    // 💡 แก้ไขบัก: เปลี่ยนจาก prisma.vehicle เป็น prisma.vehicles
+    const vehicles = await prisma.vehicles.findMany({
       orderBy: { id: 'asc' }
     });
     res.json(vehicles);
@@ -42,32 +43,28 @@ router.get('/vehicles', authenticateToken, async (req, res, next) => {
 // ➕ API: เพิ่มรถคันใหม่เข้าระบบ (🔒 เฉพาะ ADMIN เท่านั้น)
 router.post('/vehicles', authenticateToken, async (req, res, next) => {
   try {
-    // 🚦 ด่านตรวจสิทธิ์: ถ้าไม่ใช่แอดมิน ส่ง 403 Forbidden กลับทันที
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง: ฟังก์ชันนี้สำหรับผู้ดูแลระบบ (ADMIN) เท่านั้น" });
     }
 
-    // 🔄 ปรับใช้ uploadUrl ตามโครงสร้าง Database ใหม่
-    const { brand, model, type, plateNumber, province, color, uploadUrl } = req.body;
+    // 💡 แก้ไขบัก: อ้างอิงตามแผนผัง DB ฟิลด์ในตารางคือ licensePlate, uploadUrl, brand, model, status
+    const { brand, model, licensePlate, uploadUrl } = req.body;
 
-    // ตรวจสอบว่าหน้าบ้านส่งข้อมูลสำคัญมาครบถ้วนไหม
-    if (!brand || !model || !type || !plateNumber || !province || !color) {
-      return res.status(400).json({ error: "กรุณากรอกข้อมูลรถให้ครบถ้วน (ยี่ห้อ, รุ่น, ประเภท, ทะเบียน, จังหวัด, สี)" });
+    if (!brand || !model || !licensePlate) {
+      return res.status(400).json({ error: "กรุณากรอกข้อมูลรถให้ครบถ้วน (brand, model, licensePlate)" });
     }
 
-    const newVehicle = await prisma.vehicle.create({
+    const newVehicle = await prisma.vehicles.create({
       data: {
         brand,
         model,
-        type,
-        plateNumber,
-        province,
-        color,
-        uploadUrl: uploadUrl || null // ถ้าหน้าบ้านไม่มีรูปส่งมา ให้บันทึกเป็น null ไว้ก่อน
+        licensePlate, // ใช้ชื่อฟิลด์ตามแผนผังดาต้าเบสจริง
+        uploadUrl: uploadUrl || null,
+        status: "available" // เพิ่มค่าเริ่มต้นของสถานะรถยนต์
       }
     });
 
-    res.status(201).json({ message: "เพิ่มรถคันใหม่เข้าสู่ระบบสำเร็จเรียบร้อย!", data: newVehicle });
+    res.status(201).json({ success: true, message: "เพิ่มรถคันใหม่เข้าสู่ระบบสำเร็จเรียบร้อย!", data: newVehicle });
   } catch (error) {
     next(error);
   }
@@ -76,22 +73,19 @@ router.post('/vehicles', authenticateToken, async (req, res, next) => {
 // ✏️ API: แก้ไขข้อมูลรถยนต์ (🔒 เฉพาะ ADMIN เท่านั้น)
 router.put('/vehicles/:id', authenticateToken, async (req, res, next) => {
   try {
-    // 🚦 ด่านตรวจสิทธิ์: ถ้าไม่ใช่แอดมิน ส่ง 403 Forbidden กลับทันที
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง: เฉพาะแอดมินเท่านั้นที่แก้ไขข้อมูลได้" });
     }
 
-    const vehicleId = parseInt(req.params.id); // ดึง ID รถจาก URL เช่น /api/resources/vehicles/5
-    
-    // 🔄 ปรับใช้ uploadUrl ให้ตรงกับตอนรับค่าใหม่
-    const { brand, model, type, plateNumber, province, color, uploadUrl } = req.body;
+    const vehicleId = parseInt(req.params.id); 
+    const { brand, model, licensePlate, status, uploadUrl } = req.body;
 
-    const updatedVehicle = await prisma.vehicle.update({
+    const updatedVehicle = await prisma.vehicles.update({
       where: { id: vehicleId },
-      data: { brand, model, type, plateNumber, province, color, uploadUrl }
+      data: { brand, model, licensePlate, status, uploadUrl }
     });
 
-    res.json({ message: "อัปเดตข้อมูลรถเรียบร้อยแล้ว!", data: updatedVehicle });
+    res.json({ success: true, message: "อัปเดตข้อมูลรถเรียบร้อยแล้ว!", data: updatedVehicle });
   } catch (error) {
     next(error);
   }
@@ -100,18 +94,17 @@ router.put('/vehicles/:id', authenticateToken, async (req, res, next) => {
 // ❌ API: ลบรถออกจากระบบ (🔒 เฉพาะ ADMIN เท่านั้น)
 router.delete('/vehicles/:id', authenticateToken, async (req, res, next) => {
   try {
-    // 🚦 ด่านตรวจสิทธิ์: ถ้าไม่ใช่แอดมิน ส่ง 403 Forbidden กลับทันที
     if (req.user.role !== 'ADMIN') {
       return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง: เฉพาะแอดมินเท่านั้นที่ลบข้อมูลได้" });
     }
 
     const vehicleId = parseInt(req.params.id);
 
-    await prisma.vehicle.delete({
+    await prisma.vehicles.delete({
       where: { id: vehicleId }
     });
 
-    res.json({ message: "ลบรถออกจากระบบสำเร็จเรียบร้อยแล้ว!" });
+    res.json({ success: true, message: "ลบรถออกจากระบบสำเร็จเรียบร้อยแล้ว!" });
   } catch (error) {
     next(error);
   }

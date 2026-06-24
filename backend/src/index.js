@@ -43,10 +43,12 @@ const swaggerDocument = {
             'application/json': {
               schema: {
                 type: 'object',
-                properties: {
-                  employeeCode: { type: 'string', example: 'EMP001', description: 'รหัสพนักงาน (เช่น EMP001)' }
-                },
-                required: ['employeeCode']
+                // ค้นหาช่วง paths ใน swaggerDocument แล้วอัปเดตตรงนี้ครับ:
+properties: {
+  employeeCode: { type: 'string', example: 'SEC001', description: 'รหัสพนักงาน (เช่น SEC001 สำหรับ Guard)' },
+  pin: { type: 'string', example: '998877', description: 'รหัส PIN 6 หลัก (ใส่เฉพาะ ADMIN และ GUARD, ถ้า USER ไม่ต้องใส่)' }
+},
+required: ['employeeCode']
               }
             }
           }

@@ -6,49 +6,53 @@ const { JWT_SECRET, authenticateToken } = require('../middlewares/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// 🔑 API Login (ปรับปรุงให้รองรับโครงสร้างตารางใหม่และการเชื่อมข้อมูลพนักงาน)
+// 🔑 API Login (รองรับระบบ PIN Verification ตาม Checklist สัปดาห์ที่ 6)
 router.post('/login', async (req, res) => {
-  // 1. เปลี่ยนมารับค่า employeeCode ตามที่ระบุไว้ในแบบแปลนและหน้าปก Swagger
-  const { employeeCode } = req.body; 
+  // 1. รับค่า employeeCode และ pin จากหน้าบ้าน
+  const { employeeCode, pin } = req.body; 
 
   try {
     if (!employeeCode) {
       return res.status(400).json({ error: "กรุณากรอกรหัสพนักงาน" });
     }
 
-    // 2. ค้นหาพนักงานจาก "รหัสพนักงาน (employeeCode)" ก่อนเพื่อเอา id ไปหา User
+    // 2. ค้นหาพนักงาน พร้อมดึงข้อมูล users (ดึงมาเป็น Array) และ position
     const employee = await prisma.employee.findUnique({
       where: { employeeCode: employeeCode },
       include: {
-        // ดึงข้อมูลบัญชีผู้ใช้ (user) และตำแหน่งพนักงานพ่วงมาด้วย
-        user: true,
+        users: true, // Prisma ใช้ users (เติม s) เพราะเป็น One-to-Many
         position: true
       }
     });
 
-    // ถ้าไม่เจอรหัสพนักงานในระบบ
+    // 3. ตรวจสอบว่ามีพนักงานและมีสิทธิ์ไหม
     if (!employee) {
       return res.status(404).json({ error: "ไม่พบรหัสพนักงานนี้ในระบบ" });
     }
-
-    // ถ้าเจอพนักงาน แต่พนักงานคนนี้ไม่มีสิทธิ์เข้าใช้ระบบ (ไม่มีข้อมูลในตาราง user)
-    if (!employee.user) {
+    if (!employee.users || employee.users.length === 0) {
       return res.status(403).json({ error: "พนักงานท่านนี้ยังไม่ได้เปิดสิทธิ์การใช้งานระบบ" });
     }
 
-    const userAccount = employee.user;
+    // ดึงบัญชีผู้ใช้อันแรกมาใช้งาน (ปกติ 1 คนจะมีแค่ 1 บัญชี)
+    const userAccount = employee.users[0];
 
-    // เช็กสถานะว่าบัญชีผู้ใช้ถูกระงับหรือไม่
     if (!userAccount.active) {
       return res.status(403).json({ error: "บัญชีผู้ใช้งานนี้ถูกระงับการใช้งาน" });
     }
 
-    // 3. 🚦 (หมายเหตุระบบล็อกอินเวอร์ชันอัปเดต) 
-    // เนื่องจากฐานข้อมูลตามเอกสาร PDF ชุดปัจจุบันไม่ได้ระบุฟิลด์สำหรับการเก็บ Password 
-    // ระบบจะอนุญาตให้ตรวจสอบผ่านรหัสพนักงาน (employeeCode) เป็นหลักเพื่อเข้าสู่ระบบ
-    // สิทธิ์การทำงาน (ADMIN / USER / GUARD) จะถูกแยกจากฟิลด์ roles ในตาราง User ทันที
+    // 4. 🛡️ เช็ก PIN ตาม Role (Week 6 Checklist)
+    // ถ้าเป็น ADMIN หรือ GUARD จะต้องบังคับเช็ก PIN 6 หลัก
+    if (userAccount.roles === 'ADMIN' || userAccount.roles === 'GUARD') {
+      if (!pin || pin.length !== 6) {
+        return res.status(400).json({ error: "กรุณากรอกรหัส PIN ให้ครบ 6 หลัก" });
+      }
+      if (userAccount.pin !== pin) {
+        return res.status(401).json({ error: "รหัส PIN ไม่ถูกต้อง" });
+      }
+    }
+    // หมายเหตุ: ถ้า Role เป็น 'USER' ระบบจะข้ามการเช็ก PIN ไปเลย (เข้าได้ทันที)
 
-    // 4. 🎟️ สร้าง Token (ฝังข้อมูลที่จำเป็นให้ Frontend เอาไปเช็กต่อได้ง่ายขึ้น)
+    // 5. 🎟️ สร้าง Token
     const token = jwt.sign(
       { 
         userId: userAccount.id, 
@@ -60,8 +64,9 @@ router.post('/login', async (req, res) => {
       { expiresIn: '1d' }
     );
     
-    // 5. ส่งกลับไปบอกเพื่อนหน้าบ้าน
-    res.json({ 
+    // 6. ส่งผลลัพธ์กลับไปให้ Frontend
+    res.status(200).json({ 
+      success: true,
       message: "เข้าสู่ระบบสำเร็จ", 
       token: token,
       role: userAccount.roles 
@@ -73,10 +78,9 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// 👤 API เช็กโปรไฟล์ของคนที่ถือ Token ปัจจุบัน (ปรับปรุงให้ดึงข้ามตารางเพื่อเอาชื่อ-ตำแหน่งมาโชว์)
+// 👤 API เช็กโปรไฟล์ (Me) สำหรับตรวจสอบ Route Protection
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    // ดึงข้อมูลบัญชีผู้ใช้ พร้อมดึงข้อมูลจากตารางพนักงาน (employee) แผนก และตำแหน่งพ่วงมาเป็นทอดๆ
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
       include: {
@@ -100,8 +104,8 @@ router.get('/me', authenticateToken, async (req, res) => {
     const pos = emp.position;
     const dept = pos ? pos.department : null;
 
-    // ส่งโครงสร้างข้อมูลชุดใหม่กลับไปให้หน้าบ้านเอาไปแปะบนแถบเมนูหรือหน้าโปรไฟล์
     res.json({
+      success: true,
       id: user.id,
       employeeCode: emp.employeeCode,
       fullName: emp.fullName,
@@ -116,5 +120,30 @@ router.get('/me', authenticateToken, async (req, res) => {
     res.status(500).json({ error: "ระบบไม่สามารถตรวจสอบ Token ได้" });
   }
 });
+
+// 🚦 Middleware ตรวจสอบสิทธิ์เฉพาะ ADMIN เท่านั้น
+const isAdmin = (req, res, next) => {
+  if (req.user && req.user.role === 'ADMIN') {
+    next(); // สิทธิ์ถูกต้อง ปล่อยผ่านไปทำหน้าที่ต่อ
+  } else {
+    return res.status(403).json({ error: "ปฏิเสธการเข้าถึง: สิทธิ์ของคุณไม่เพียงพอ (เฉพาะ ADMIN เท่านั้น)" });
+  }
+};
+
+// 🚦 Middleware ตรวจสอบสิทธิ์เฉพาะ GUARD / SECURITY เท่านั้น
+const isGuard = (req, res, next) => {
+  if (req.user && req.user.role === 'GUARD') {
+    next();
+  } else {
+    return res.status(403).json({ error: "ปฏิเสธการเข้าถึง: เฉพาะเจ้าหน้าที่รักษาความปลอดภัย (GUARD) เท่านั้น" });
+  }
+};
+
+module.exports = {
+  // ... ของเดิมที่มีอยู่ เช่น JWT_SECRET, authenticateToken ...
+  authenticateToken,
+  isAdmin,
+  isGuard
+};
 
 module.exports = router;

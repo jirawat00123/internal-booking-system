@@ -69,7 +69,7 @@ async function main() {
   const employeesData = [
     { code: 'IT001', name: 'สมชาย ไอที (Admin)', posName: 'หัวหน้าทีมวิศวกรสารสนเทศ IT', role: 'ADMIN' },
     { code: 'HR001', name: 'สมหญิง บุคคล (User)', posName: 'ผจก.ฝ่ายทรัพยากรบุคคลและธุรการ', role: 'USER' },
-    { code: 'SEC001', name: 'สมหมาย รปภ (Guard)', posName: 'จป.เทคนิค', role: 'GUARD' }, // ใช้ตำแหน่งที่ใกล้เคียง รปภ.
+    { code: 'SEC001', name: 'สมหมาย รปภ (Guard)', posName: 'จป.เทคนิค', role: 'GUARD', pin: '123456' }, // ใช้ตำแหน่งที่ใกล้เคียง รปภ.
     { code: 'ENG001', name: 'สมเกียรติ วิศวกร (User)', posName: 'วิศวกรผลิต', role: 'USER' },
     { code: 'ACC001', name: 'สมศรี บัญชี (User)', posName: 'เจ้าหน้าที่บัญชีและการเงิน', role: 'USER' },
     { code: 'MC-WK0006', name: 'นายจิระพงค์ ธิบดี', posName: 'หัวหน้าช่างประกอบและติดตั้ง', role: 'USER' },
@@ -167,6 +167,7 @@ async function main() {
         data: {
           employeeId: newEmployee.id,
           roles: emp.role,
+          pin: emp.pin || null,
           active: true
         }
       });
