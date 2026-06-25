@@ -244,7 +244,7 @@ class _ManagePageState extends State<ManagePage> {
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/images/bgmmk.png'), 
+                image: AssetImage('assets/bg.png'), 
                 fit: BoxFit.cover,
               ),
             ),

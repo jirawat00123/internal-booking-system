@@ -1,3 +1,4 @@
+import 'package:MyApp/Admin/Admin_pin.dart';
 import 'package:flutter/material.dart';
 import 'Digital.dart'; 
 import 'Security/SecurityPin.dart';
@@ -109,7 +110,7 @@ class LoginSelectionPage extends StatelessWidget {
                                   subtitle: 'สิทธิ์การเข้าถึงระบบแบบเต็มรูปแบบ',
                                   onTap: () {
                                     // 🚀 เอาดีเลย์ออก
-                                    Navigator.push;
+                                    Navigator.push(context, MaterialPageRoute(builder: (context) => const Admin_pinPage()));
                                   },
                                 ),
                               ],
