@@ -1,17 +1,17 @@
- const express = require('express');
+const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authenticateToken } = require('../middlewares/auth');
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// 🚗 [GET] /api/bookings - ดึงรายการจองทั้งหมด (ตัวอย่างเบื้องต้น)
+// 🚗 [GET] /api/bookings - ดึงรายการจองทั้งหมด (ผสานโครงสร้างพื้นฐานและระบบความปลอดภัย)
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    // โค้ดดึงข้อมูลการจองจะเขียนตรงนี้ในอนาคต
+    // โค้ดดึงข้อมูลการจองจากฐานข้อมูล (Prisma) จะเขียนตรงนี้ในอนาคต
     res.json({
       success: true,
-      message: "ดึงข้อมูลรายการจองสำเร็จ (ระบบเชื่อมต่อสมบูรณ์แล้ว)",
+      message: "ดึงข้อมูลรายการจองสำเร็จ (Booking API is ready to use!)",
       bookings: []
     });
   } catch (error) {

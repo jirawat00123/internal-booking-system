@@ -43,12 +43,11 @@ const swaggerDocument = {
             'application/json': {
               schema: {
                 type: 'object',
-                // ค้นหาช่วง paths ใน swaggerDocument แล้วอัปเดตตรงนี้ครับ:
-properties: {
-  employeeCode: { type: 'string', example: 'SEC001', description: 'รหัสพนักงาน (เช่น SEC001 สำหรับ Guard)' },
-  pin: { type: 'string', example: '998877', description: 'รหัส PIN 6 หลัก (ใส่เฉพาะ ADMIN และ GUARD, ถ้า USER ไม่ต้องใส่)' }
-},
-required: ['employeeCode']
+                properties: {
+                  employeeCode: { type: 'string', example: 'SEC001', description: 'รหัสพนักงาน (เช่น SEC001 สำหรับ Guard)' },
+                  pin: { type: 'string', example: '998877', description: 'รหัส PIN 6 หลัก (ใส่เฉพาะ ADMIN และ GUARD, ถ้า USER ไม่ต้องใส่)' }
+                },
+                required: ['employeeCode']
               }
             }
           }
@@ -59,6 +58,19 @@ required: ['employeeCode']
           404: { description: 'ไม่พบรหัสพนักงานนี้ในระบบ' },
           500: { description: 'ระบบหลังบ้านขัดข้อง' }
         }
+      }
+    },
+    // 🔑 เส้นทางที่ 1.5: เมนู Login PIN (แยกเฉพาะ Admin & Security)
+    '/api/login-pin': {
+      post: {
+        summary: 'เข้าสู่ระบบด้วย PIN (Admin & Security)',
+        description: '💡 ใช้รหัส PIN 6 หลัก \n\n**รหัสที่รองรับ:** \n- 741963 (Admin HR)\n- 852000 (Admin IT)\n- 001122 (Security)',
+        security: [],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { type: 'object', properties: { pin: { type: 'string', example: '741963' } }, required: ['pin'] } } }
+        },
+        responses: { 200: { description: 'สำเร็จ' }, 401: { description: 'รหัสผิด' } }
       }
     },
     // 👤 เส้นทางที่ 2: เช็กโปรไฟล์ตัวเอง
@@ -72,6 +84,10 @@ required: ['employeeCode']
           500: { description: 'ระบบไม่สามารถตรวจสอบ Token ได้' }
         }
       }
+    },
+    // 📖 เส้นทางที่ 3: เมนู Bookings
+    '/api/bookings': {
+      get: { summary: 'ดึงข้อมูลการจองทั้งหมด', responses: { 200: { description: 'สำเร็จ' } } }
     },
     // 🚗 เส้นทางทรัพยากรต่างๆ ของระบบ
     '/api/resources/rooms': {
@@ -100,7 +116,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Clean Server is running on http://localhost:${PORT}`);
   console.log(`📖 เปิดดูคู่มือ API ได้ที่ http://localhost:${PORT}/api-docs`);

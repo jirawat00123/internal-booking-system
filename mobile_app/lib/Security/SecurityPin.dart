@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
 import '../PinError.dart'; 
-import 'SecurityGroupPage.dart'; // ดึงหน้าเมนูรปภ.มาเตรียมไว้
+import 'SecurityGroupPage.dart'; // 👈 เปลี่ยนเป็นหน้าของ รปภ.
 
 class Security_Pinpage extends StatefulWidget {
   const Security_Pinpage({super.key});
@@ -9,35 +11,100 @@ class Security_Pinpage extends StatefulWidget {
   State<Security_Pinpage> createState() => _Security_PinpageState();
 }
 
-class _Security_PinpageState extends State<Security_Pinpage > {
+class _Security_PinpageState extends State<Security_Pinpage> {
   String pin = ""; 
   bool isObscured = true; 
-  final String correctPin = "654321"; 
+  bool isLoading = false; 
 
   void _addPin(String number) {
     if (pin.length < 6) {
-      setState(() { pin += number; });
+      setState(() {
+        pin += number;
+      });
     }
   }
 
   void _removePin() {
     if (pin.isNotEmpty) {
-      setState(() { pin = pin.substring(0, pin.length - 1); });
+      setState(() {
+        pin = pin.substring(0, pin.length - 1);
+      });
     }
   }
 
+  // ฟังก์ชันเรียก Popup แจ้งเตือนเมื่อรหัสผิด
+  // ฟังก์ชันเรียก Popup (แก้ชื่อตัวแปรกันมันสับสน)
   void _showErrorDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
+      builder: (BuildContext dialogContext) { // 👈 เปลี่ยนเป็น dialogContext
         return PinError(
           onRetry: () {
-            setState(() { pin = ""; });
+            setState(() {
+              pin = ""; // เคลียร์ PIN ให้ว่าง
+            });
           },
         );
       },
     );
+  }
+
+  // 🚀 ฟังก์ชันยิง API พร้อมเครื่องดักฟัง
+  // 🚀 ฟังก์ชันยิง API พร้อมเครื่องดักฟัง (พิมพ์ Log)
+  Future<void> _verifyPin() async {
+    setState(() {
+      isLoading = true; 
+    });
+
+    try {
+      // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น 10.0.2.2 สำหรับมือถือจำลอง (Android Emulator)
+      // (ถ้าคุณปิ่นรันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
+      final url = Uri.parse('http://localhost:3000/api/login-pin'); 
+      
+      print('📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...'); // 👈 ดักฟังว่าแอปเริ่มทำงานไหม
+
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'pin': pin,
+          'expectedRole': 'SECURITY' // 👈 กระซิบบอกหลังบ้านว่า นี่คือหน้าจอของ รปภ. นะ!
+        }), 
+      ).timeout(const Duration(seconds: 5)); // ให้เวลารอแค่ 5 วิ
+
+      print('📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}'); // 👈 ดักฟังว่าหลังบ้านตอบไหม
+      print('📱 [Flutter] ข้อมูลจากหลังบ้าน: ${response.body}'); 
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        
+        if (responseData['role'] == 'SECURITY') {
+          // 🟢 รหัสถูก สิทธิ์ถูกต้อง
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const SecurityGroupPage()), 
+          );
+        } else {
+          // 🛑 รหัสถูก แต่สิทธิ์ไม่ใช่ รปภ.
+          setState(() { isLoading = false; });
+          _showErrorDialog(); 
+        }
+      } else {
+        // 🛑 รหัสผิด (เช่น 401)
+        setState(() { isLoading = false; });
+        _showErrorDialog(); 
+      }
+    } catch (error) {
+      // 🔌 กรณีที่ติดต่อเซิร์ฟเวอร์ไม่ได้เลย
+      print('📱 [Flutter] ❌ เชื่อมต่อเซิร์ฟเวอร์ไม่ได้! สาเหตุ: $error'); // 👈 ดักฟัง Error ทะลุจอ
+      if (mounted) {
+        setState(() { isLoading = false; });
+        _showErrorDialog(); 
+      }
+    }
   }
 
   @override
@@ -45,6 +112,7 @@ class _Security_PinpageState extends State<Security_Pinpage > {
     return Scaffold(
       body: Stack(
         children: [
+          // พื้นหลัง
           Container(
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
@@ -54,9 +122,11 @@ class _Security_PinpageState extends State<Security_Pinpage > {
               ),
             ),
           ),
+
           SafeArea(
             child: Column(
               children: [
+                // ส่วนหัว (AppBar)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: Row(
@@ -76,7 +146,10 @@ class _Security_PinpageState extends State<Security_Pinpage > {
                     ],
                   ),
                 ),
+
                 const SizedBox(height: 10),
+
+                // การ์ดสีขาวด้านล่าง
                 Expanded(
                   child: Container(
                     width: 375,
@@ -90,10 +163,10 @@ class _Security_PinpageState extends State<Security_Pinpage > {
                         const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.shield_outlined, size: 30, color: Color(0xFF00529B)),
+                            Icon(Icons.shield_outlined, size: 30, color: Color(0xFF00529B)), // 👈 ไอคอนโล่ รปภ.
                             SizedBox(width: 8),
                             Text(
-                              'รปภ. (Security Guard)',
+                              'รปภ. (Security Guard)', // 👈 เปลี่ยนข้อความ
                               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF00529B), fontFamily: 'Kanit'),
                             ),
                           ],
@@ -131,6 +204,7 @@ class _Security_PinpageState extends State<Security_Pinpage > {
 
                         const SizedBox(height: 40),
 
+                        // ปุ่มเปิด/ปิดตา (ดูรหัส)
                         GestureDetector(
                           onTap: () {
                             setState(() {
@@ -145,11 +219,10 @@ class _Security_PinpageState extends State<Security_Pinpage > {
                         ),
 
                         const Spacer(flex: 1),
-  
+
+                        // แป้นตัวเลข Numpad
                         _buildNumpadRow(['1', '2', '3']),
-
                         _buildNumpadRow(['4', '5', '6']),
-
                         _buildNumpadRow(['7', '8', '9']),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -169,27 +242,14 @@ class _Security_PinpageState extends State<Security_Pinpage > {
 
                         const Spacer(flex: 2),
 
-  
+                        // 🚀 ปุ่ม "ดำเนินการต่อ" 
                         SizedBox(
                           width: 375 - 48,
                           height: 50,
                           child: ElevatedButton(
-                            onPressed: () {
+                            onPressed: isLoading ? null : () { 
                               if (pin.length == 6) {
-                                if (pin == correctPin) {
-                                  setState(() { 
-                                    pin = ""; 
-                                  });
-                                  
-                                  Navigator.pushReplacement(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => const SecurityGroupPage(),
-                                    ),
-                                  );                                  
-                                } else {                                  
-                                  _showErrorDialog(); 
-                                }
+                                _verifyPin(); 
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
@@ -201,9 +261,16 @@ class _Security_PinpageState extends State<Security_Pinpage > {
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF0096C7),
+                              disabledBackgroundColor: Colors.grey.shade400, 
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            child: const Text('ดำเนินการต่อ', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+                            child: isLoading
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                                  )
+                                : const Text('ดำเนินการต่อ', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                           ),
                         ),
 
@@ -218,7 +285,7 @@ class _Security_PinpageState extends State<Security_Pinpage > {
                       ],
                     ),
                   ),
-                )
+                ),
               ],
             ),
           ),
@@ -243,8 +310,13 @@ class _Security_PinpageState extends State<Security_Pinpage > {
       height: 60,
       child: TextButton(
         onPressed: () => _addPin(number),
-        style: TextButton.styleFrom(shape: const CircleBorder()),
-        child: Text(number, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: Colors.black87)),
+        style: TextButton.styleFrom(
+          shape: const CircleBorder(),
+        ),
+        child: Text(
+          number,
+          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: Colors.black87),
+        ),
       ),
     );
   }

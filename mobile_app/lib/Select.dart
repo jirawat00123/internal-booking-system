@@ -1,6 +1,6 @@
+import 'package:MyApp/Admin/Admin_pin.dart';
 import 'package:flutter/material.dart';
 import 'Digital.dart'; 
-import 'Admin/Admin_pin.dart';
 import 'Security/SecurityPin.dart';
 
 

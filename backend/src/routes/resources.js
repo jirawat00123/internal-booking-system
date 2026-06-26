@@ -12,7 +12,7 @@ const prisma = new PrismaClient();
 // 🏢 API: ดึงรายชื่อห้องประชุมทั้งหมด
 router.get('/rooms', authenticateToken, async (req, res, next) => {
   try {
-    // 💡 แก้ไขบัก: เปลี่ยนจาก prisma.room เป็น prisma.rooms (Prisma Generator ใช้พหูพจน์ตามแผนผังตาราง)
+    // 💡 แก้ไขบัก: ใช้ prisma.rooms ตามฝั่ง HEAD
     const rooms = await prisma.rooms.findMany({
       orderBy: { id: 'asc' }
     });
@@ -30,7 +30,7 @@ router.get('/rooms', authenticateToken, async (req, res, next) => {
 // 🚗 API: ดึงรายชื่อรถยนต์ทั้งหมด
 router.get('/vehicles', authenticateToken, async (req, res, next) => {
   try {
-    // 💡 แก้ไขบัก: เปลี่ยนจาก prisma.vehicle เป็น prisma.vehicles
+    // 💡 แก้ไขบัก: ใช้ prisma.vehicles
     const vehicles = await prisma.vehicles.findMany({
       orderBy: { id: 'asc' }
     });
@@ -47,20 +47,26 @@ router.post('/vehicles', authenticateToken, async (req, res, next) => {
       return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง: ฟังก์ชันนี้สำหรับผู้ดูแลระบบ (ADMIN) เท่านั้น" });
     }
 
-    // 💡 แก้ไขบัก: อ้างอิงตามแผนผัง DB ฟิลด์ในตารางคือ licensePlate, uploadUrl, brand, model, status
-    const { brand, model, licensePlate, uploadUrl } = req.body;
+    // 💡 ผสานฟิลด์ข้อมูล: นำฟิลด์จากฝั่ง dev (type, province, color) มารวมกับฝั่ง HEAD
+    const { brand, model, type, licensePlate, plateNumber, province, color, uploadUrl } = req.body;
 
-    if (!brand || !model || !licensePlate) {
-      return res.status(400).json({ error: "กรุณากรอกข้อมูลรถให้ครบถ้วน (brand, model, licensePlate)" });
+    // รองรับทั้งชื่อตัวแปรจากฝั่ง HEAD (licensePlate) และฝั่ง dev (plateNumber) จาก Frontend
+    const finalPlate = licensePlate || plateNumber;
+
+    if (!brand || !model || !finalPlate || !type || !province || !color) {
+      return res.status(400).json({ error: "กรุณากรอกข้อมูลรถให้ครบถ้วน (brand, model, type, ทะเบียนรถ, province, color)" });
     }
 
     const newVehicle = await prisma.vehicles.create({
       data: {
         brand,
         model,
-        licensePlate, // ใช้ชื่อฟิลด์ตามแผนผังดาต้าเบสจริง
+        type,                  // เพิ่มมาจากฝั่ง dev
+        licensePlate: finalPlate, // อิงตามชื่อฟิลด์แผนผัง DB จริงจากฝั่ง HEAD
+        province,              // เพิ่มมาจากฝั่ง dev
+        color,                 // เพิ่มมาจากฝั่ง dev
         uploadUrl: uploadUrl || null,
-        status: "available" // เพิ่มค่าเริ่มต้นของสถานะรถยนต์
+        status: "available"    // ค่าเริ่มต้นจากฝั่ง HEAD
       }
     });
 
@@ -78,11 +84,22 @@ router.put('/vehicles/:id', authenticateToken, async (req, res, next) => {
     }
 
     const vehicleId = parseInt(req.params.id); 
-    const { brand, model, licensePlate, status, uploadUrl } = req.body;
+    const { brand, model, type, licensePlate, plateNumber, province, color, status, uploadUrl } = req.body;
+    
+    const finalPlate = licensePlate || plateNumber;
 
     const updatedVehicle = await prisma.vehicles.update({
       where: { id: vehicleId },
-      data: { brand, model, licensePlate, status, uploadUrl }
+      data: { 
+        brand, 
+        model, 
+        type, 
+        licensePlate: finalPlate, 
+        province, 
+        color, 
+        status, 
+        uploadUrl 
+      }
     });
 
     res.json({ success: true, message: "อัปเดตข้อมูลรถเรียบร้อยแล้ว!", data: updatedVehicle });

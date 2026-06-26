@@ -6,7 +6,7 @@ const { JWT_SECRET, authenticateToken } = require('../middlewares/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// 🔑 API Login (รองรับระบบ PIN Verification ตาม Checklist สัปดาห์ที่ 6)
+// 🔑 API 1: Login (รองรับระบบ PIN Verification ตาม Checklist สัปดาห์ที่ 6)
 router.post('/login', async (req, res) => {
   // 1. รับค่า employeeCode และ pin จากหน้าบ้าน
   const { employeeCode, pin } = req.body; 
@@ -78,7 +78,65 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// 👤 API เช็กโปรไฟล์ (Me) สำหรับตรวจสอบ Route Protection
+// 🔑 API 2: Login PIN (🟢 เวอร์ชันรวมร่าง: รองรับทั้ง ADMIN และ SECURITY พร้อมแยกระบบประตู)
+router.post('/login-pin', async (req, res) => {
+  try {
+    // รับค่า expectedRole มาจากแอปมือถือเพื่อเช็กว่าเป็นประตูของใคร
+    const { pin, expectedRole } = req.body; 
+    let assignedRole = null;
+    let assignedDept = null;
+
+    // 🛡️ ตรวจสอบรหัส PIN
+    if (pin === '001122') { 
+      assignedRole = 'SECURITY'; 
+      assignedDept = 'SECURITY'; 
+    } 
+    else if (pin === '741963') { 
+      assignedRole = 'ADMIN'; 
+      assignedDept = 'HR'; 
+    } 
+    else if (pin === '852000') { 
+      assignedRole = 'ADMIN'; 
+      assignedDept = 'IT'; 
+    } 
+    else { 
+      return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง' }); 
+    }
+
+    // 🛑 ด่านตรวจสิทธิ์: ป้องกันการเข้าผิดประตู (เช่น เอารหัส ADMIN ไปใส่หน้าแอป SECURITY)
+    if (expectedRole && assignedRole !== expectedRole) {
+      return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
+    }
+
+    // 🚀 ระบบบันทึกประวัติ (Log) ลงฐานข้อมูล
+    try {
+      await prisma.auditLog.create({
+        data: {
+          action: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${assignedRole}, แผนก: ${assignedDept})`,
+          module: 'LOGIN_SYSTEM' 
+        }
+      });
+      console.log(`[Log] บันทึกประวัติการเข้าใช้งานของ ${assignedRole} เรียบร้อยแล้ว`);
+    } catch (logError) {
+      console.error("⚠️ ไม่สามารถบันทึก Log ลง Database ได้:", logError.message);
+    }
+
+    // 🎟️ สร้าง Token สำหรับยืนยันตัวตน
+    const token = jwt.sign({ role: assignedRole, department: assignedDept }, JWT_SECRET, { expiresIn: '12h' });
+    
+    return res.status(200).json({ 
+      success: true, 
+      message: 'เข้าสู่ระบบด้วย PIN สำเร็จ', 
+      token: token, 
+      role: assignedRole 
+    });
+
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดที่เซิร์ฟเวอร์' });
+  }
+});
+
+// 👤 API 3: เช็ก Profile
 router.get('/me', authenticateToken, async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
@@ -139,11 +197,9 @@ const isGuard = (req, res, next) => {
   }
 };
 
-module.exports = {
-  // ... ของเดิมที่มีอยู่ เช่น JWT_SECRET, authenticateToken ...
-  authenticateToken,
-  isAdmin,
-  isGuard
-};
+// แนบ Middleware ไปกับ router เผื่อมีการเรียกใช้จากภายนอก
+router.isAdmin = isAdmin;
+router.isGuard = isGuard;
 
+// Export ตัว router อย่างถูกต้องเพื่อให้ไฟล์หลัก (index.js) นำไปใช้งานได้
 module.exports = router;

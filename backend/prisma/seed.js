@@ -135,6 +135,7 @@ async function main() {
     { code: 'MC-EN0494', name: 'นาย พงศ์พัทธ์ แตงอ่อน', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
     { code: 'MC-EN0596', name: 'นาย กิตติ บุญเลิศ', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
     { code: 'MC-EN0644', name: 'นาย รณกฤต เหลืองอ่อน', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
+    { code: 'MC-EN0646', name: 'นาย นิติภูมิ กองฟู', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
 
     { code: 'MC-EN0386', name: 'นาย วรยุทธ เนตรจ๋อย', posName: 'วิศวกรการออกแบบ', role: 'USER' },
     { code: 'MC-EN0439', name: 'นาย ศิวดล นนทะภา', posName: 'ผู้ช่วยวิศวกรการออกแบบ', role: 'USER' },
