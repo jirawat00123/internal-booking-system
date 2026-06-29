@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'Select.dart'; // เชื่อมไปหาหน้า LoginSelectionPage
+import 'Manage.dart'; 
+import 'Digitel.dart'; // 👈 เพิ่มชิ้นนี้ (ปรับชื่อไฟล์ .dart ให้ตรงกับชื่อไฟล์จริงของคุณนะครับ เช่น digitel.dart)
 
-
-
+void main() {
+  runApp(const WelcomeApp());
+}
 class WelcomeApp extends StatelessWidget {
   const WelcomeApp({super.key});
 
@@ -14,6 +17,13 @@ class WelcomeApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
+      
+      // ✅ 2. อัปเดตแผนที่เส้นทาง (Routes) จาก /room_list เปลี่ยนเป็น /digitel
+      routes: {
+        '/manage': (context) => const ManagePage(),
+        '/digitel': (context) => const UserMenuPage(), // 👈 ผูกคำว่า /digitel เข้ากับคลาสหน้าจอใหม่ของคุณ
+      },
+
       builder: (context, child) {
         return Scaffold(
           backgroundColor: Colors.grey[900], 
@@ -43,13 +53,12 @@ class WelcomeApp extends StatelessWidget {
   }
 }
 
-// แยกหน้าจอ Welcome ออกมาเพื่อให้โค้ดดูเป็นระเบียบ
+// โครงสร้างคลาส WelcomeScreen ด้านล่างนี้เหมือนเดิมทุกอย่าง...
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // 💡 ครอบ Scaffold ทั้งหมดด้วย GestureDetector เพื่อตรวจจับการแตะทั่วทั้งหน้าจอ
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -71,34 +80,15 @@ class WelcomeScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Spacer(flex: 2), 
-              
-              Image.asset(
-                'assets/images/MMK_logofull.png', 
-                width: 396, 
-              ),
-              
+              Image.asset('assets/images/MMK_logofull.png', width: 396),
               const Spacer(flex: 1),
-              
               const SizedBox(height: 10),
-              
-              Container(
-                width: 280, 
-                height: 2,  
-                color: Colors.white,
-              ),
-              
+              Container(width: 280, height: 2, color: Colors.white),
               const SizedBox(height: 15), 
-              
               const Text(
                 'MENAM MECHANIKA © 2026',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.5, 
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 0.5),
               ),
-              
               const Spacer(flex: 4), 
             ],
           ),

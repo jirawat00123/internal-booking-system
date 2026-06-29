@@ -2,7 +2,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb; // 💡 นำเข้าเพื่อเช็กระบบ Web จำลองอัจฉริยะ ป้องกันหน้าจอสีแดง
 import 'package:flutter/material.dart';
 import 'Admin_addroom.dart';
-import 'Admin_editroom.dart'; // เชื่อมไปหาหน้าแก้ไขห้องประชุมของคุณ
+import 'Admin_editroom.dart'; 
+import 'room_model.dart'; // เปลี่ยน path ให้ถูกต้องตามโครงสร้างโฟลเดอร์ของคุณ// เชื่อมไปหาหน้าแก้ไขห้องประชุมของคุณ
+
+
 
 // 💡 1. คลาสเก็บข้อมูลห้องประชุม
 class MeetingRoom {
@@ -27,16 +30,6 @@ class MeetingRoom {
 List<MeetingRoom> globalMeetingRooms = [
   MeetingRoom(id: 'A', floor: '1', side: 'A', capacity: 12, status: 'ว่างพร้อมใช้งาน'),
 ];
-
-void main() {
-  runApp(
-    const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: MobileFrameContainer(),
-    ),
-  );
-}
-
 class MobileFrameContainer extends StatelessWidget {
   const MobileFrameContainer({super.key});
 

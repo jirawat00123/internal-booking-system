@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'Digital.dart'; 
+import 'Manage.dart'; 
+import 'Admin_pin.dart'; 
 
 class LoginSelectionPage extends StatelessWidget {
   const LoginSelectionPage({super.key});
@@ -85,7 +86,7 @@ class LoginSelectionPage extends StatelessWidget {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => const UserMenuPage(), 
+                                        builder: (context) => const ManagePage(), 
                                       ),
                                     );
                                   },
@@ -105,7 +106,12 @@ class LoginSelectionPage extends StatelessWidget {
                                   title: 'ผู้ดูแลระบบ',
                                   subtitle: 'สิทธิ์การเข้าถึงระบบแบบเต็มรูปแบบ',
                                   onTap: () {
-                                    // TODO: หน้าแอดมิน
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const Admin_pinPage(), 
+                                      ),
+                                    );
                                   },
                                 ),
                               ],

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'digitel.dart'; // 👈 เพิ่มการ Import หน้า RoomListScreen เข้ามา
 
 class ManagePage extends StatefulWidget {
   const ManagePage({super.key});
@@ -8,32 +11,77 @@ class ManagePage extends StatefulWidget {
 }
 
 class _ManagePageState extends State<ManagePage> {
-  // ตัวแปรเก็บค่าที่เลือกจาก Dropdown
-  String? _selectedPosition;
-  String? _selectedName;
+  // ✅ เปลี่ยนมาเก็บข้อมูล แผนก และ พนักงาน เป็นข้อความ String ป้องกัน Dropdown ค้าง
+  String? _selectedDepartmentText;
+  String? _selectedEmployeeText;
 
-  // รายการข้อมูลจำลอง
-  final List<String> _positions = [
-    'Information Technology',
-    'Human Resources',
-    'Accounting',
-    'Engineering',
-  ];
+  Map<String, dynamic>? _selectedDepartmentObj;
+  Map<String, dynamic>? _selectedEmployeeObj;
 
-  final List<String> _names = [
-    'นายธีรวัฒน์ พรหมสิงห์',
-    'นายสมชาย ใจดี',
-    'นางสาวสมศรี มีสุข',
-  ];
+  // ตัวแปรเก็บข้อมูลลิสต์จาก API
+  List<dynamic> _departments = [];
+  List<dynamic> _names = [];
+  bool _isLoadingDepartments = true;
+  bool _isLoadingEmployees = false;
 
-  // 1. ฟังก์ชันโชว์กล่องแจ้งเตือน "ข้อมูลไม่ครบถ้วน" (สีแดง)
+  final String baseUrl = 'http://localhost:3000/api';
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchDepartments();
+  }
+
+  // 🔄 เปลี่ยนเป็นฟังก์ชันดึงข้อมูลแผนกทั้งหมด
+  Future<void> _fetchDepartments() async {
+    try {
+      final response = await http.get(Uri.parse('$baseUrl/departments'));
+      if (response.statusCode == 200) {
+        setState(() {
+          _departments = json.decode(response.body);
+          _isLoadingDepartments = false;
+        });
+      }
+    } catch (e) {
+      setState(() => _isLoadingDepartments = false);
+      print('Error fetching departments: $e');
+    }
+  }
+
+  // 🔄 ฟังก์ชันดึงข้อมูลพนักงานตามแผนก
+  Future<void> _fetchEmployees(String departmentId) async {
+    setState(() {
+      _isLoadingEmployees = true;
+      _names = [];
+      _selectedEmployeeText = null;
+      _selectedEmployeeObj = null;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/employees?departmentId=$departmentId'),
+      );
+      if (response.statusCode == 200) {
+        setState(() {
+          _names = json.decode(response.body);
+          _isLoadingEmployees = false;
+        });
+      }
+    } catch (e) {
+      setState(() => _isLoadingEmployees = false);
+      print('Error fetching employees: $e');
+    }
+  }
+
   void _showErrorDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           child: Container(
             padding: const EdgeInsets.all(24),
             width: 320,
@@ -43,18 +91,34 @@ class _ManagePageState extends State<ManagePage> {
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                  child: const Icon(Icons.priority_high, color: Colors.white, size: 40),
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.priority_high,
+                    color: Colors.white,
+                    size: 40,
+                  ),
                 ),
                 const SizedBox(height: 20),
                 const Text(
                   'ข้อมูลไม่ครบถ้วน',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF003E77), fontFamily: 'Kanit'),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF003E77),
+                    fontFamily: 'Kanit',
+                  ),
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'กรุณาเลือกตำแหน่งและชื่อ-สกุลก่อนดำเนินการต่อ',
-                  style: TextStyle(fontSize: 13, color: Color(0xFF00529B), fontFamily: 'Kanit'),
+                  'กรุณาเลือกแผนกและชื่อ-สกุลก่อนดำเนินการต่อ',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF00529B),
+                    fontFamily: 'Kanit',
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 28),
@@ -66,12 +130,20 @@ class _ManagePageState extends State<ManagePage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0096C7),
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
-                    child: const Text('ตกลง', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+                    child: const Text(
+                      'ตกลง',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
               ],
             ),
           ),
@@ -80,9 +152,6 @@ class _ManagePageState extends State<ManagePage> {
     );
   }
 
-  // ==========================================================
-  // 💡 2. ส่วนที่เพิ่มเข้ามาใหม่: ฟังก์ชันโชว์กล่อง "ยืนยันการดำเนินการ" (ตามรูปภาพล่าสุด)
-  // ==========================================================
   void _showConfirmDialog() {
     showDialog(
       context: context,
@@ -90,7 +159,7 @@ class _ManagePageState extends State<ManagePage> {
       builder: (BuildContext context) {
         return Dialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24), // ขอบมนโค้งลึกตามสไตล์ตระกูลสิทธิ์การเข้าถึง
+            borderRadius: BorderRadius.circular(24),
           ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -98,7 +167,6 @@ class _ManagePageState extends State<ManagePage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // ไอคอนผู้ใช้งานวงกลมสีฟ้าอ่อนด้านบนป๊อปอัป
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: const BoxDecoration(
@@ -112,8 +180,6 @@ class _ManagePageState extends State<ManagePage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                
-                // หัวข้อ ยืนยันการดำเนินการ
                 const Text(
                   'ยืนยันการดำเนินการ',
                   style: TextStyle(
@@ -123,18 +189,8 @@ class _ManagePageState extends State<ManagePage> {
                     fontFamily: 'Kanit',
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'กรุณาตรวจสอบข้อมูลก่อนดำเนินการต่อ',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[500],
-                    fontFamily: 'Kanit',
-                  ),
-                ),
                 const SizedBox(height: 20),
-
-                // ตารางแสดงผลสรุปข้อมูลที่ผู้ใช้เลือกจริง (สไตล์การ์ดขอบมนสีฟ้าโปร่งแสง)
+                // 🔍 ให้หาบล็อก Container ดีไซน์ตารางสีขาวใน _showConfirmDialog แล้วแก้เป็นแบบนี้ครับ:
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -145,19 +201,45 @@ class _ManagePageState extends State<ManagePage> {
                   ),
                   child: Column(
                     children: [
-                      // แถวแสดง "ตำแหน่ง"
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment
+                            .start, // 👈 เพิ่มชิ้นนี้เพื่อให้จุดกลมอยู่กึ่งกลางบรรทัดแรกกรณีตัวหนังสือขึ้นบรรทัดใหม่
                         children: [
-                          const Icon(Icons.circle, size: 6, color: Color(0xFF00529B)),
+                          const Padding(
+                            padding: EdgeInsets.only(
+                              top: 6.0,
+                            ), // ดันจุดกลมลงมาเล็กน้อยให้บาลานซ์
+                            child: Icon(
+                              Icons.circle,
+                              size: 6,
+                              color: Color(0xFF00529B),
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           const Text(
-                            'ตำแหน่ง',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF003E77), fontFamily: 'Kanit'),
+                            'แผนก',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF003E77),
+                              fontFamily: 'Kanit',
+                            ),
                           ),
-                          const Spacer(),
-                          Text(
-                            _selectedPosition ?? '',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF007AD6), fontFamily: 'Kanit'),
+                          const SizedBox(
+                            width: 16,
+                          ), // เปลี่ยนจาก Spacer() มาใช้ระยะห่างตายตัว
+                          // ✅ 1. ใช้ Expanded ครอบ Text ของแผนก เพื่อจำกัดวงให้ขยายไม่เกินขอบขวา และขึ้นบรรทัดใหม่เอง
+                          Expanded(
+                            child: Text(
+                              _selectedDepartmentText ?? '',
+                              textAlign: TextAlign.end, // สั่งชิดขวาเหมือนเดิม
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF007AD6),
+                                fontFamily: 'Kanit',
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -165,19 +247,43 @@ class _ManagePageState extends State<ManagePage> {
                         padding: EdgeInsets.symmetric(vertical: 10.0),
                         child: Divider(height: 1, color: Color(0xFFE2EFF2)),
                       ),
-                      // แถวแสดง "ชื่อ-สกุล"
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment
+                            .start, // 👈 เพิ่มชิ้นนี้เพื่อให้จุดกลมอยู่กึ่งกลางบรรทัดแรก
                         children: [
-                          const Icon(Icons.circle, size: 6, color: Color(0xFF00529B)),
+                          const Padding(
+                            padding: EdgeInsets.only(top: 6.0),
+                            child: Icon(
+                              Icons.circle,
+                              size: 6,
+                              color: Color(0xFF00529B),
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           const Text(
                             'ชื่อ-สกุล',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF003E77), fontFamily: 'Kanit'),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF003E77),
+                              fontFamily: 'Kanit',
+                            ),
                           ),
-                          const Spacer(),
-                          Text(
-                            _selectedName ?? '',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF007AD6), fontFamily: 'Kanit'),
+                          const SizedBox(
+                            width: 16,
+                          ), // เปลี่ยนจาก Spacer() มาใช้ระยะห่างตายตัว
+                          // ✅ 2. ใช้ Expanded ครอบ Text ของชื่อพนักงาน
+                          Expanded(
+                            child: Text(
+                              _selectedEmployeeText ?? '',
+                              textAlign: TextAlign.end, // สั่งชิดขวาเหมือนเดิม
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF007AD6),
+                                fontFamily: 'Kanit',
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -185,47 +291,65 @@ class _ManagePageState extends State<ManagePage> {
                   ),
                 ),
                 const SizedBox(height: 28),
-
-                // กลุ่มปุ่มกดยืนยัน และ ปุ่มยกเลิก
                 Column(
                   children: [
-                    // ปุ่ม "ยืนยัน" สีฟ้า
                     SizedBox(
-                      width: double.infinity,
-                      height: 46,
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context); // ปิด Popup ยืนยัน
-                          // TODO: นำข้อมูลไปบันทึก หรือส่งผลสลับหน้าต่อได้ตรงนี้เลยครับ
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0096C7),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          elevation: 2,
-                        ),
-                        child: const Text('ยืนยัน', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
-                      ),
-                    ),
+  width: double.infinity,
+  height: 46,
+  child: // 🔍 ไปที่ปุ่มยืนยันในฟังก์ชัน _showConfirmDialog ของหน้า ManagePage.dart
+// 🔍 มองหา ElevatedButton ปุ่ม 'ยืนยัน' (ประมาณบรรทัดที่ 111-120 ในรูปของคุณ)
+ElevatedButton(
+  onPressed: () {
+    // 1. ปิด Dialog โพสต์อัปตัวนี้ก่อนเพื่อไม่ให้ค้างหน้าจอ
+    Navigator.pop(context);
+
+    // 2. ✅ แก้ไขตรงนี้: เปลี่ยนเส้นทางจาก '/room_list' เป็น '/digitel' 
+    // และส่งข้อมูล Object พนักงานที่เลือกพ่วงไปด้วย
+    Navigator.pushNamed(
+      context, 
+      '/digitel', 
+      arguments: _selectedEmployeeObj, 
+    );
+    
+    print("เปลี่ยนเส้นทางไปหน้าดิจิทัลสำเร็จ: $_selectedEmployeeText");
+  },
+  style: ElevatedButton.styleFrom(
+    backgroundColor: const Color(0xFF0096C7),
+    foregroundColor: Colors.white,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    elevation: 2,
+  ),
+  child: const Text('ยืนยัน', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+),
+),
                     const SizedBox(height: 12),
-                    
-                    // ปุ่ม "ยกเลิก" เส้นขอบใส
                     SizedBox(
                       width: double.infinity,
                       height: 46,
                       child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context), // สั่งปิดป๊อปอัปเพื่อกลับไปเลือกฟอร์มใหม่
+                        onPressed: () => Navigator.pop(context),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF0096C7), width: 1.2),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          side: const BorderSide(
+                            color: Color(0xFF0096C7),
+                            width: 1.2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
                           foregroundColor: const Color(0xFF0096C7),
                         ),
-                        child: const Text('ยกเลิก', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+                        child: const Text(
+                          'ยกเลิก',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Kanit',
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
               ],
             ),
           ),
@@ -239,147 +363,197 @@ class _ManagePageState extends State<ManagePage> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Background Image Layer
           Container(
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/images/bgmmk.png'), 
+                image: AssetImage('assets/images/bgmmk.png'),
                 fit: BoxFit.cover,
               ),
             ),
           ),
-
-          // 2. Main Content
           SafeArea(
             child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text(
-                      'จัดการผู้ใช้งาน',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Kanit'),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // --- การ์ดสีขาวตรงกลาง (White Form Card) ---
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(24.0),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 15,
-                            offset: const Offset(0, 5),
-                          ),
-                        ],
-                      ),
+              child: _isLoadingDepartments
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const SizedBox(height: 8),
-                          const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.people_alt_outlined, color: Color(0xFF00529B), size: 36),
-                              SizedBox(width: 10),
-                              Text(
-                                'ผู้ใช้งาน',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF00529B), fontFamily: 'Kanit'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 32),
-
-                          // 1. Dropdown ส่วน "ตำแหน่ง"
-                          _buildLabel('ตำแหน่ง'),
-                          _buildDropdownField(
-                            hint: 'เลือกตำแหน่ง',
-                            value: _selectedPosition,
-                            items: _positions,
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedPosition = value;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 24),
-
-                          // 2. Dropdown ส่วน "ชื่อ-สกุล"
-                          _buildLabel('ชื่อ-สกุล'),
-                          _buildDropdownField(
-                            hint: 'เลือกรายชื่อ',
-                            value: _selectedName,
-                            items: _names,
-                            onChanged: (value) {
-                              setState(() {
-                                _selectedName = value;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 40),
-
-                          // ปุ่ม "ดำเนินการต่อ" พร้อมระบบเปลี่ยนเงื่อนไขตรวจเช็กข้อมูล
-                          SizedBox(
-                            width: 240, 
-                            height: 48,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                if (_selectedPosition == null || _selectedName == null) {
-                                  _showErrorDialog(); // ถ้าข้อมูลไม่ครบ ขึ้นป๊อปอัปแจ้งเตือนสีแดง
-                                } else {
-                                  _showConfirmDialog(); // 💡 ถ้าข้อมูลเลือกครบถ้วนแล้ว โชว์กล่องยืนยันสีกรม-ฟ้าทันที!
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0096C7), 
-                                foregroundColor: Colors.white,
-                                elevation: 3,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              child: const Text('ดำเนินการต่อ', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+                          const Text(
+                            'จัดการผู้ใช้งาน',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              fontFamily: 'Kanit',
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 24),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(24.0),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.15),
+                                  blurRadius: 15,
+                                  offset: const Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(height: 8),
+                                const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.people_alt_outlined,
+                                      color: Color(0xFF00529B),
+                                      size: 36,
+                                    ),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      'ผู้ใช้งาน',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF00529B),
+                                        fontFamily: 'Kanit',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 32),
+
+                                // ✅ เปลี่ยนจาก ตำแหน่ง เป็น "แผนก"
+                                _buildLabel('แผนก'),
+                                _buildDropdownField(
+                                  hint: 'เลือกแผนก',
+                                  selectedValue: _selectedDepartmentText,
+                                  items: _departments,
+                                  labelKey: 'departmentName',
+                                  onChanged: (String? newValue) {
+                                    if (newValue != null) {
+                                      final matchedObj = _departments
+                                          .firstWhere(
+                                            (item) =>
+                                                item['departmentName']
+                                                    .toString() ==
+                                                newValue,
+                                          );
+                                      setState(() {
+                                        _selectedDepartmentText = newValue;
+                                        _selectedDepartmentObj = matchedObj;
+                                        _selectedEmployeeText = null;
+                                        _selectedEmployeeObj = null;
+                                        _names = [];
+                                      });
+                                      _fetchEmployees(
+                                        matchedObj['id'].toString(),
+                                      );
+                                    }
+                                  },
+                                ),
+                                const SizedBox(height: 24),
+
+                                _buildLabel('ชื่อ-สกุล'),
+                                _isLoadingEmployees
+                                    ? const Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          vertical: 14.0,
+                                        ),
+                                        child: LinearProgressIndicator(
+                                          color: Color(0xFF00529B),
+                                        ),
+                                      )
+                                    : _buildDropdownField(
+                                        hint: _selectedDepartmentText == null
+                                            ? 'เลือกรายชื่อ'
+                                            : 'เลือกชื่อ-สกุล',
+                                        selectedValue: _selectedEmployeeText,
+                                        items: _names,
+                                        labelKey: 'fullName',
+                                        onChanged: (String? newValue) {
+                                          if (newValue != null) {
+                                            final matchedObj = _names
+                                                .firstWhere(
+                                                  (item) =>
+                                                      item['fullName']
+                                                          .toString() ==
+                                                      newValue,
+                                                );
+                                            setState(() {
+                                              _selectedEmployeeText = newValue;
+                                              _selectedEmployeeObj = matchedObj;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                const SizedBox(height: 40),
+                                SizedBox(
+                                  width: 240,
+                                  height: 48,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      if (_selectedDepartmentText == null ||
+                                          _selectedEmployeeText == null) {
+                                        _showErrorDialog();
+                                      } else {
+                                        _showConfirmDialog();
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF0096C7),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'ดำเนินการต่อ',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Kanit',
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 40),
+                          Text(
+                            'MENAM MECHANIKA © 2026',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.white.withOpacity(0.7),
+                              fontWeight: FontWeight.w500,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
                         ],
                       ),
                     ),
-
-                    const SizedBox(height: 40),
-
-                    // --- ส่วนล่างสุด: เส้นใต้ และ ฟุตเตอร์ (Footer) ---
-                    Container(
-                      height: 0.5,
-                      width: double.infinity,
-                      color: Colors.white.withOpacity(0.4),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'MENAM MECHANIKA © 2026',
-                      style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.w500, letterSpacing: 0.8, fontFamily: 'Kanit'),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                ),
-              ),
             ),
           ),
-
-          // 3. Layer ปุ่มย้อนกลับ
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8.0, top: 8.0),
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 24), 
-                  onPressed: () => Navigator.pop(context),
+          Positioned(
+            top: 12,
+            left: 12,
+            child: SafeArea(
+              child: IconButton(
+                icon: const Icon(
+                  Icons.arrow_back_ios_new,
+                  color: Colors.white,
+                  size: 24,
                 ),
+                onPressed: () => Navigator.pop(context),
               ),
             ),
           ),
@@ -395,7 +569,12 @@ class _ManagePageState extends State<ManagePage> {
         padding: const EdgeInsets.only(bottom: 8.0),
         child: Text(
           text,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF003E77), fontFamily: 'Kanit'),
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF003E77),
+            fontFamily: 'Kanit',
+          ),
         ),
       ),
     );
@@ -403,30 +582,59 @@ class _ManagePageState extends State<ManagePage> {
 
   Widget _buildDropdownField({
     required String hint,
-    required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
+    required String? selectedValue,
+    required List<dynamic> items,
+    required String labelKey,
+    required ValueChanged<String?>
+    onChanged, // ✅ 1. เพิ่มตัวแปรเพื่อรับค่าฟังก์ชันจากภายนอกเข้ามา
   }) {
+    final List<String> dropdownStrings = items
+        .map((item) => item[labelKey].toString())
+        .toList();
+    final bool hasValidValue = dropdownStrings.contains(selectedValue);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF00529B).withOpacity(0.6), width: 1.2),
+        border: Border.all(
+          color: const Color(0xFF00529B).withOpacity(0.6),
+          width: 1.2,
+        ),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: value,
-          hint: Text(hint, style: TextStyle(color: Colors.grey[500], fontSize: 14, fontFamily: 'Kanit')),
+          value: hasValidValue ? selectedValue : null,
+          hint: Text(
+            hint,
+            style: TextStyle(
+              color: Colors.grey[500],
+              fontSize: 14,
+              fontFamily: 'Kanit',
+            ),
+          ),
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF00529B), size: 24), 
-          items: items.map((String item) {
+          icon: const Icon(
+            Icons.keyboard_arrow_down,
+            color: Color(0xFF00529B),
+            size: 24,
+          ),
+          items: dropdownStrings.map((String textVal) {
             return DropdownMenuItem<String>(
-              value: item,
-              child: Text(item, style: const TextStyle(color: Colors.black87, fontSize: 14, fontFamily: 'Kanit')),
+              value: textVal,
+              child: Text(
+                textVal,
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                  fontFamily: 'Kanit',
+                ),
+              ),
             );
           }).toList(),
-          onChanged: onChanged,
+          onChanged:
+              onChanged, // ✅ 2. นำค่าพารามิเตอร์ส่งกลับไปให้ DropdownButton จริงใช้งาน
         ),
       ),
     );
