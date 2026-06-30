@@ -7,6 +7,8 @@ const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/bookings');
 const resourceRoutes = require('./routes/resources');
 const roomRoutes = require('./routes/roomRouter');
+const employeeRoutes = require('./routes/employees');
+const vehicleRoutes = require('./routes/vehicles');
 
 // 📖 นำเข้า Swagger
 const swaggerUi = require('swagger-ui-express');
@@ -227,6 +229,8 @@ app.use('/api', authRoutes);
 app.use('/api/bookings', bookingRoutes);  
 app.use('/api/resources', resourceRoutes); 
 app.use('/api/rooms', roomRoutes);
+app.use('/api', employeeRoutes); // นำมาใช้งานกับ /api
+app.use('/api/vehicles', vehicleRoutes);
 
 // 🚨 Middleware ดักจับ Route ที่ไม่มีในระบบ (404 Not Found)
 app.use((req, res, next) => {

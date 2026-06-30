@@ -1,33 +1,47 @@
 const jwt = require('jsonwebtoken');
+require('dotenv').config(); // ดึงค่าจากไฟล์ .env
 
-// 🔑 ตัวแปรเก็บ Secret Key (ใช้ Environment Variable เป็นหลักเพื่อความปลอดภัย)
-const JWT_SECRET = process.env.JWT_SECRET || "SuperSecretKey2026_ForCorporateApp!!";
+// 1. ตั้งค่า Secret Key (ใช้ร่วมกันทั้งระบบ)
+const JWT_SECRET = process.env.JWT_SECRET || 'your_default_secret_key';
 
-// 🛡️ Middleware ตรวจสอบ Token
+// 2. Middleware ตรวจสอบ Token (รองรับทั้งชื่อเก่าและชื่อใหม่)
 const authenticateToken = (req, res, next) => {
-  // 1. ดึง Token จาก Header (รูปแบบ: Bearer <token>)
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
 
-  // 2. ถ้าไม่มี Token แนบมา ให้ปฏิเสธการเข้าถึง
-  if (!token) {
-    return res.status(401).json({ error: "ไม่อนุญาตให้เข้าถึง: กรุณาแนบ Token" });
-  }
-
-  // 3. ตรวจสอบความถูกต้องและวันหมดอายุของ Token
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ error: "Token ไม่ถูกต้องหรือหมดอายุ" });
+    if (!token) {
+        return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบก่อนใช้งาน (No Token)' });
     }
-    
-    // 4. แกะข้อมูลผู้ใช้ (decoded) แปะไว้ใน req เพื่อให้ Route อื่นๆ นำไปใช้ต่อได้
-    req.user = decoded; 
-    next();
-  });
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        req.user = decoded; // เก็บข้อมูล user ลงใน req
+        next();
+    } catch (error) {
+        return res.status(403).json({ success: false, message: 'Token ไม่ถูกต้องหรือหมดอายุ' });
+    }
 };
 
-// ส่งออก Module ไปให้ไฟล์อื่นใช้งาน
+// นามแฝง เพื่อให้ vehicles.js เรียกใช้ verifyToken ได้
+const verifyToken = authenticateToken; 
+
+// 3. 🚨 Middleware ตรวจสอบ Role (ตัวที่ Error ฟ้องหาไม่เจอ คือตัวนี้ครับ!)
+const requireRole = (allowedRoles) => {
+    return (req, res, next) => {
+        if (!req.user || !allowedRoles.includes(req.user.role)) {
+            return res.status(403).json({ 
+                success: false, 
+                message: 'ไม่มีสิทธิ์เข้าถึง: เฉพาะผู้ดูแลระบบ (Admin) เท่านั้น' 
+            });
+        }
+        next(); // สิทธิ์ผ่าน ปล่อยไปทำหน้าต่อไป
+    };
+};
+
+// 4. Export ออกไปให้ครบทุกตัว!
 module.exports = { 
-  authenticateToken, 
-  JWT_SECRET 
+    JWT_SECRET,
+    authenticateToken, 
+    verifyToken, 
+    requireRole 
 };

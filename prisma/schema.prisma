@@ -155,14 +155,16 @@ model RoomBooking {
 
 // 9. ตารางรถยนต์ (Vehicles)
 model Vehicle {
-  id          Int              @id @default(autoincrement())
-  plateNumber String           @map("license_plate")
-  brand       String
-  model       String
-  status      VehicleStatus    @default(AVAILABLE)
-  uploadUrl   String?          @map("upload_url")
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  id          Int            @id @default(autoincrement())
+  plateNumber String         @unique @map("license_plate") // 🚨 เติม @unique ทะเบียนห้ามซ้ำ
+  brand       String         
+  model       String         
+  seats       Int            @default(4) // ✨ เพิ่ม: จำนวนที่นั่ง
+  status      VehicleStatus  @default(AVAILABLE)
+  uploadUrl   String?        @map("upload_url") // เก็บ Path รูปภาพ
+  isDeleted   Boolean        @default(false) @map("is_deleted") // ✨ เพิ่ม: สถานะ Soft Delete
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
   
   bookings    VehicleBooking[]
 
