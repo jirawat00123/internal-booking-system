@@ -8,6 +8,9 @@ const resourceRoutes = require('./routes/resources');
 const swaggerUi = require('swagger-ui-express');
 
 const app = express();
+app.get('/', (req, res) => {
+    res.send("SERVER OK");
+});
 app.use(cors());
 app.use(express.json());
 
@@ -84,7 +87,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "เกิดข้อผิดพลาดภายในระบบหลังบ้าน", developerMessage: err.message });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Clean Server is running on http://localhost:${PORT}`);
   console.log(`📖 เปิดดูคู่มือ API ได้ที่ http://localhost:${PORT}/api-docs`);

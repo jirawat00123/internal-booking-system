@@ -37,22 +37,3 @@ class MeetingRoom {
     );
   }
 }
-
-// 💡 2. ตัวแปรส่วนกลาง (Global Data Source) ที่แชร์ข้อมูลร่วมกันทั้งแอป
-// ทุกหน้าที่อ้างอิงรายชื่อนี้ จะเห็นข้อมูลชุดเดียวกันทั้งหมด
-List<MeetingRoom> globalMeetingRooms = [
-  MeetingRoom(
-    id: 'A', 
-    floor: '1', 
-    side: 'A', 
-    capacity: 12, 
-    status: 'ว่างพร้อมใช้งาน',
-  ),
-  MeetingRoom(
-    id: 'B', 
-    floor: '1', 
-    side: 'A', 
-    capacity: 12, 
-    status: 'กำลังใช้งาน',
-  ),
-];

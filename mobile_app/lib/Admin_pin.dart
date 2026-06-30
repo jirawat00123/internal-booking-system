@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
-import '../PinError.dart'; 
+import 'PinError.dart'; 
 import 'AdminGroupPage.dart'; 
 
 class Admin_pinPage extends StatefulWidget {
@@ -58,7 +58,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
     try {
       // 🚨 เปลี่ยนจาก localhost เป็น 10.0.2.2 สำหรับมือถือจำลอง (Android Emulator)
       // (ถ้าคุณปิ่นรันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
-      final url = Uri.parse('http://localhost:3000/api/login-pin'); 
+      final url = Uri.parse('http://localhost:3001/api/login-pin'); 
       
       print('📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...'); 
 

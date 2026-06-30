@@ -26,7 +26,7 @@ class MeetingRoom {
   });
 }
 
-// 💡 2. รายการข้อมูลส่วนกลาง (Static List)
+// 💡 2. รายการข้อมูลส่วนกลาง (Static List
 List<MeetingRoom> globalMeetingRooms = [
   MeetingRoom(id: 'A', floor: '1', side: 'A', capacity: 12, status: 'ว่างพร้อมใช้งาน'),
 ];
