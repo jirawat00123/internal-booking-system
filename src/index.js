@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const path = require('path');
 const cors = require('cors');
 
 // นำเข้า Routes ต่างๆ
@@ -15,18 +16,28 @@ const swaggerUi = require('swagger-ui-express');
 
 const app = express();
 
-// ตั้งค่า Middleware พื้นฐาน
+// ==========================================
+// 🛠️ ตั้งค่า Middleware พื้นฐาน
+// ==========================================
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 📑 ตั้งค่าหน้าปกคู่มือ API (อัปเดตระบบ Meeting Room Booking Module ครบถ้วน)
+// ==========================================
+// 📁 เปิดสิทธิ์การอ่านไฟล์ภาพ (Serve Static Files)
+// ==========================================
+// อนุญาตให้ Frontend ดึงรูปภาพจากโฟลเดอร์ uploads ผ่าน URL /uploads/...
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// ==========================================
+// 📑 ตั้งค่าหน้าปกคู่มือ API (Swagger)
+// ==========================================
 const swaggerDocument = {
   openapi: '3.0.0',
   info: { 
     title: '🏢 Internal Booking API', 
     version: '1.0.0', 
-    description: 'คู่มือสำหรับทีม Frontend (อัปเดตระบบ Meeting Room Booking Module ครบถ้วน - รองรับสิทธิ์ USER, ADMIN, GUARD)' 
+    description: 'คู่มือสำหรับทีม Frontend (อัปเดตระบบ Meeting Room & Vehicle Booking Module ครบถ้วน - รองรับสิทธิ์ USER, ADMIN, GUARD)' 
   },
   components: {
     securitySchemes: {
@@ -208,12 +219,134 @@ const swaggerDocument = {
     },
     '/api/resources/vehicles': {
       get: { summary: 'ดึงรายชื่อรถยนต์บริษัท', responses: { 200: { description: 'สำเร็จ' } } }
+    },
+    
+    // ==========================================
+    // 🚗 เส้นทางระบบจัดการรถยนต์ (Vehicles Module) - เพิ่มใหม่
+    // ==========================================
+    '/api/vehicles': {
+      get: {
+        summary: 'ดึงข้อมูลรถยนต์ทั้งหมด (Vehicle List)',
+        description: '🔒 ต้องใส่ Token - ดึงรายการรถยนต์ทั้งหมดที่ยังไม่ถูกลบ (isDeleted: false) เรียงจากใหม่ไปเก่า',
+        responses: {
+          200: { description: 'ดึงข้อมูลสำเร็จ คืนค่าอาร์เรย์รายการรถยนต์ทั้งหมด' },
+          500: { description: 'ระบบขัดข้องในการดึงข้อมูลรถ' }
+        }
+      },
+      post: {
+        summary: 'เพิ่มข้อมูลรถยนต์ใหม่ พร้อมอัปโหลดรูปภาพ (Create Vehicle)',
+        description: '🔒 ต้องใส่ Token (เฉพาะ ADMIN) - รองรับการอัปโหลดไฟล์รูปภาพ (.png, .jpg, .jpeg) จำกัดขนาดไม่เกิน 5MB โดยระบบจะตรวจสอบป้ายทะเบียนซ้ำอัตโนมัติ',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  plateNumber: { type: 'string', example: 'นข-9999', description: 'ป้ายทะเบียนรถยนต์ (ห้ามว่าง, ห้ามซ้ำ)' },
+                  brand: { type: 'string', example: 'Toyota', description: 'ยี่ห้อรถยนต์ (ห้ามว่าง)' },
+                  model: { type: 'string', example: 'Camry', description: 'รุ่นรถยนต์ (ห้ามว่าง)' },
+                  seats: { type: 'integer', example: 4, description: 'จำนวนที่นั่ง (ต้องมากกว่า 0, Default เป็น 4)' },
+                  status: { type: 'string', example: 'AVAILABLE', description: 'สถานะของรถ (AVAILABLE, MAINTENANCE, INACTIVE)' },
+                  image: { type: 'string', format: 'binary', description: 'ไฟล์รูปภาพรถยนต์ที่ต้องการอัปโหลด' }
+                },
+                required: ['plateNumber', 'brand', 'model']
+              }
+            }
+          }
+        },
+        responses: {
+          201: { description: 'เพิ่มรถยนต์สำเร็จเรียบร้อย' },
+          400: { description: 'ข้อมูลไม่ครบถ้วน / จำนวนที่นั่งไม่ถูกต้อง / ป้ายทะเบียนมีในระบบแล้ว' },
+          500: { description: 'ไม่สามารถเพิ่มข้อมูลรถได้ / ไฟล์ไม่ใช่รูปภาพ' }
+        }
+      }
+    },
+    '/api/vehicles/{id}': {
+      get: {
+        summary: 'ดึงข้อมูลรถยนต์ 1 คันตาม ID (Get Vehicle By ID)',
+        description: '🔒 ต้องใส่ Token - ดึงข้อมูลรถยนต์แบบระบุคัน หากรถถูก Soft Delete หรือไม่มี ID นั้นจะส่ง 404 กลับไป',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'ID ของรถยนต์ที่ต้องการดูข้อมูล',
+            schema: { type: 'integer', example: 1 }
+          }
+        ],
+        responses: {
+          200: { description: 'ดึงข้อมูลรถคันที่ระบุสำเร็จ' },
+          404: { description: 'ไม่พบข้อมูลรถยนต์ในระบบ' },
+          500: { description: 'ระบบขัดข้องในการดึงข้อมูลรถ' }
+        }
+      },
+      put: {
+        summary: 'แก้ไขข้อมูลรถยนต์ตาม ID (Update Vehicle)',
+        description: '🔒 ต้องใส่ Token (เฉพาะ ADMIN) - แก้ไขข้อมูลและสามารถอัปโหลดรูปภาพใหม่เพื่อแทนที่รูปเดิมได้ (ระบบจะลบรูปเก่าออกจาก Server อัตโนมัติ)',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'ID ของรถยนต์ที่ต้องการแก้ไข',
+            schema: { type: 'integer', example: 1 }
+          }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  plateNumber: { type: 'string', example: 'นข-9999', description: 'ป้ายทะเบียนรถยนต์ใหม่' },
+                  brand: { type: 'string', example: 'Toyota', description: 'ยี่ห้อรถยนต์' },
+                  model: { type: 'string', example: 'Alphard', description: 'รุ่นรถยนต์' },
+                  seats: { type: 'integer', example: 7, description: 'จำนวนที่นั่ง' },
+                  status: { type: 'string', example: 'AVAILABLE', description: 'สถานะของรถ' },
+                  image: { type: 'string', format: 'binary', description: 'ไฟล์รูปภาพใหม่หากต้องการเปลี่ยน' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          200: { description: 'แก้ไขข้อมูลรถสำเร็จ' },
+          400: { description: 'ป้ายทะเบียนใหม่ไปซ้ำกับคันอื่นในระบบ' },
+          404: { description: 'ไม่พบข้อมูลรถยนต์ที่ต้องการแก้ไข' },
+          500: { description: 'ไม่สามารถแก้ไขข้อมูลรถได้' }
+        }
+      },
+      delete: {
+        summary: 'ลบข้อมูลรถแบบ Soft Delete (Delete Vehicle)',
+        description: '🔒 ต้องใส่ Token (เฉพาะ ADMIN) - เปลี่ยนสถานะรถเป็น INACTIVE และเซ็ต `isDeleted: true` เพื่อเก็บประวัติการจองในอดีตไว้ **ระบบจะไม่อนุญาตให้ลบหากรถมีคิวจองที่รอใช้งานในอนาคต**',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            description: 'ID ของรถยนต์ที่ต้องการลบ',
+            schema: { type: 'integer', example: 1 }
+          }
+        ],
+        responses: {
+          200: { description: 'ลบข้อมูลรถออกจากระบบสำเร็จ (Soft Delete)' },
+          400: { description: 'ไม่สามารถลบรถได้ เนื่องจากมีคิวจองใช้งานในอนาคต' },
+          404: { description: 'ไม่พบข้อมูลรถ หรือรถถูกลบไปแล้ว' },
+          500: { description: 'ไม่สามารถลบข้อมูลรถได้' }
+        }
+      }
     }
   }
 };
 
 // 📖 เปิดหน้าคู่มือ API
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+// ==========================================
+// 🔌 เชื่อมต่อ Routes ต่างๆ
+// ==========================================
 
 // 🏠 หน้าแรกของ Server (Health Check)
 app.get('/', (req, res) => {
@@ -224,15 +357,18 @@ app.get('/', (req, res) => {
   });
 });
 
-// 🔌 เชื่อมต่อโมดูลเส้นทาง
 app.use('/api', authRoutes);              
 app.use('/api/bookings', bookingRoutes);  
 app.use('/api/resources', resourceRoutes); 
 app.use('/api/rooms', roomRoutes);
-app.use('/api', employeeRoutes); // นำมาใช้งานกับ /api
+app.use('/api', employeeRoutes); 
 app.use('/api/vehicles', vehicleRoutes);
 
-// 🚨 Middleware ดักจับ Route ที่ไม่มีในระบบ (404 Not Found)
+// ==========================================
+// 🚨 Error Handlers
+// ==========================================
+
+// Middleware ดักจับ Route ที่ไม่มีในระบบ (404 Not Found)
 app.use((req, res, next) => {
   res.status(404).json({
     error: 'Not Found',
@@ -249,7 +385,9 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ==========================================
 // 🚀 เริ่มต้นทำงาน Server
+// ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Clean Server is running on http://localhost:${PORT}`);
