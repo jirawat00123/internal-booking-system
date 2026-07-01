@@ -59,9 +59,12 @@ app.get('/api/employees', async (req, res) => {
     const whereCondition = {};
     
     if (departmentId && departmentId !== 'null' && departmentId !== 'undefined') {
-      whereCondition.position = {
-        departmentId: parseInt(departmentId.toString(), 10)
-      };
+      const parsedId = parseInt(departmentId.toString(), 10);
+      if (!isNaN(parsedId)) {
+        whereCondition.position = {
+          departmentId: parsedId
+        };
+      }
     }
 
     const employees = await prisma.employee.findMany({
@@ -102,7 +105,7 @@ async function seedDatabase() {
     await prisma.position.deleteMany().catch(() => {});
     await prisma.department.deleteMany().catch(() => {});
 
-    // 1. สร้างแผนก (Departments)
+    // 1. สร้างแผนก (Departments) ทั้ง 16 แผนก
     const deptNames = [
       'แผนกเชื่อมประกอบ', 'แผนกการผลิตและโรงงาน', 'แผนกความปลอดภัยและสภาพแวดล้อมฯ',
       'แผนกงานระบบไฟฟ้า', 'แผนกงานระบบซ่อมบำรุง', 'แผนกจัดซื้อ',
@@ -200,7 +203,7 @@ async function seedDatabase() {
 
       { code: 'MC-EN0286', name: 'นายวรวัฒน์ สุวรรณแก้ว (ชื่น)', posName: 'ผู้จัดการแผนกวิศวกรรมไฟฟ้า', role: 'USER' },
       { code: 'MC-EN0319', name: 'นายบุรินทร์ แจ่มดารา (โน๊ต)', posName: 'หัวหน้าทีมวิศวกรไฟฟ้า', role: 'USER' },
-      { code: 'MC-WK0325', name: 'นายวุฒมีชัย ตาลหอม (วุฒิ)', posName: 'วิศวกรไฟฟ้า', role: 'USER' }, // ✅ แก้เป็น วิศวกรไฟฟ้า
+      { code: 'MC-WK0325', name: 'นายวุฒมีชัย ตาลหอม (วุฒิ)', posName: 'วิศวกรไฟฟ้า', role: 'USER' },
       { code: 'MC-EN0466', name: 'นายวัฒนากร บุญตัน (เติ้ล)', posName: 'วิศวกรไฟฟ้า', role: 'USER' },
       { code: 'MC-EN0474', name: 'นายไวยวุฒิ ทวีโยค (โด้)', posName: 'วิศวกรไฟฟ้า', role: 'USER' },
       { code: 'MC-EN0538', name: 'นายธรรมรัตน์ รอดจากทุกข์ (บอย)', posName: 'วิศวกรไฟฟ้า', role: 'USER' },
@@ -216,7 +219,7 @@ async function seedDatabase() {
       { code: 'MC-SM0597', name: 'นายวีระชัย ถิ่นฐานทรัพย์ (จืด)', posName: 'Senior Sales and Marketing Manager', role: 'USER' },
 
       { code: 'MC-EN0320', name: 'นายวุฒิพงษ์ มาตตี (วุฒิ)', posName: 'หัวหน้าทีมวิศวกรรมติดตั้งเครื่องจักร', role: 'USER' },
-      { code: 'MC-EN0373', name: 'นายศับนท์สฤษฏิ์ พรหมฉิม (สกาย)', posName: 'วิศวกรติดตั้งเครื่องจักร', role: 'USER' }, // ✅ แก้เป็น วิศวกรติดตั้งเครื่องจักร
+      { code: 'MC-EN0373', name: 'นายศับนท์สฤษฏิ์ พรหมฉิม (สกาย)', posName: 'วิศวกรติดตั้งเครื่องจักร', role: 'USER' },
 
       { code: 'MC-PC0241', name: 'นายสุชาติ สมโพธิ์ (เอ็ดดี้)', posName: 'หัวหน้าแผนกวิศวกรรมซ่อมบำรุง', role: 'USER' },
       { code: 'MC-EN0448', name: 'นายชนสิษฎ์ มิ่งขวัญ (เปรม)', posName: 'วิศวกรซ่อมบำรุง', role: 'USER' },
@@ -229,10 +232,10 @@ async function seedDatabase() {
       { code: 'MC-EN0644', name: 'นายรณกฤต เหลืองอ่อน (ซัน)', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
       { code: 'MC-EN0646', name: 'นายนิติภูมิ กองฟู (ฮ้อ)', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
 
-      { code: 'MC-EN0386', name: 'นายวรยุทธ เนตรจ๋อย (เจเล่)', posName: 'วิศวกรการออกแบบ', role: 'USER' }, // ✅ แก้เป็น วิศวกรการออกแบบ
+      { code: 'MC-EN0386', name: 'นายวรยุทธ เนตรจ๋อย (เจเล่)', posName: 'วิศวกรการออกแบบ', role: 'USER' },
       { code: 'MC-EN0439', name: 'นายศิวดล นนทะภา (เบนซ์)', posName: 'ผู้ช่วยวิศวกรการออกแบบ', role: 'USER' },
-      { code: 'MC-EN0470', name: 'นายทรงศักดิ์ จันทร์คำลา (กี้)', posName: 'วิศวกรการออกแบบ', role: 'USER' }, // ✅ แก้เป็น วิศวกรการออกแบบ
-      { code: 'MC-EN0481', name: 'นายสมพล สุขบรรเทิง (ก้อง)', posName: 'วิศวกรการออกแบบ', role: 'USER' }, // ✅ แก้เป็น วิศวกรการออกแบบ
+      { code: 'MC-EN0470', name: 'นายทรงศักดิ์ จันทร์คำลา (กี้)', posName: 'วิศวกรการออกแบบ', role: 'USER' },
+      { code: 'MC-EN0481', name: 'นายสมพล สุขบรรเทิง (ก้อง)', posName: 'วิศวกรการออกแบบ', role: 'USER' },
 
       { code: 'MC-HR0558', name: 'นายอาคม ชวนละคร', posName: 'เจ้าหน้าที่งานขนส่ง', role: 'USER' },
       { code: 'MC-HR0557', name: 'นายทองเจือ คำกลาง', posName: 'เจ้าหน้าที่งานขนส่ง', role: 'USER' },
@@ -240,21 +243,24 @@ async function seedDatabase() {
       { code: 'MC-WK0631', name: 'นายนิพนธ์ โพธิ์สี', posName: 'เจ้าหน้าที่ขนส่ง', role: 'USER' }
     ];
 
+    // ⚡ Optimization: แปลงข้อมูลเป็น Map เพื่อดึงข้อมูลความเร็ว O(1) ประสิทธิภาพสูง
+    const positionMap = new Map(createdPositions.map(p => [p.positionName, p.id]));
+
     let successCount = 0;
     for (const emp of employeesData) {
-      const positionFound = createdPositions.find(p => p.positionName === emp.posName);
+      const positionId = positionMap.get(emp.posName);
 
-      if (positionFound) {
-        // สร้าง Employee
+      if (positionId) {
+        // สร้างข้อมูลพนักงาน (Employee)
         const newEmployee = await prisma.employee.create({
           data: {
             employeeCode: emp.code,
             fullName: emp.name,
-            positionId: positionFound.id
+            positionId: positionId
           }
         });
 
-        // สร้าง User ผูกกับ Employee และ Role
+        // สร้างสิทธิ์บัญชีผู้ใช้ (User) ผูกกับพนักงาน
         await prisma.user.create({
           data: {
             employee: { connect: { id: newEmployee.id } },

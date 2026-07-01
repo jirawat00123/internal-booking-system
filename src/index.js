@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const { PrismaClient } = require('@prisma/client'); // ✅ แก้บั๊ก: นำเข้า PrismaClient สำหรับจัดการห้องประชุม
 
 // นำเข้า Routes ต่างๆ
 const authRoutes = require('./routes/auth');
@@ -16,6 +17,7 @@ const vehicleBookingsRouter = require('./routes/vehicleBookings');
 const swaggerUi = require('swagger-ui-express');
 
 const app = express();
+const prisma = new PrismaClient(); // ✅ แก้บั๊ก: สร้าง Instance สำหรับเชื่อมต่อ PostgreSQL
 
 // ==========================================
 // 🛠️ ตั้งค่า Middleware พื้นฐาน
@@ -366,6 +368,52 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api', employeeRoutes); 
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/vehicle-bookings', vehicleBookingsRouter);
+
+// ==========================================
+// 🏢 Custom API ส่วนขยายจัดการห้องประชุม (Latest Update)
+// ==========================================
+
+/**
+ * 7. GET /api/rooms
+ * สำหรับให้หน้าบ้านดึงรายชื่อห้องประชุมทั้งหมดไปโชว์
+ */
+app.get('/api/rooms', async (req, res) => {
+  try {
+    const rooms = await prisma.room.findMany({
+      orderBy: { roomName: 'asc' },
+    });
+    return res.status(200).json(rooms);
+  } catch (error) {
+    console.error('Error fetching rooms:', error);
+    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลห้องประชุม' });
+  }
+});
+
+/**
+ * 8. POST /api/rooms
+ * สำหรับรับข้อมูลจากหน้าบ้าน มาบันทึกลงฐานข้อมูล PostgreSQL ของจริง
+ */
+app.post('/api/rooms', async (req, res) => {
+  const { roomName, capacity, location } = req.body;
+
+  if (!roomName) {
+    return res.status(400).json({ message: 'กรุณากรอกชื่อห้องประชุม' });
+  }
+
+  try {
+    const newRoom = await prisma.room.create({
+      data: {
+        roomName: roomName,
+        capacity: parseInt(capacity, 10) || 0,
+        location: location || '',
+      }
+    });
+    return res.status(201).json({ success: true, message: 'สร้างห้องประชุมสำเร็จ', room: newRoom });
+  } catch (error) {
+    console.error('Error creating room:', error);
+    return res.status(500).json({ message: 'ไม่สามารถบันทึกห้องประชุมลงฐานข้อมูลได้' });
+  }
+});
 
 // ==========================================
 // 🚨 Error Handlers
