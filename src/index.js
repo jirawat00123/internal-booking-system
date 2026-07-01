@@ -10,6 +10,7 @@ const resourceRoutes = require('./routes/resources');
 const roomRoutes = require('./routes/roomRouter');
 const employeeRoutes = require('./routes/employees');
 const vehicleRoutes = require('./routes/vehicles');
+const vehicleBookingsRouter = require('./routes/vehicleBookings');
 
 // 📖 นำเข้า Swagger
 const swaggerUi = require('swagger-ui-express');
@@ -27,7 +28,8 @@ app.use(express.urlencoded({ extended: true }));
 // 📁 เปิดสิทธิ์การอ่านไฟล์ภาพ (Serve Static Files)
 // ==========================================
 // อนุญาตให้ Frontend ดึงรูปภาพจากโฟลเดอร์ uploads ผ่าน URL /uploads/...
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// ใช้ process.cwd() เพื่อให้อ้างอิงไปยังโฟลเดอร์หลักของโปรเจกต์ได้อย่างปลอดภัยและเสถียรที่สุด
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // ==========================================
 // 📑 ตั้งค่าหน้าปกคู่มือ API (Swagger)
@@ -363,6 +365,7 @@ app.use('/api/resources', resourceRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api', employeeRoutes); 
 app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/vehicle-bookings', vehicleBookingsRouter);
 
 // ==========================================
 // 🚨 Error Handlers
