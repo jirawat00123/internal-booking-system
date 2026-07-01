@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'vehicle_page.dart';
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 
 class AdminGroupPage extends StatelessWidget {
@@ -114,6 +115,10 @@ class AdminGroupPage extends StatelessWidget {
                           icon: Icons.directions_car_filled_outlined,
                           title: 'ยานพาหนะ',
                           onTap: () {
+                          Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const VehiclePage()),
+                        );
                             
                           },
                         ),
