@@ -12,8 +12,8 @@ const prisma = new PrismaClient();
 // 🏢 API: ดึงรายชื่อห้องประชุมทั้งหมด
 router.get('/rooms', authenticateToken, async (req, res, next) => {
   try {
-    // 💡 แก้ไขบัก: ใช้ prisma.rooms ตามฝั่ง HEAD
-    const rooms = await prisma.rooms.findMany({
+    // 💡 แก้ไขบั๊ก: เปลี่ยนจาก prisma.rooms เป็น prisma.room ให้ตรงตามโมเดลจริงใน Schema
+    const rooms = await prisma.room.findMany({
       orderBy: { id: 'asc' }
     });
     res.json(rooms);
@@ -27,11 +27,14 @@ router.get('/rooms', authenticateToken, async (req, res, next) => {
 // 🚗 2. โซนจัดการข้อมูลรถยนต์บริษัท (Vehicles) - ล็อกสิทธิ์ ADMIN
 // =============================================================
 
-// 🚗 API: ดึงรายชื่อรถยนต์ทั้งหมด
+// 🚗 API: ดึงรายชื่อรถยนต์ทั้งหมด (ดึงเฉพาะคันที่ยังไม่ถูกลบ)
 router.get('/vehicles', authenticateToken, async (req, res, next) => {
   try {
-    // 💡 แก้ไขบัก: ใช้ prisma.vehicles
-    const vehicles = await prisma.vehicles.findMany({
+    // 💡 แก้ไขบั๊ก: เปลี่ยนเป็น prisma.vehicle และ Optimize ให้กรองตัวที่ลบออกไปแล้ว
+    const vehicles = await prisma.vehicle.findMany({
+      where: {
+        isDeleted: false
+      },
       orderBy: { id: 'asc' }
     });
     res.json(vehicles);
@@ -47,26 +50,25 @@ router.post('/vehicles', authenticateToken, async (req, res, next) => {
       return res.status(403).json({ error: "ไม่มีสิทธิ์เข้าถึง: ฟังก์ชันนี้สำหรับผู้ดูแลระบบ (ADMIN) เท่านั้น" });
     }
 
-    // 💡 ผสานฟิลด์ข้อมูล: นำฟิลด์จากฝั่ง dev (type, province, color) มารวมกับฝั่ง HEAD
-    const { brand, model, type, licensePlate, plateNumber, province, color, uploadUrl } = req.body;
+    // 💡 ลบฟิลด์ที่ไม่มีใน Schema ออก (type, province, color) และดึงฟิลด์ที่มีจริงมาใช้งาน (seats)
+    const { brand, model, licensePlate, plateNumber, seats, uploadUrl } = req.body;
 
-    // รองรับทั้งชื่อตัวแปรจากฝั่ง HEAD (licensePlate) และฝั่ง dev (plateNumber) จาก Frontend
-    const finalPlate = licensePlate || plateNumber;
+    // รองรับการส่งชื่อฟิลด์ทะเบียนรถจากทั้ง frontend สองฝั่งมารวมกันที่ฟิลด์จริง
+    const finalPlate = plateNumber || licensePlate;
 
-    if (!brand || !model || !finalPlate || !type || !province || !color) {
-      return res.status(400).json({ error: "กรุณากรอกข้อมูลรถให้ครบถ้วน (brand, model, type, ทะเบียนรถ, province, color)" });
+    if (!brand || !model || !finalPlate) {
+      return res.status(400).json({ error: "กรุณากรอกข้อมูลรถให้ครบถ้วน (brand, model, ทะเบียนรถ [plateNumber])" });
     }
 
-    const newVehicle = await prisma.vehicles.create({
+    // 💡 แก้ไขบั๊ก: บันทึกข้อมูลเข้า prisma.vehicle โดยใช้ฟิลด์ที่แมปตรงกับฐานข้อมูลจริง
+    const newVehicle = await prisma.vehicle.create({
       data: {
         brand,
         model,
-        type,                  // เพิ่มมาจากฝั่ง dev
-        licensePlate: finalPlate, // อิงตามชื่อฟิลด์แผนผัง DB จริงจากฝั่ง HEAD
-        province,              // เพิ่มมาจากฝั่ง dev
-        color,                 // เพิ่มมาจากฝั่ง dev
+        plateNumber: finalPlate,
+        seats: seats ? parseInt(seats) : 4, // ถ้าไม่ได้ส่งมาให้เป็นค่าเริ่มต้น 4 ที่นั่งตาม Schema
         uploadUrl: uploadUrl || null,
-        status: "available"    // ค่าเริ่มต้นจากฝั่ง HEAD
+        status: "AVAILABLE" // ใช้ ENUM ตัวพิมพ์ใหญ่ให้ตรงตามระบบ Database
       }
     });
 
@@ -84,20 +86,19 @@ router.put('/vehicles/:id', authenticateToken, async (req, res, next) => {
     }
 
     const vehicleId = parseInt(req.params.id); 
-    const { brand, model, type, licensePlate, plateNumber, province, color, status, uploadUrl } = req.body;
+    const { brand, model, licensePlate, plateNumber, seats, status, uploadUrl } = req.body;
     
-    const finalPlate = licensePlate || plateNumber;
+    const finalPlate = plateNumber || licensePlate;
 
-    const updatedVehicle = await prisma.vehicles.update({
+    // 💡 แก้ไขบั๊กและ Optimize: อัปเดตผ่าน prisma.vehicle ด้วยฟิลด์ข้อมูลที่ถูกต้องและปลอดภัย
+    const updatedVehicle = await prisma.vehicle.update({
       where: { id: vehicleId },
       data: { 
         brand, 
         model, 
-        type, 
-        licensePlate: finalPlate, 
-        province, 
-        color, 
-        status, 
+        plateNumber: finalPlate, 
+        seats: seats ? parseInt(seats) : undefined,
+        status: status ? status.toUpperCase() : undefined, // แปลงเป็นตัวพิมพ์ใหญ่ให้ตรงตาม ENUM
         uploadUrl 
       }
     });
@@ -117,8 +118,11 @@ router.delete('/vehicles/:id', authenticateToken, async (req, res, next) => {
 
     const vehicleId = parseInt(req.params.id);
 
-    await prisma.vehicles.delete({
-      where: { id: vehicleId }
+    // 💡 Optimize: เปลี่ยนจากการลบแบบถาวร (Hard Delete) เป็นการทำ Soft Delete 
+    // โดยเปลี่ยนสถานะ flag isDeleted เป็น true เพื่อไม่ให้ประวัติการจองรถในตารางอื่นพัง
+    await prisma.vehicle.update({
+      where: { id: vehicleId },
+      data: { isDeleted: true }
     });
 
     res.json({ success: true, message: "ลบรถออกจากระบบสำเร็จเรียบร้อยแล้ว!" });

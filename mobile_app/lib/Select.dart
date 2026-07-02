@@ -1,8 +1,6 @@
-import 'package:MyApp/Admin/Admin_pin.dart';
 import 'package:flutter/material.dart';
-import 'Digital.dart'; 
-import 'Security/SecurityPin.dart';
-
+import 'Manage.dart'; 
+import 'Admin_pin.dart'; 
 
 class LoginSelectionPage extends StatelessWidget {
   const LoginSelectionPage({super.key});
@@ -17,12 +15,13 @@ class LoginSelectionPage extends StatelessWidget {
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/bg.png'), 
+                image: AssetImage('assets/images/bgmmk.png'), 
                 fit: BoxFit.cover,
               ),
             ),
           ),
- 
+
+          // Layer 2: Main Content
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -32,7 +31,7 @@ class LoginSelectionPage extends StatelessWidget {
                       minHeight: constraints.maxHeight,
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40.0),
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -41,7 +40,7 @@ class LoginSelectionPage extends StatelessWidget {
                             children: [
                               const SizedBox(height: 70), // เว้นที่ว่างหลบปุ่ม Back ด้านบน
                               Image.asset(
-                                'assets/MMK_logo.png',
+                                'assets/images/MMK_logo.png',
                                 height: 100,
                                 fit: BoxFit.contain,
                               ),
@@ -49,10 +48,10 @@ class LoginSelectionPage extends StatelessWidget {
                               Container(
                                 width: 300, // ความยาวของเส้นใต้โลโก้ ปรับเพิ่ม-ลดได้ตามต้องการ
                                 height: 2,   // ความหนาของเส้น
-                                color: Colors.white.withOpacity(0.6), // สีขาวแบบโปร่งแสงเล็กน้อยให้ดูเนียนตา
+                                color: Colors.white.withValues(alpha: 0.6), // สีขาวแบบโปร่งแสงเล็กน้อยให้ดูเนียนตา
                               ),
                               
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 32),
 
                               const Text(
                                 'ยินดีต้อนรับเข้าสู่ระบบ',
@@ -63,54 +62,56 @@ class LoginSelectionPage extends StatelessWidget {
                                 ),
                                 textAlign: TextAlign.left,
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 8),
                               Text(
                                 'โปรดเลือกระดับสิทธิ์การเข้าถึงเพื่อดำเนินการต่อ',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Colors.white.withOpacity(0.8),
+                                  color: Colors.white.withValues(alpha: 0.8),
                                 ),
                                 textAlign: TextAlign.left,
                               ),
                             ],
                           ),
-                          
+
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 80.0),
+                            padding: const EdgeInsets.symmetric(vertical: 32.0),
                             child: Column(
                               children: [
-                                // --- ปุ่มที่ 1: ผู้ใช้งาน ---
                                 SelectionCard(
                                   icon: Icons.people_alt_outlined,
                                   title: 'ผู้ใช้งาน',
                                   subtitle: 'การจัดการผู้ใช้งาน',
                                   onTap: () {
-                                    // 🚀 เอาดีเลย์ออก กดปุ๊บเปลี่ยนหน้าทันทีแบบสมูทๆ
-                                    Navigator.push(context, MaterialPageRoute(builder: (context) => const UserMenuPage()));
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const ManagePage(), 
+                                      ),
+                                    );
                                   },
                                 ),
                                 const SizedBox(height: 16),
-                                
-                                // --- ปุ่มที่ 2: ความปลอดภัย (รปภ) ---
                                 SelectionCard(
                                   icon: Icons.shield_outlined,
                                   title: 'ความปลอดภัย (รปภ)',
                                   subtitle: 'ตรวจสอบและบันทึกรถเข้า-ออก',
                                   onTap: () {
-                                    // 🚀 เอาดีเลย์ออก
-                                    Navigator.push(context, MaterialPageRoute(builder: (context) => const Security_Pinpage()));
+                                    // TODO: หน้ารปภ.
                                   },
                                 ),
                                 const SizedBox(height: 16),
-                                
-                                // --- ปุ่มที่ 3: ผู้ดูแลระบบ ---
                                 SelectionCard(
                                   icon: Icons.person,
                                   title: 'ผู้ดูแลระบบ',
                                   subtitle: 'สิทธิ์การเข้าถึงระบบแบบเต็มรูปแบบ',
                                   onTap: () {
-                                    // 🚀 เอาดีเลย์ออก
-                                    Navigator.push(context, MaterialPageRoute(builder: (context) => const Admin_pinPage()));
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const Admin_pinPage(), 
+                                      ),
+                                    );
                                   },
                                 ),
                               ],
@@ -120,21 +121,21 @@ class LoginSelectionPage extends StatelessWidget {
                           Column(
                             children: [
                               Container(
-                                height: 1,
+                                height: 0.5,
                                 width: 300,
                                 color: Colors.white,
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 16),
                               Text(
                                 'MENAM MECHANIKA © 2026',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   color: Colors.white,
                                   fontWeight: FontWeight.w500,
                                   letterSpacing: 0.8,
                                 ),
                               ),
-                              const SizedBox(height: 30),
+                              const SizedBox(height: 24),
                             ],
                           ),
                         ],
@@ -167,7 +168,6 @@ class LoginSelectionPage extends StatelessWidget {
   }
 }
 
-
 class SelectionCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -190,7 +190,7 @@ class SelectionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -246,17 +246,12 @@ class SelectionCard extends StatelessWidget {
                     size: 18,
                     color: Color(0xFF00529B),
                   ),
-
-                  
                 ),
               ],
             ),
-            
           ),
         ),
-        
       ),
     );
   }
-  
 }

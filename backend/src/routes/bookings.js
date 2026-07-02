@@ -1,24 +1,20 @@
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
 const { authenticateToken } = require('../middlewares/auth');
+const bookingController = require('../controllers/bookingController');
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
-// 🚗 [GET] /api/bookings - ดึงรายการจองทั้งหมด (ผสานโครงสร้างพื้นฐานและระบบความปลอดภัย)
-router.get('/', authenticateToken, async (req, res) => {
-  try {
-    // โค้ดดึงข้อมูลการจองจากฐานข้อมูล (Prisma) จะเขียนตรงนี้ในอนาคต
-    res.json({
-      success: true,
-      message: "ดึงข้อมูลรายการจองสำเร็จ (Booking API is ready to use!)",
-      bookings: []
-    });
-  } catch (error) {
-    console.error('Get Bookings Error:', error);
-    res.status(500).json({ error: "ระบบดึงข้อมูลการจองขัดข้อง" });
-  }
-});
+// 🚗 [GET] /api/bookings - ดึงประวัติรายการจองทั้งหมดจาก Database (รองรับระบบ Booking History)
+router.get('/', authenticateToken, bookingController.getBookingHistory);
 
-// 🚨 สิ่งสำคัญที่สุด: ต้อง Export ตัว router นี้ออกไปให้ index.js เรียกใช้ได้
+// 🔍 [POST] /api/bookings/check-availability - เส้นทางสำหรับเช็คเวลาว่าง (ย้ายลอจิกไปรวมศูนย์ที่ Controller เพื่อความปลอดภัย)
+router.post('/check-availability', authenticateToken, bookingController.checkAvailability);
+
+// ➕ [POST] /api/bookings - เส้นทางสำหรับสร้างรายการจองใหม่ (ดักจับบั๊ก Foreign Key)
+router.post('/', authenticateToken, bookingController.createBooking);
+
+// ❌ [PATCH] /api/bookings/:id/cancel - เส้นทางสำหรับยกเลิกการจอง (Soft Delete)
+router.patch('/:id/cancel', authenticateToken, bookingController.cancelBooking);
+
+// 🚨 ส่งออก router นี้ออกไปให้ index.js เรียกใช้งาน
 module.exports = router;

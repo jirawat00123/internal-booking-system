@@ -19,7 +19,7 @@ enum RoomStatus {
 
 enum VehicleStatus {
   AVAILABLE
-  IN_USE        @map("IN USE")
+  IN_USE      @map("IN USE")
   MAINTENANCE
   INACTIVE
 }
@@ -32,6 +32,7 @@ enum VehicleStatus {
 model Department {
   id             Int        @id @default(autoincrement())
   departmentName String     @map("department_name")
+
   positions      Position[]
 
   @@map("departments")
@@ -42,29 +43,34 @@ model Position {
   id           Int        @id @default(autoincrement())
   positionName String     @map("position_name")
   departmentId Int        @map("department_id")
+
   department   Department @relation(fields: [departmentId], references: [id])
   employees    Employee[]
 
+  @@index([departmentId])
   @@map("positions")
 }
 
 // 3. ตารางข้อมูลพนักงาน (Employees)
 model Employee {
-  id               Int              @id @default(autoincrement())
-  employeeCode     String           @unique @map("employee_code")
-  fullName         String           @map("full_name")
-  positionId       Int              @map("position_id")
-  position         Position         @relation(fields: [positionId], references: [id])
-  users            User[]
-  driverBookings   VehicleBooking[] @relation("DriverEmployee")
+  id             Int              @id @default(autoincrement())
+  employeeCode   String           @unique @map("employee_code")
+  fullName       String           @map("full_name")
+  positionId     Int              @map("position_id")
 
+  position       Position         @relation(fields: [positionId], references: [id])
+  users          User[]
+  driverBookings VehicleBooking[] @relation("DriverEmployee")
+
+  @@index([positionId])
   @@map("employees")
 }
 
 // 4. ตารางสิทธิ์การใช้งาน (Roles)
 model Role {
-  id    Int    @id @default(autoincrement())
-  name  String 
+  id   Int    @id @default(autoincrement())
+  name String
+
   users User[]
 
   @@map("roles")
@@ -72,48 +78,54 @@ model Role {
 
 // 5. ตารางบัญชีผู้ใช้งานระบบ (Users)
 model User {
-  id         Int      @id @default(autoincrement())
-  employeeId Int      @map("employee_id")
-  employee   Employee @relation(fields: [employeeId], references: [id])
-  roleId     Int      @map("role_id")
-  role       Role     @relation(fields: [roleId], references: [id])
-  pin        String?  // โค้ดระบบ PIN ของท่าน PO (เก็บไว้)
-  active     Boolean  @default(true)
-  createdAt  DateTime @default(now()) @map("created_at")
+  id                  Int              @id @default(autoincrement())
+  employeeId          Int              @map("employee_id")
+  roleId              Int              @map("role_id")
+  pin                 String?          // โค้ดระบบ PIN 
+  active              Boolean          @default(true)
+  createdAt           DateTime         @default(now()) @map("created_at")
+
+  employee            Employee         @relation(fields: [employeeId], references: [id])
+  role                Role             @relation(fields: [roleId], references: [id])
 
   // ความสัมพันธ์ย้อนกลับ 
   roomBookings        RoomBooking[]
   vehicleBookings     VehicleBooking[]
   auditLogs           AuditLog[]
   attachments         Attachment[]
-  vehicleLogsCheckOut VehicleLog[] @relation("CheckoutByUser")
-  vehicleLogsReturn   VehicleLog[] @relation("ReturnByUser")
+  vehicleLogsCheckOut VehicleLog[]     @relation("CheckoutByUser")
+  vehicleLogsReturn   VehicleLog[]     @relation("ReturnByUser")
 
+  @@index([employeeId])
+  @@index([roleId])
   @@map("users")
 }
 
 // 6. ตารางบันทึกประวัติการใช้งานระบบ (Audit Logs)
 model AuditLog {
   id        Int      @id @default(autoincrement())
-  userId    Int?     @map("user_id") // โค้ดระบบ Log ของเพื่อน (เก็บไว้)
-  user      User?    @relation(fields: [userId], references: [id]) // ผูกความสัมพันธ์ให้ด้วย
+  userId    Int?     @map("user_id")
   action    String
   module    String
   createdAt DateTime @default(now()) @map("created_at")
 
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
   @@map("audit_logs")
 }
 
 // 7. ตารางห้องประชุม (Rooms)
 model Room {
-  id        Int           @id @default(autoincrement())
-  roomName  String        @map("room_name")
+  id        Int          @id @default(autoincrement())
+  roomName  String       @map("room_name")
   location  String
   capacity  Int
-  status    RoomStatus    @default(AVAILABLE)
-  uploadUrl String?       @map("upload_url")
-  createdAt DateTime      @default(now()) @map("created_at")
-  updatedAt DateTime      @updatedAt @map("updated_at")
+  status    RoomStatus   @default(AVAILABLE)
+  uploadUrl String?      @map("upload_url")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
   bookings  RoomBooking[]
 
   @@map("rooms")
@@ -121,32 +133,40 @@ model Room {
 
 // 8. ตารางการจองห้องประชุม (Room Bookings)
 model RoomBooking {
-  id          Int      @id @default(autoincrement())
-  userId      Int      @map("user_id")
-  user        User     @relation(fields: [userId], references: [id])
-  roomId      Int      @map("room_id")
-  room        Room     @relation(fields: [roomId], references: [id])
-  bookingDate DateTime @db.Date @map("booking_date")
-  startTime   DateTime @db.Time @map("start_time")
-  endTime     DateTime @db.Time @map("end_time")
-  purpose     String
-  status      String
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            Int          @id @default(autoincrement())
+  userId        Int          @map("user_id")
+  roomId        Int          @map("room_id")
 
+  startDatetime DateTime     @map("start_datetime")
+  endDatetime   DateTime     @map("end_datetime")
+
+  purpose       String
+  status        String       @default("Pending")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  user          User         @relation(fields: [userId], references: [id])
+  room          Room         @relation(fields: [roomId], references: [id])
+  attachments   Attachment[] 
+
+  @@index([userId])
+  @@index([roomId])
   @@map("room_bookings")
 }
 
 // 9. ตารางรถยนต์ (Vehicles)
 model Vehicle {
   id          Int              @id @default(autoincrement())
-  plateNumber String           @map("license_plate")
+  plateNumber String           @unique @map("license_plate")
   brand       String
   model       String
+  seats       Int              @default(4)
   status      VehicleStatus    @default(AVAILABLE)
   uploadUrl   String?          @map("upload_url")
+  isDeleted   Boolean          @default(false) @map("is_deleted")
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt @map("updated_at")
+
   bookings    VehicleBooking[]
 
   @@map("vehicles")
@@ -156,62 +176,76 @@ model Vehicle {
 model VehicleBooking {
   id               Int          @id @default(autoincrement())
   vehicleId        Int          @map("vehicle_id")
-  vehicle          Vehicle      @relation(fields: [vehicleId], references: [id])
   userId           Int          @map("user_id")
-  user             User         @relation(fields: [userId], references: [id])
   driverEmployeeId Int?         @map("driver_employee_id")
-  driver           Employee?    @relation("DriverEmployee", fields: [driverEmployeeId], references: [id])
   destination      String
+  passengers       Int          @default(1) @map("passengers") // ✨ เพิ่ม: จำนวนผู้โดยสาร
   startDatetime    DateTime     @map("start_datetime")
   endDatetime      DateTime     @map("end_datetime")
   purpose          String
-  status           String
+  status           String       @default("Pending")
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
-  vehicleLogs      VehicleLog[]
-  attachments      Attachment[]
 
+  vehicle          Vehicle      @relation(fields: [vehicleId], references: [id])
+  user             User         @relation(fields: [userId], references: [id])
+  driver           Employee?    @relation("DriverEmployee", fields: [driverEmployeeId], references: [id])
+
+  vehicleLogs      VehicleLog[]
+  attachments      Attachment[] 
+
+  @@index([vehicleId])
+  @@index([userId])
+  @@index([driverEmployeeId])
   @@map("vehicle_bookings")
 }
 
 // 11. ตารางบันทึกการ นำรถออก-คืนรถ (Vehicle Logs)
 model VehicleLog {
-  id               Int            @id @default(autoincrement())
-  vehicleBookingId Int            @map("vehicle_booking_id")
-  booking          VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
-  checkoutById     Int            @map("checkout_by")
-  checkoutBy       User           @relation("CheckoutByUser", fields: [checkoutById], references: [id])
-  checkoutTime     DateTime       @map("checkout_time")
-  checkoutMileage  Int            @map("checkout_mileage")
-  checkoutFuelLevel Int           @map("checkout_fuel_level")
-  returnById       Int?           @map("return_by")
-  returnBy         User?          @relation("ReturnByUser", fields: [returnById], references: [id])
-  returnTime       DateTime?      @map("return_time")
-  returnMileage    Int?           @map("return_mileage")
-  returnFuelLevel  Int?           @map("return_fuel_level")
-  remark           String?
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
+  id                Int            @id @default(autoincrement())
+  vehicleBookingId  Int            @map("vehicle_booking_id")
+  checkoutById      Int            @map("checkout_by")
+  checkoutTime      DateTime       @map("checkout_time")
+  checkoutMileage   Int            @map("checkout_mileage")
+  checkoutFuelLevel Int            @map("checkout_fuel_level")
+  returnById        Int            @map("return_by")
+  returnTime        DateTime?      @map("return_time")
+  returnMileage     Int?           @map("return_mileage")
+  returnFuelLevel   Int?           @map("return_fuel_level")
+  remark            String?
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
 
+  booking           VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
+  checkoutBy        User           @relation("CheckoutByUser", fields: [checkoutById], references: [id])
+  returnBy          User?          @relation("ReturnByUser", fields: [returnById], references: [id])
+
+  @@index([vehicleBookingId])
+  @@index([checkoutById])
+  @@index([returnById])
   @@map("vehicle_logs")
 }
 
 // 12. ตารางไฟล์แนบ (Attachments)
 model Attachment {
-  id           Int            @id @default(autoincrement())
-  entityType   String         @map("entity_type")
-  entityId     Int            @map("entity_id")
-  
-  // เสริมความสมบูรณ์ให้สามารถเชื่อมโยงกับการจองรถได้โดยตรง
-  vehicleBookingId Int?         @map("vehicle_booking_id")
-  booking          VehicleBooking? @relation(fields: [vehicleBookingId], references: [id])
-  
-  fileName     String         @map("file_name")
-  filePath     String         @map("file_path")
-  fileType     String         @map("file_type")
-  uploadedById Int            @map("uploaded_by")
-  uploadedBy   User           @relation(fields: [uploadedById], references: [id])
-  createdAt    DateTime       @default(now()) @map("created_at")
+  id               Int             @id @default(autoincrement())
+  entityType       String          @map("entity_type")
+  entityId         Int             @map("entity_id")
+  fileName         String          @map("file_name")
+  filePath         String          @map("file_path")
+  fileType         String          @map("file_type")
+  uploadedById     Int             @map("uploaded_by")
+  createdAt        DateTime        @default(now()) @map("created_at")
 
+  vehicleBookingId Int?            @map("vehicle_booking_id")
+  roomBookingId    Int?            @map("room_booking_id")
+
+  bookingVehicle   VehicleBooking? @relation(fields: [vehicleBookingId], references: [id])
+  bookingRoom      RoomBooking?    @relation(fields: [roomBookingId], references: [id])
+  uploadedBy       User            @relation(fields: [uploadedById], references: [id])
+
+  @@index([vehicleBookingId])
+  @@index([roomBookingId])
+  @@index([uploadedById])
   @@map("attachments")
 }
