@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'Select.dart'; // เชื่อมไปหาหน้า LoginSelectionPage
 import 'Manage.dart'; 
-import 'Digitel.dart'; // 👈 เพิ่มชิ้นนี้ (ปรับชื่อไฟล์ .dart ให้ตรงกับชื่อไฟล์จริงของคุณนะครับ เช่น digitel.dart)
+import 'Digitel.dart'; 
+import 'Room_Completed.dart'; 
+// 👈 เพิ่มชิ้นนี้ (ปรับชื่อไฟล์ .dart ให้ตรงกับชื่อไฟล์จริงของคุณนะครับ เช่น digitel.dart)
 
 void main() {
   runApp(const WelcomeApp());

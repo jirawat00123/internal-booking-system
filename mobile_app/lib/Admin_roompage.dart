@@ -1,35 +1,15 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb; // 💡 นำเข้าเพื่อเช็กระบบ Web จำลองอัจฉริยะ ป้องกันหน้าจอสีแดง
+import 'package:flutter/foundation.dart' show kIsWeb; 
 import 'package:flutter/material.dart';
 import 'Admin_addroom.dart';
 import 'Admin_editroom.dart'; 
-import 'room_model.dart'; // เปลี่ยน path ให้ถูกต้องตามโครงสร้างโฟลเดอร์ของคุณ// เชื่อมไปหาหน้าแก้ไขห้องประชุมของคุณ
+import 'Room_model.dart'; 
 
-
-
-// 💡 1. คลาสเก็บข้อมูลห้องประชุม
-class MeetingRoom {
-  final String id;
-  final String floor;
-  final String side;
-  final int capacity;
-  final String? imagePath;
-  final String status;
-
-  MeetingRoom({
-    required this.id,
-    required this.floor,
-    required this.side,
-    required this.capacity,
-    this.imagePath,
-    this.status = 'ว่างพร้อมใช้งาน',
-  });
-}
-
-// 💡 2. รายการข้อมูลส่วนกลาง (Static List
-List<MeetingRoom> globalMeetingRooms = [
+// 💡 2. ปรับปรุงรายการข้อมูลส่วนกลางให้เป็น ValueNotifier เพื่อแจ้งเตือนหน้าอื่นแบบเรียลไทม์
+final ValueNotifier<List<MeetingRoom>> globalMeetingRooms = ValueNotifier<List<MeetingRoom>>([
   MeetingRoom(id: 'A', floor: '1', side: 'A', capacity: 12, status: 'ว่างพร้อมใช้งาน'),
-];
+]);
+
 class MobileFrameContainer extends StatelessWidget {
   const MobileFrameContainer({super.key});
 
@@ -49,7 +29,13 @@ class MobileFrameContainer extends StatelessWidget {
               BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5),
             ],
           ),
-          child: const MeetingRoomListScreen(),
+          // 💡 เรียกใช้งาน ValueListenableBuilder เพื่อครอบหน้าแอดมินด้วยเช่นกัน
+          child: ValueListenableBuilder<List<MeetingRoom>>(
+            valueListenable: globalMeetingRooms,
+            builder: (context, rooms, child) {
+              return const MeetingRoomListScreen();
+            },
+          ),
         ),
       ),
     );
@@ -64,11 +50,11 @@ class MeetingRoomListScreen extends StatefulWidget {
 }
 
 class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
-  // ฟังก์ชันสำหรับเปิด Popup ยืนยันการลบ
+  
   void _showDeleteConfirmDialog(int index) {
     showDialog(
       context: context,
-      barrierDismissible: false, // บังคับให้ต้องเลือกกดปุ่มใดปุ่มหนึ่งเท่านั้น
+      barrierDismissible: false, 
       builder: (BuildContext dialogContext) {
         return Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -96,7 +82,12 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         child: ElevatedButton(
                           onPressed: () {
                             Navigator.pop(dialogContext);
-                            setState(() { globalMeetingRooms.removeAt(index); });
+                            // 💡 วิธีลบข้อมูลของ ValueNotifier เพื่อให้สะท้อนผลเรียลไทม์
+                            final updatedList = List<MeetingRoom>.from(globalMeetingRooms.value);
+                            updatedList.removeAt(index);
+                            globalMeetingRooms.value = updatedList;
+                            
+                            setState(() {}); 
                           },
                           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB70000), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                           child: const Text('ลบห้อง', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
@@ -126,6 +117,9 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 💡 ดึงลิสต์ปัจจุบันออกมาใช้งานจาก .value
+    final rooms = globalMeetingRooms.value;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
@@ -164,13 +158,13 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
           ),
           const SizedBox(height: 20),
           Expanded(
-            child: globalMeetingRooms.isEmpty
+            child: rooms.isEmpty
                 ? const Center(child: Text('ยังไม่มีห้องประชุมในระบบ', style: TextStyle(fontFamily: 'Kanit', color: Colors.grey)))
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: globalMeetingRooms.length,
+                    itemCount: rooms.length,
                     itemBuilder: (context, index) {
-                      return _buildRoomCard(globalMeetingRooms[index], index);
+                      return _buildRoomCard(rooms[index], index);
                     },
                   ),
           ),
@@ -179,9 +173,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     );
   }
 
-  // 💡 ฟังก์ชันสร้าง Card ห้องประชุม
   Widget _buildRoomCard(MeetingRoom room, int index) {
-    // 💡 จุดปรับปรุง: ตรวจเช็กและเปลี่ยนสี Badge ตามสถานะแปรผันที่ดึงมาจากหน้า Edit จริงอัตโนมัติ
     bool isAvailable = room.status == 'ว่างพร้อมใช้งาน';
     Color statusColor = isAvailable ? const Color(0xFF2EC4B6) : const Color(0xFFE11D48);
 
@@ -196,7 +188,6 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
         children: [
           Stack(
             children: [
-              // 💡 จุดปรับปรุง: แก้ระบบดึงภาพแยกโหมด Web และ Mobile เพื่อแก้ไขปัญหารูปพังจอแดง
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
                 child: room.imagePath != null
@@ -205,8 +196,6 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         : Image.file(File(room.imagePath!), height: 180, width: double.infinity, fit: BoxFit.cover))
                     : Container(height: 180, color: Colors.grey[300], child: const Icon(Icons.image, size: 50)),
               ),
-              
-              // 💡 ป้ายสถานะห้องขึ้นมุมขวาบน (จะเปลี่ยนข้อความและสีตามโครงสร้างที่ส่งกลับมา)
               Positioned(
                 top: 12,
                 right: 12,
@@ -224,12 +213,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                       const SizedBox(width: 6),
                       Text(
                         room.status,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: statusColor,
-                          fontFamily: 'Kanit',
-                        ),
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor, fontFamily: 'Kanit'),
                       ),
                     ],
                   ),
@@ -272,7 +256,6 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         'แก้ไขห้อง',
                         const Color(0xFF4CB8C4),
                         () {
-                          // 💡 เชื่อมไปหน้าแก้ไขพร้อมส่งข้อมูลวัตถุห้องประชุมปัจจุบัน
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -281,7 +264,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                                 index: index,
                               ),
                             ),
-                          ).then((_) => setState(() {})); // รีเฟรชอัปเดตสถานะทันทีเมื่อกลับมาหน้าหลัก
+                          ).then((_) => setState(() {})); 
                         },
                       ),
                     ),

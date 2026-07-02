@@ -1,8 +1,9 @@
-import 'dart:io'; // นำเข้าเพื่อรองรับการใช้งานไฟล์รูปภาพ (File)
+import 'dart:io'; 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart'; // เรียกใช้งานแพ็กเกจเลือกรูปภาพ
-import 'Admin_addsuccess.dart'; // นำเข้าไฟล์หน้าความสำเร็จของคุณ
-import 'Admin_roompage.dart'; // 💡 นำเข้าเพื่อเรียกใช้งานตัวแปรกล่องเก็บข้อมูลกลาง globalMeetingRooms
+import 'package:image_picker/image_picker.dart'; 
+import 'Admin_addsuccess.dart'; 
+import 'Admin_roompage.dart'; 
+import 'Room_model.dart'; 
 
 class MobileFrameAddRoomContainer extends StatelessWidget {
   const MobileFrameAddRoomContainer({super.key});
@@ -10,20 +11,20 @@ class MobileFrameAddRoomContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.grey[900], // พื้นหลังสีมืดรอบ ๆ นอกกรอบมือถือ
+      color: Colors.grey[900], 
       child: Center(
         child: Container(
-          width: 400, // ล็อกความกว้างหน้าจอมือถือ
-          height: 800, // ล็อกความสูงหน้าจอมือถือ
+          width: 400, 
+          height: 800, 
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: Colors.black,
-            borderRadius: BorderRadius.circular(30), // ทำขอบมนตู้มือถือ
+            borderRadius: BorderRadius.circular(30), 
             boxShadow: const [
               BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5),
             ],
           ),
-          child: const AddMeetingRoomScreen(), // ดึงหน้าแอปหลักมาแสดงข้างในกรอบ
+          child: const AddMeetingRoomScreen(), 
         ),
       ),
     );
@@ -64,7 +65,6 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
     }
   }
 
-  // ฟังก์ชันสำหรับเปิด Popup ยืนยันการเพิ่มห้อง
   void _showAddRoomConfirmDialog() {
     showDialog(
       context: context,
@@ -113,24 +113,29 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                         height: 44,
                         child: ElevatedButton(
                           onPressed: () {
-                            // ==========================================
-                            // 💡 แก้ไขส่วนนี้: สั่งเพิ่มข้อมูลเข้าสู่หน้าหน้าห้องประชุมส่วนกลางก่อนสลับหน้า
-                            // ==========================================
-                            globalMeetingRooms.add(
+                            // 💡 แก้ไขจุดบันทึกข้อมูลเรียลไทม์: แปลงดึงข้อมูลอาเรย์ชุดเดิมออกมาและสร้างอันใหม่เพื่อยิงสัญญาณอัปเดตไปทุกหน้าจอค้าง
+                            final updatedList = List<MeetingRoom>.from(globalMeetingRooms.value);
+                            
+                            // จำลองสุ่มหรือใช้ ID อิงตามสัดส่วนความยาว
+                            String generatedId = '${floorNumber}0${updatedList.length + 1}';
+                            
+                            updatedList.add(
                               MeetingRoom(
-                                id: '${floorNumber}0${globalMeetingRooms.length + 1}', // จำลองชื่อรหัสห้องประชุม
+                                id: generatedId, 
                                 floor: floorNumber.toString(),
                                 side: selectedSide,
                                 capacity: capacity,
-                                imagePath: _imageFile?.path, // บันทึกตำแหน่งที่อยู่รูปภาพในเครื่อง
+                                imagePath: _imageFile?.path, 
+                                status: 'ว่างพร้อมใช้งาน',
                               ),
                             );
-
-                            Navigator.pop(dialogContext); // 1. เคลียร์ปิดตัว Popup นี้ออกก่อน
                             
-                            debugPrint('บันทึกข้อมูลเข้าสู่ globalMeetingRooms เรียบร้อยแล้ว');
+                            globalMeetingRooms.value = updatedList; // ข้อมูลเปลี่ยนเรียลไทม์ทันทีในพริบตา!
 
-                            // 2. สั่งเปลี่ยนหน้าส่งผู้ใช้ไปยังหน้าเพิ่มสำเร็จ
+                            Navigator.pop(dialogContext); 
+                            
+                            debugPrint('บันทึกข้อมูลเข้าสู่ globalMeetingRooms (ValueNotifier) เรียบร้อยแล้ว');
+
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -138,7 +143,6 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                               ),
                             );
                           },
-                          // ==========================================
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0096C7),
                             foregroundColor: Colors.white,

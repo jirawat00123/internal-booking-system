@@ -1,8 +1,9 @@
-import 'dart:io'; // นำเข้าเพื่อรองรับการใช้งานไฟล์รูปภาพ (File)
+import 'dart:io'; 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart'; // เรียกใช้งานแพ็กเกจเลือกรูปภาพ
-import 'Admin_roompage.dart'; // นำเข้าเพื่อเข้าถึงคลาส MeetingRoom และ Static List
-import 'Admin_editsuccess.dart'; // นำเข้าไฟล์หน้าความสำเร็จหลังแก้ไขของคุณ
+import 'package:image_picker/image_picker.dart'; 
+import 'Admin_roompage.dart'; 
+import 'Admin_editsuccess.dart'; 
+import 'Room_model.dart'; 
 
 class MobileFrameEditRoomContainer extends StatelessWidget {
   final MeetingRoom room;
@@ -45,18 +46,17 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
   late int floorNumber;
   late String selectedSide;
   late int capacity;
-  late String selectedStatus; // 💡 ส่วนที่เพิ่ม: ตัวแปรเก็บสถานะห้องประชุมที่เลือกแก้ไข
+  late String selectedStatus; 
   XFile? _imageFile;
   final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
-    // ดึงข้อมูลเดิมของห้องประชุมมาใส่ในตัวแปรเพื่อรอการแก้ไข
     floorNumber = int.parse(widget.room.floor);
     selectedSide = widget.room.side;
     capacity = widget.room.capacity;
-    selectedStatus = widget.room.status; // 💡 ดึงค่าสถานะเริ่มต้นจากข้อมูลห้องเดิม
+    selectedStatus = widget.room.status; 
   }
 
   Future<void> _pickImage() async {
@@ -68,7 +68,6 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
     }
   }
 
-  // ฟังก์ชันแสดง Popup ยืนยันการแก้ไข
   void _showEditConfirmDialog() {
     showDialog(
       context: context,
@@ -95,19 +94,20 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                         height: 44,
                         child: ElevatedButton(
                           onPressed: () {
-                            // 💡 บันทึกอัปเดตข้อมูลใหม่รวมถึงสถานะใหม่ทดแทนในอาร์เรย์รายการส่วนกลาง
-                            globalMeetingRooms[widget.index] = MeetingRoom(
+                            // 💡 แก้ไขจุดบันทึกข้อมูลเรียลไทม์: สร้าง List ก๊อปปี้ชุดใหม่แล้วกระจายสัญญาณไปหน้า User และหน้าหลักแอดมิน
+                            final updatedList = List<MeetingRoom>.from(globalMeetingRooms.value);
+                            updatedList[widget.index] = MeetingRoom(
                               id: widget.room.id,
                               floor: floorNumber.toString(),
                               side: selectedSide,
                               capacity: capacity,
                               imagePath: _imageFile?.path ?? widget.room.imagePath,
-                              status: selectedStatus, // บันทึกค่าสถานะที่เลือกใหม่
+                              status: selectedStatus, 
                             );
+                            globalMeetingRooms.value = updatedList; // กระจายสัญญาณความเปลี่ยนแปลงเรียลไทม์
                             
                             Navigator.pop(dialogContext);
                             
-                            // สั่งสลับเปลี่ยนหน้าจอส่งผู้ใช้ไปยังหน้าแก้ไขสำเร็จ
                             Navigator.push(
                               context,
                               MaterialPageRoute(
@@ -240,15 +240,9 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
             ],
           ),
           const SizedBox(height: 25),
-          
-          // ==========================================
-          // 💡 แก้ไขจุดนี้: เปลี่ยนโครงสร้างเป็นปุ่มสลับเลือกสถานะ "ว่าง" หรือ "ไม่ว่าง"
-          // ==========================================
           const Text('สถานะห้องประชุม', style: TextStyle(color: Color(0xFF9BB1BD), fontSize: 12, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
           const SizedBox(height: 10),
           _buildStatusToggle(),
-          // ==========================================
-          
           const Padding(padding: EdgeInsets.symmetric(vertical: 25), child: Divider(color: Color(0xFFE8EFF2))),
           const Text('รองรับได้ทั้งหมด (คน)', style: TextStyle(color: Color(0xFF9BB1BD), fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
           const SizedBox(height: 14),
@@ -273,18 +267,31 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
     );
   }
 
-  Widget _buildSideToggle() {
+Widget _buildSideToggle() {
     return Container(
       height: 38,
-      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300), 
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Row(
         children: ['A', 'B'].map((s) => Expanded(
           child: GestureDetector(
             onTap: () => setState(() => selectedSide = s),
             child: Container(
               alignment: Alignment.center,
-              decoration: BoxDecoration(color: selectedSide == s ? const Color(0xFFEBF3F9) : Colors.white, borderRadius: BorderRadius.circular(7)),
-              child: Text(s, style: TextStyle(color: selectedSide == s ? const Color(0xFF0D47A1) : Colors.black54, fontWeight: FontWeight.bold)),
+              decoration: BoxDecoration(
+                color: selectedSide == s ? const Color(0xFFEBF3F9) : Colors.white, 
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: Text(
+                s, 
+                style: TextStyle(
+                  color: selectedSide == s ? const Color(0xFF0D47A1) : Colors.black54, 
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Kanit', // 💡 เพิ่มเพื่อให้ Font กลมกลืนกับส่วนอื่น
+                ),
+              ),
             ),
           ),
         )).toList(),
@@ -292,9 +299,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
     );
   }
 
-  // 💡 ฟังก์ชันสร้างชุดปุ่มสลับเลือกสถานะห้องประชุม (สไตล์เดียวกับปุ่มเลือกฝั่งคู่ขนาน)
   Widget _buildStatusToggle() {
-    // กำหนดลิสต์ตัวเลือกสองสถานะ
     final statuses = ['ว่างพร้อมใช้งาน', 'ไม่ว่างพร้อมใช้งาน'];
     
     return Container(
@@ -306,7 +311,6 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
       child: Row(
         children: statuses.map((status) {
           bool isSelected = selectedStatus == status;
-          // แยกแสดงสีข้อความและการไฮไลต์ปุ่ม: ว่าง=สีเขียวมินต์, ไม่ว่าง=สีแดงส้ม
           Color activeColor = status == 'ว่างพร้อมใช้งาน' ? const Color(0xFF2EC4B6) : const Color(0xFFE11D48);
 
           return Expanded(
@@ -360,4 +364,4 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
       ),
     );
   }
-}
+} 
