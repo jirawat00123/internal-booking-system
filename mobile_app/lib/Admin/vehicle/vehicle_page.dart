@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'add_vehicle_page.dart';
+import 'edit_vehicle_page.dart';
+import 'deletevehicle_successpage.dart'; // 🟢 ดึงหน้าลบสำเร็จมาใช้
 
 // 💡 1. โครงสร้างเก็บข้อมูลรถ
 class Vehicle {
@@ -96,13 +98,19 @@ class _VehiclePageState extends State<VehiclePage> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () {
-                          // 🟢 1. ปิด Popup
+                          // 1. ปิด Popup ก่อน
                           Navigator.pop(dialogContext);  
                           
-                          // 🟢 2. สั่งลบข้อมูลออกจาก List แล้วรีเฟรชหน้าจอ
+                          // 2. สั่งลบข้อมูลออกจาก List
                           setState(() {
                             globalVehicles.removeAt(index);
                           });
+
+                          // 🟢 3. สั่งเด้งไปหน้าลบสำเร็จ
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const DeleteVehicleSuccessPage()),
+                          );
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFFB20000), // ปุ่มสีแดง
@@ -289,7 +297,20 @@ class _VehiclePageState extends State<VehiclePage> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     ElevatedButton(
-                      onPressed: () { /* TODO: ไปหน้าแก้ไข */ },
+                      onPressed: () { 
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => EditVehiclePage(
+                              vehicle: vehicle, 
+                              index: index,
+                            ),
+                          ),
+                        ).then((_) {
+                          // 🟢 แก้ไขตรงนี้: สั่งให้รีเฟรชหน้าจอเสมอเวลากลับมาจากหน้า Edit/Success
+                          setState(() {});
+                        });
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF009CB4),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -299,7 +320,7 @@ class _VehiclePageState extends State<VehiclePage> {
                     const SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: () {
-                        // 🟢 เปลี่ยนจากลบเลย เป็นเรียก Popup ยืนยันการลบแทน
+                        // 🟢 เรียก Popup ยืนยันการลบ
                         _showDeleteConfirmDialog(context, index);
                       },
                       style: ElevatedButton.styleFrom(

@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'addvehicle_successpage.dart'; 
 import 'vehicle_page.dart'; 
+
 
 class AddVehiclePage extends StatefulWidget {
   const AddVehiclePage({super.key});
@@ -16,19 +18,20 @@ class AddVehiclePage extends StatefulWidget {
 class _AddVehiclePageState extends State<AddVehiclePage> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController nameController = TextEditingController();
-  final TextEditingController statusController = TextEditingController();
   final TextEditingController plateController = TextEditingController();
 
+  final String currentStatus = 'ว่างพร้อมใช้งาน';
   int passengerCount = 4;
 
   XFile? _vehicleImage;
-  XFile? _documentImage; 
+  String? _docFilePath; // 🟢 เก็บพาธไฟล์เอกสาร
+  String? _docFileName; // 🟢 เก็บชื่อไฟล์เอกสารไว้โชว์
+
   final ImagePicker _picker = ImagePicker();
 
   @override
   void dispose() {
     nameController.dispose();
-    statusController.dispose();
     plateController.dispose();
     super.dispose();
   }
@@ -56,11 +59,17 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     }
   }
 
-  Future<void> _pickDocumentImage() async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
+  // 📄 ฟังก์ชันเลือกไฟล์เอกสาร (รองรับ PDF, DOC, รูปภาพ)
+  Future<void> _pickDocFile() async {
+    FilePickerResult? result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'png'],
+    );
+
+    if (result != null) {
       setState(() {
-        _documentImage = image;
+        _docFilePath = result.files.single.path;
+        _docFileName = result.files.single.name;
       });
     }
   }
@@ -103,7 +112,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                             id: DateTime.now().toString(),
                             name: nameController.text,
                             plate: plateController.text,
-                            status: statusController.text.isEmpty ? 'ว่างพร้อมใช้งาน' : statusController.text,
+                            status: currentStatus,
                             capacity: passengerCount,
                             type: 'รถยนต์', 
                             imagePath: _vehicleImage?.path, 
@@ -165,7 +174,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Form(
-            key: _formKey,
+            key: _formKey, 
             child: Column(
               children: [
                 // 📸 กล่อง 1: เลือกรถภาพรถยนต์
@@ -215,7 +224,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
 
                 // 📝 กล่อง 2: ฟอร์มกรอกข้อมูล
                 Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(30),
@@ -226,34 +235,22 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildTextField(label: 'ชื่อรถยนต์', controller: nameController, isRequired: true),
-                      const SizedBox(height: 16),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start, // ปรับให้อยู่ชิดบนเวลาขึ้น Error
-                        children: [
-                          Expanded(
-                            child: _buildTextField(
-                              label: 'สถานะรถยนต์',
-                              controller: statusController,
-                              hint: 'ว่างพร้อมใช้งาน',
-                              isRequired: true,
-                            ),
+                      const SizedBox(height: 24),
+                      Center(
+                        child: SizedBox(
+                          width: 200, 
+                          child: _buildTextField(
+                            label: 'ทะเบียนรถ',
+                            controller: plateController,
+                            hint: 'กข 1234',
+                            isRequired: true,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTextField(
-                              label: 'ทะเบียนรถ',
-                              controller: plateController,
-                              hint: 'กข 1234',
-                              isRequired: true,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
+                      const SizedBox(height: 24),
+                      Divider(color: Colors.indigo.shade50, thickness: 1.5),
                       const SizedBox(height: 20),
-                      Divider(color: Colors.grey.shade100, thickness: 1),
-                      const SizedBox(height: 16),
                       
-                      // จำนวนผู้โดยสาร
                       Center(
                         child: Column(
                           children: [
@@ -262,8 +259,9 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                               decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade200),
+                                border: Border.all(color: Colors.grey.shade300),
                                 borderRadius: BorderRadius.circular(12),
+                                color: Colors.grey.shade50,
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -286,52 +284,61 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                         ),
                       ),
                       
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 20),
+                      Divider(color: Colors.indigo.shade50, thickness: 1.5),
+                      const SizedBox(height: 20),
                       
-                      // 📄 เอกสารรถ (พรบ)
-                      const Text('เอกสารรถ (พรบ)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                      // 📄 เอกสารรถ (พรบ) - เปลี่ยนเป็นปุ่มเลือกไฟล์
+                      const Text('เอกสารรถ (พรบ)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Container(
-                            width: 80,
-                            height: 100,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                              color: Colors.grey.shade50,
-                            ),
-                            child: _documentImage != null
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: kIsWeb
-                                        ? Image.network(_documentImage!.path, fit: BoxFit.cover)
-                                        : Image.file(File(_documentImage!.path), fit: BoxFit.cover),
-                                  )
-                                : Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(Icons.receipt_long, color: Colors.grey.shade300, size: 40),
-                                      const SizedBox(height: 4),
-                                      Text('ภาพ พรบ', style: TextStyle(fontSize: 10, color: Colors.grey.shade400))
-                                    ],
-                                  ),
-                          ),
-                          const SizedBox(width: 16),
                           Expanded(
-                            child: GestureDetector(
-                              onTap: _pickDocumentImage,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                decoration: BoxDecoration(
-                                  border: Border.all(color: Colors.grey.shade300),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text('สั่งรูปภาพ', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 14)),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(10),
+                                color: Colors.grey.shade50,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _docFileName != null ? Icons.check_circle : Icons.upload_file,
+                                    color: _docFileName != null ? Colors.green : Colors.grey,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      _docFileName ?? 'ยังไม่ได้เลือกไฟล์',
+                                      style: TextStyle(
+                                        color: _docFileName != null ? Colors.black87 : Colors.grey.shade600,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          )
+                          ),
+                          const SizedBox(width: 12),
+                          InkWell(
+                            onTap: _pickDocFile, // 🟢 เรียกใช้ฟังก์ชันเลือกไฟล์
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: const Color(0xFF009CB4)),
+                                borderRadius: BorderRadius.circular(10),
+                                color: const Color(0xFFE5F5F7),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text('เลือกไฟล์', style: TextStyle(color: Color(0xFF009CB4), fontSize: 14, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
                         ],
                       ),
                     ],
@@ -348,26 +355,22 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () {
-                        // 1. เช็กว่ากรอกข้อมูลครบไหม (ถ้าไม่ครบมันจะขึ้นตัวแดงเตือนที่ช่อง)
                         if (_formKey.currentState!.validate()) {
-                          
-                          // 2. เช็กว่าอัปรูปรถหรือยัง
                           if (_vehicleImage == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('กรุณาเลือกรูปภาพรถยนต์', style: TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.red),
+                              const SnackBar(content: Text('กรุณาเลือกรูปภาพรถยนต์'), backgroundColor: Colors.redAccent),
                             );
-                            return; // หยุดการทำงาน ไม่ให้ไปต่อ
+                            return; 
                           }
-
-                          // 3. เช็กว่าอัปรูปเอกสารหรือยัง
-                          if (_documentImage == null) {
+                          
+                          // 🟢 ตรวจสอบไฟล์เอกสาร พรบ.
+                          if (_docFilePath == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('กรุณาอัปโหลดเอกสาร พรบ', style: TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.red),
+                              const SnackBar(content: Text('กรุณาเลือกไฟล์เอกสาร พรบ.'), backgroundColor: Colors.redAccent),
                             );
-                            return; // หยุดการทำงาน
+                            return; 
                           }
 
-                          // ถ้าผ่านครบหมดทุกด่าน ค่อยโชว์ Popup
                           _showConfirmationDialog(context);
                         }
                       },
@@ -393,43 +396,34 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     required String label,
     required TextEditingController controller,
     String? hint,
-    bool isRequired = false, // เพิ่มพารามิเตอร์นี้เพื่อเช็ก
+    bool isRequired = false, 
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         TextFormField(
           controller: controller,
           style: const TextStyle(color: Colors.black87, fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: Color(0xFFB0BAC7), fontSize: 14),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            hintStyle: const TextStyle(color: Color(0xFF9098A9), fontSize: 14),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             isDense: true,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFF003E75), width: 1.5),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade300)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade400)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF003E75), width: 1.5)),
+            errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Colors.redAccent, width: 1.5)),
             filled: true,
             fillColor: Colors.white,
           ),
-          // 🟢 เพิ่มระบบตรวจสอบความถูกต้องตรงนี้ (Validator)
           validator: (value) {
             if (isRequired && (value == null || value.trim().isEmpty)) {
-              return 'กรุณากรอกข้อมูล'; // ข้อความตัวแดงที่จะแจ้งเตือนใต้ช่อง
+              return 'กรุณากรอกข้อมูล'; 
             }
             return null;
           },

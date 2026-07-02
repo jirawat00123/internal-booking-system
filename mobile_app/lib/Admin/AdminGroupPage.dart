@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'vehicle_page.dart';
+import 'vehicle/vehicle_page.dart';
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 
 class AdminGroupPage extends StatelessWidget {
