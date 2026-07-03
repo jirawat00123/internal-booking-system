@@ -16,13 +16,15 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   final TextEditingController titleController = TextEditingController();
   bool showWarning = false;
 
-  DateTime selectedDate = DateTime(2026, 5, 27);
+  // 💡 [แก้ไข] เปลี่ยนจาก DateTime(2026, 5, 27) ตายตัว ให้เริ่มต้นเป็นวันที่ปัจจุบัน ณ ตอนที่เปิดจองแทน
+  DateTime selectedDate = DateTime.now();
   TimeOfDay startTime = const TimeOfDay(hour: 10, minute: 0);
   TimeOfDay endTime = const TimeOfDay(hour: 12, minute: 0);
   int participantCount = 4;
 
+  // 💡 [แก้ไข] ปรับเปลี่ยนฟอร์แมตโครงสร้างวันที่ให้เป็น วัน/เดือน/ปี (DD/MM/YYYY) ตามปกติ
   String _formatDate(DateTime date) {
-    return '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}/${date.year}';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
   String _formatTime(TimeOfDay time) {
@@ -35,6 +37,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
   // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อน
+  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อน (เวอร์ชันอัปเดตเพื่อคืนสิทธิ์เวลาที่เสร็จสิ้น/ยกเลิก)
   bool _isTimeSlotOverlapping() {
     final int newStart = _timeToMinutes(startTime);
     final int newEnd = _timeToMinutes(endTime);
@@ -42,18 +45,25 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
 
     // วนลูปเช็คประวัติการจองทั้งหมดในระบบ
     for (var booking in globalBookingHistory.value) {
+      
+      // 🔥 [เพิ่มเงื่อนไขใหม่] ถ้าการจองนั้นขึ้นสถานะ "เสร็จสิ้น" หรือ "ยกเลิกแล้ว" 
+      // ให้ข้ามไปเลย ไม่ต้องนำมาคิดว่าเป็นการจองที่ทับซ้อน เพื่อเปิดโอกาสให้จองช่วงเวลานั้นใหม่ได้
+      if (booking.currentStatus == 'เสร็จสิ้น' || booking.currentStatus == 'ยกเลิกแล้ว') {
+        continue; // ข้ามลูปนี้ไปเช็ครายการถัดไปทันที
+      }
+
       // เช็คเฉพาะที่เป็น "ห้องเดียวกัน" และ "วันเดียวกัน" เท่านั้น
       if (booking.roomId == widget.room.id && booking.date == targetDate) {
         final int existingStart = _timeToMinutes(booking.startTime);
         final int existingEnd = _timeToMinutes(booking.endTime);
 
-        // สูตรคำนวณหาจุดคาบเกี่ยวของเวลา ชนกันเมื่อ: (เวลาเริ่มใหม่ < เวลาสิ้นสุดเดิม) และ (เวลาสิ้นสุดใหม่ > เวลาเริ่มเดิม)
+        // สูตรคำนวณหาจุดคาบเกี่ยวของเวลา
         if (newStart < existingEnd && newEnd > existingStart) {
-          return true; // ❌ เวลาทับซ้อนกันแน่นอน
+          return true; // ❌ เวลาทับซ้อนกัน (เฉพาะกรณีที่สถานะเป็น "จองแล้ว" หรือ "กำลังใช้งาน")
         }
       }
     }
-    return false; //  เวลาว่างพร้อมจอง
+    return false; //  เวลาว่างพร้อมจองฉลุย
   }
 
   Future<void> _selectDate(BuildContext context) async {
@@ -75,6 +85,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: isStartTime ? startTime : endTime,
+      initialEntryMode: TimePickerEntryMode.input,
       builder: (BuildContext context, Widget? child) {
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
@@ -230,8 +241,8 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                                 formattedTime:
                                     '${_formatTime(startTime)} - ${_formatTime(endTime)}',
                                 participantCount: participantCount,
-                                startTime: startTime, // 💡 ส่งค่านี้พ่วงไปด้วย
-                                endTime: endTime, // 💡 ส่งค่านี้พ่วงไปด้วย
+                                startTime: startTime, 
+                                endTime: endTime, 
                               ),
                             ),
                           );
@@ -559,6 +570,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                         fontSize: 15,
                         fontWeight: FontWeight.w500,
                         color: Colors.black87,
+                        fontFamily: 'Kanit', // 💡 เพิ่มฟอนต์เพิ่มความสวยงาม
                       ),
                     ),
                     const Icon(

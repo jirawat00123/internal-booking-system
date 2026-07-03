@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'digitel.dart'; // 👈 เพิ่มการ Import หน้า RoomListScreen เข้ามา
+import 'digitel.dart';
+import 'Room_model.dart'; // 👈 เพิ่มการ Import หน้า RoomListScreen เข้ามา
 
 class ManagePage extends StatefulWidget {
   const ManagePage({super.key});
@@ -300,12 +301,10 @@ class _ManagePageState extends State<ManagePage> {
 // 🔍 มองหา ElevatedButton ปุ่ม 'ยืนยัน' (ประมาณบรรทัดที่ 111-120 ในรูปของคุณ)
 ElevatedButton(
   onPressed: () {
-    // 1. ปิด Dialog โพสต์อัปตัวนี้ก่อนเพื่อไม่ให้ค้างหน้าจอ
-    Navigator.pop(context);
-
-    // 2. ✅ แก้ไขตรงนี้: เปลี่ยนเส้นทางจาก '/room_list' เป็น '/digitel' 
-    // และส่งข้อมูล Object พนักงานที่เลือกพ่วงไปด้วย
-    Navigator.pushNamed(
+    if (_selectedEmployeeText != null && _selectedEmployeeText!.isNotEmpty) {
+    globalCurrentUserName = _selectedEmployeeText!; // บันทึกชื่อผู้ใช้งานปัจจุบันเข้าสู่ไฟล์กลาง
+  }
+    Navigator.pop(context);  Navigator.pushNamed(
       context, 
       '/digitel', 
       arguments: _selectedEmployeeObj, 

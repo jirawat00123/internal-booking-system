@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'Admin_roompage.dart';
-// ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
+import 'Select.dart';
+// ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ
 
 class AdminGroupPage extends StatelessWidget {
   const AdminGroupPage({super.key});
@@ -26,7 +27,7 @@ class AdminGroupPage extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40.0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, // จัดชิดซ้าย
+                crossAxisAlignment: CrossAxisAlignment.start, // จัดชิดซ้า
                 children: [
                   const SizedBox(height: 20),
                   
@@ -35,7 +36,10 @@ class AdminGroupPage extends StatelessWidget {
                     alignment: Alignment.topRight,
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        Navigator.pop(context);
+                        Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => const LoginSelectionPage()),
+  );
                       },
                       icon: const Icon(Icons.logout, color: Colors.white, size: 16),
                       label: const Text(

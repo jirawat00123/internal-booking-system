@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'Room_List.dart';
+import 'booking_history.dart';
+import 'Select.dart'; // นำเข้าหน้า BookingHistoryScreen
 
 class UserMenuPage extends StatelessWidget {
   const UserMenuPage({super.key});
@@ -99,13 +101,10 @@ class UserMenuPage extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            // ⚠️ หมายเหตุ: ให้คุณเปลี่ยนชื่อ "ManagePage()" ตรงนี้ 
-                            // ให้ตรงกับชื่อคลาส (class) หน้าหลักจริง ๆ ที่อยู่ภายในไฟล์ Manage.dart ของคุณ
                             builder: (context) => const RoomListScreen(), 
                           ),
                         );
                       },
-                      // ==========================================
                     ),
 
                     const SizedBox(height: 24),
@@ -114,7 +113,10 @@ class UserMenuPage extends StatelessWidget {
                     Center(
                       child: TextButton.icon(
                         onPressed: () {
-                          // TODO: ไปยังหน้าประวัติการจอง
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const BookingHistoryScreen()),
+                          );
                         },
                         icon: const Icon(Icons.history, color: Colors.white, size: 18),
                         label: const Text(
@@ -143,9 +145,9 @@ class UserMenuPage extends StatelessWidget {
                             color: Colors.white.withOpacity(0.3),
                           ),
                           const SizedBox(height: 16),
-                          Text(
+                          const Text(
                             'MENAM MECHANIKA © 2026',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -162,19 +164,28 @@ class UserMenuPage extends StatelessWidget {
             ),
           ),
 
-          // 3. Layer ปุ่มย้อนกลับ
+          // 💡 3. เปลี่ยนจากปุ่มย้อนกลับด้านซ้าย เป็นปุ่ม Logout ไว้มุมบนขวาแทนตามสั่งครับ
           SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8.0, top: 8.0),
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ),
+  child: Align(
+    alignment: Alignment.topRight,
+    child: Padding(
+      padding: const EdgeInsets.only(right: 12.0, top: 8.0),
+      child: IconButton(
+        icon: const Icon(Icons.logout, color: Colors.white, size: 26),
+        onPressed: () {
+          // 🔥 บังคับดีดกลับหน้าเลือกสิทธิ์พนักงาน (Selet.dart) พร้อมทำลายสแต็กหน้าจอนี้ทิ้งทันที
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const LoginSelectionPage(), // 💡 เปลี่ยนชื่อคลาสตรงนี้ให้ตรงกับชื่อในไฟล์ Selet.dart ของคุณจริง ๆ ครับ
             ),
-          ),
+            (route) => false, // ทำลายสิทธิ์การย้อนกลับหน้าเมนูนี้ทั้งหมดเพื่อความปลอดภัย
+          );
+        },
+      ),
+    ),
+  ),
+),
         ],
       ),
     );

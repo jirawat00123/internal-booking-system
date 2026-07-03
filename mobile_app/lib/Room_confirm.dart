@@ -78,32 +78,27 @@ class RoomConfirmScreen extends StatelessWidget {
                         shadowColor: Colors.black26,
                       ),
                       onPressed: () {
-                        // 💡 1. ดึงประวัติเก่ามา แล้วแอดข้อมูลการจองใหม่นี้เข้าไปเพื่อทำการล็อกเวลา
-                        final currentHistory = List<BookingHistory>.from(
-                          globalBookingHistory.value,
-                        );
-                        currentHistory.add(
-                          BookingHistory(
-                            roomId: room.id,
-                            date:
-                                formattedDate, // ฟอร์แมตวันที่ เช่น "05/27/2026"
-                            startTime: startTime, // อ็อบเจกต์เวลาเริ่มที่ส่งมา
-                            endTime: endTime, // อ็อบเจกต์เวลาสิ้นสุดที่ส่งมา
-                          ),
-                        );
+  final currentHistory = List<BookingHistory>.from(globalBookingHistory.value);
+  currentHistory.add(
+    BookingHistory(
+      roomId: room.id,
+      title: bookingTitle, // 💡 ส่งชื่อหัวข้อเข้าไปเก็บ
+      date: formattedDate,
+      startTime: startTime,
+      endTime: endTime,
+      participantCount: participantCount, // 💡 ส่งจำนวนคนเข้าไปเก็บ
+      type: 'ห้องประชุม', // 💡 ระบุประเภทเป็น 'ห้องประชุม'
+      bookedBy: globalCurrentUserName, // 💡 ส่งชื่อผู้จองเข้าไปเก็บ
+    ),
+  );
+  globalBookingHistory.value = currentHistory; // ยิงสัญญาณเรียลไทม์!
 
-                        // อัปเดตค่ากลับไปยังตัวแปรส่วนกลาง
-                        globalBookingHistory.value = currentHistory;
-
-                        // 🔗 2. สั่งย้ายหน้าไปที่หน้าสำเร็จและเคลียร์สแต็กหน้าจอตามเดิม
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const RoomCompletedScreen(),
-                          ),
-                          (route) => route.isFirst,
-                        );
-                      },
+  Navigator.pushAndRemoveUntil(
+    context,
+    MaterialPageRoute(builder: (context) => const RoomCompletedScreen()),
+    (route) => route.isFirst,
+  );
+},
                       child: const Text(
                         'ยืนยันการจองห้อง',
                         style: TextStyle(

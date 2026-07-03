@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'booking_history.dart';
 
 class RoomCompletedScreen extends StatelessWidget {
   const RoomCompletedScreen({Key? key}) : super(key: key);
@@ -61,13 +62,11 @@ class RoomCompletedScreen extends StatelessWidget {
                     elevation: 0,
                   ),
                   onPressed: () {
-                    // TODO: เชื่อมต่อไปยังหน้าประวัติการจองห้องประชุมของคุณ
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('กำลังเปิดหน้าประวัติการจอง...'),
-                      ),
-                    );
-                  },
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => const BookingHistoryScreen()),
+  );
+},
                   child: const Text(
                     'ไปที่ประวัติการจอง',
                     style: TextStyle(

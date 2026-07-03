@@ -146,22 +146,6 @@ class LoginSelectionPage extends StatelessWidget {
               },
             ),
           ),
-          
-          // Layer 3: ปุ่มย้อนกลับ (อยู่เลเยอร์บนสุดเสมอ)
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8.0, top: 8.0),
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );

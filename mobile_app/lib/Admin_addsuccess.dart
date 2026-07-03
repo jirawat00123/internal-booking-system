@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'Admin_roompage.dart'; 
-
+import 'AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 class MobileFrameSuccessContainer extends StatelessWidget {
   const MobileFrameSuccessContainer({super.key});
 
@@ -92,14 +92,10 @@ class AdminAddSuccessPage extends StatelessWidget {
                     child: ElevatedButton(
                       onPressed: () {
                         // 💡 เปลี่ยนเส้นทางกลับไปหน้า AdminRoomPage พร้อมเคลียร์สแต็กหน้าจอเก่า
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            // แนะนำให้ห่อด้วยคลาส Container ของหน้า AdminRoomPage เพื่อให้มีกรอบมือถือเหมือนกันครับ
-                            builder: (context) => const MobileFrameContainer(), 
-                          ),
-                          (route) => false, // เคลียร์หน้าจอก่อนหน้าทั้งหมดเพื่อไม่ให้กดย้อนกลับมาหน้านี้ได้
-                        );
+                        Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => const MobileFrameContainer()),
+  );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
@@ -123,13 +119,16 @@ class AdminAddSuccessPage extends StatelessWidget {
                   
                   const SizedBox(height: 16),
 
-                  // ปุ่มด้านล่าง: "กลับไปหน้า Login"
+                  // ปุ่มด้านล่าง: "กลับไปหน้า Login
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () {
-                        // TODO: สั่งเคลียร์หน้าจอทั้งหมดและกลับไปหน้า Login
+                        Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => const AdminGroupPage()),
+  );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF334155), 

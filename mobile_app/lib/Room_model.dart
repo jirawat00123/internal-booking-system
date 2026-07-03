@@ -40,23 +40,63 @@ class MeetingRoom {
 }
 
 // 1. คลาสสำหรับเก็บโครงสร้างข้อมูลการจอง
-class BookingHistory {
+class BookingHistory{
   final String roomId;
-  final String date; // ฟอร์แมต "MM/DD/YYYY"
-  final TimeOfDay startTime; // อ็อบเจกต์เวลาเริ่ม
-  final TimeOfDay endTime; // อ็อบเจกต์เวลาสิ้นสุด
+  final String title;
+  final String date;
+  final TimeOfDay startTime;
+  final TimeOfDay endTime;
+  final int participantCount;
+  final String type; 
+  final String bookedBy;
+  String? status; // 💡 เปลี่ยนเป็นแบบไม่บังคับ (Optional) หรือตั้งเป็น String status;
 
   BookingHistory({
     required this.roomId,
+    required this.title,
     required this.date,
     required this.startTime,
     required this.endTime,
+    required this.participantCount,
+    required this.type,
+    required this.bookedBy,
+    this.status, // 💡 เพิ่มเข้ามาตรงนี้
   });
+
+  // 🔥 ฟังก์ชันอัจฉริยะ: เช็คสถานะตามเวลาจริงอัตโนมัติ
+  // 💡 ให้แก้ไขฟังก์ชัน get currentStatus ในไฟล์ Room_model.dart เป็นแบบนี้ครับ
+String get currentStatus {
+  // 1. ถ้ามีการกดยกเลิกหรือเปลี่ยนสเตตัสโดยตรงจากปุ่ม ให้ใช้ค่านั้นทันที
+  if (status != null) return status!;
+
+  try {
+    // 2. แปลงสตริงวันที่จอง (เช่น "27/05/2026") แยกส่วน วัน/เดือน/ปี
+    List<String> dateParts = date.split('/');
+    int day = int.parse(dateParts[0]);
+    int month = int.parse(dateParts[1]);
+    int year = int.parse(dateParts[2]);
+
+    // 3. สร้าง DateTime ของจุดเริ่มต้นและจุดสิ้นสุดของการจองนั้น ๆ
+    final now = DateTime.now();
+    final startBooking = DateTime(year, month, day, startTime.hour, startTime.minute);
+    final endBooking = DateTime(year, month, day, endTime.hour, endTime.minute);
+
+    // 4. 🔥 โลจิกเปรียบเทียบกับเวลาจริงของเครื่องคอมพิวเตอร์/มือถือ
+    if (now.isBefore(startBooking)) {
+      return 'จองแล้ว'; // ยังไม่ถึงเวลา
+    } else if (now.isAfter(startBooking) && now.isBefore(endBooking)) {
+      return 'กำลังใช้งาน'; // อยู่ในช่วงเวลาที่จองพอดี
+    } else if (now.isAfter(endBooking)) {
+      return 'เสร็จสิ้น'; // เลยเวลาจองไปแล้ว
+    }
+  } catch (e) {
+    debugPrint("Error calculating currentStatus: $e");
+  }
+
+  return 'จองแล้ว'; // คืนค่าเริ่มต้นหากเกิดข้อผิดพลาด
 }
+}
+String globalCurrentUserName = "MMK";
 
 // 2. ตัวแปรลิสต์ส่วนกลางสำหรับเก็บประวัติจองทั้งหมดในแอป (เริ่มต้นเป็นลิสต์ว่าง)
-final ValueNotifier<List<BookingHistory>>
-globalBookingHistory = ValueNotifier<List<BookingHistory>>([
-  // คุณสามารถใส่ข้อมูลจำลองไว้ทดสอบตรงนี้ได้ เช่น:
-  // BookingHistory(roomId: 'A', date: '05/27/2026', startTime: TimeOfDay(hour: 10, minute: 0), endTime: TimeOfDay(hour: 12, minute: 0)),
-]);
+final ValueNotifier<List<BookingHistory>> globalBookingHistory = ValueNotifier<List<BookingHistory>>([]);

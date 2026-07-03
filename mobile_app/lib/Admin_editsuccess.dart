@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'Admin_roompage.dart'; 
-
+import 'AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 class MobileFrameEditSuccessContainer extends StatelessWidget {
   const MobileFrameEditSuccessContainer({super.key});
 
@@ -129,7 +129,10 @@ class AdminEditSuccessPage extends StatelessWidget {
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () {
-                        // TODO: สั่งเคลียร์หน้าจอทั้งหมดและกลับไปหน้า Login
+                        Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => const AdminGroupPage()),
+  );
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF334155), 
