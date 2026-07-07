@@ -1,13 +1,38 @@
-# ไฟล์ .gitignore ด้านนอกสุด (ระดับเดียวกับ README.md)
+############################
+# Backend
+############################
 
-# สำหรับละเว้นไฟล์ฝั่ง Backend
 backend/node_modules/
 backend/.env
 backend/dist/
 backend/coverage/
 
-# (อนาคต) สำหรับละเว้นไฟล์ฝั่ง Flutter ของเพื่อน
-mobile_app/.dart_tool/
-mobile_app/.flutter-plugins
-mobile_app/.flutter-plugins-dependencies
-mobile_app/build/
+############################
+# Flutter
+############################
+
+frontend/mobile_app/.dart_tool/
+frontend/mobile_app/build/
+frontend/mobile_app/.flutter-plugins
+frontend/mobile_app/.flutter-plugins-dependencies
+frontend/mobile_app/.pub-cache/
+
+############################
+# VS Code
+############################
+
+.vscode/settings.json
+
+############################
+# OS
+############################
+
+.DS_Store
+Thumbs.db
+
+############################
+# Node
+############################
+
+node_modules/
+npm-debug.log*
