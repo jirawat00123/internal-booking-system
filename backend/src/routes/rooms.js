@@ -1,23 +1,32 @@
-// GET /api/rooms
-router.get('/', authenticateToken, async (req, res, next) => {
-    try {
-        // ดึงข้อมูลห้องประชุมทั้งหมด (อาจจะเรียงตามชื่อห้อง หรือกรองเฉพาะห้องที่ยังเปิดใช้งาน)
-        const rooms = await prisma.room.findMany({
-            /* ถ้ามีฟิลด์สถานะ เช่น isActive สามารถเพิ่ม where ได้
-            where: {
-                isActive: true 
-            },
-            */
-            orderBy: {
-                name: 'asc' // เรียงตามชื่อห้อง ก-ฮ, A-Z
-            }
-        });
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs'); // 📌 1. นำเข้าโมดูล fs (File System) เพื่อใช้จัดการไฟล์
+const roomController = require('../controllers/roomController'); // อ้างอิงไปยัง Controller จริง
+const { authenticateToken } = require('../middlewares/auth');
 
-        return res.status(200).json({
-            success: true,
-            data: rooms
-        });
-    } catch (error) {
-        next(error);
+// 📌 2. เพิ่มโค้ดเช็กและสร้างโฟลเดอร์ uploads อัตโนมัติ ป้องกัน Multer Error
+const uploadDir = 'uploads/';
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// ตั้งค่า multer สำหรับรองรับการอัปโหลดไฟล์รูปภาพห้องประชุมไปยังโฟลเดอร์ uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'room-' + uniqueSuffix + path.extname(file.originalname));
     }
 });
+const upload = multer({ storage: storage });
+
+// ย้าย Logic ทั้งหมดไปจัดการผ่าน Controller เพื่อให้โค้ดเป็นระเบียบตามสถาปัตยกรรมที่ถูกต้อง
+router.get('/', authenticateToken, roomController.getAllRooms);
+router.post('/', authenticateToken, roomController.createRoom);
+router.put('/:id', authenticateToken, upload.single('image'), roomController.updateRoom);
+
+module.exports = router;

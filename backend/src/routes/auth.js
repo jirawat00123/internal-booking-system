@@ -19,7 +19,7 @@ router.post('/login', async (req, res) => {
 
     // 1. ค้นหาพนักงานและข้อมูลบัญชีผู้ใช้
     const employee = await prisma.employee.findUnique({
-      where: { employeeCode: employeeCode },
+      where: { employeeCode: String(employeeCode).trim() },
       include: {
         users: true,
         position: true
@@ -47,10 +47,25 @@ router.post('/login', async (req, res) => {
       if (!pin) {
         return res.status(400).json({ success: false, error: `คุณมีสิทธิ์เป็น ${role} กรุณากรอกรหัส PIN เพื่อยืนยันตัวตน` });
       }
-      if (userAccount.pin !== pin) {
+      
+      const inputPin = String(pin).trim();
+      if (userAccount.pin !== inputPin) {
         return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง" });
       }
     } 
+
+    // 🚀 เพิ่มระบบบันทึกประวัติ (Log) สำหรับ API 1
+    try {
+      await prisma.auditLog.create({
+        data: {
+          userId: userAccount.id, // บันทึก ID ผู้ใช้
+          action: `เข้าสู่ระบบผ่าน Dropdown (สิทธิ์: ${role}, ชื่อ: ${employee.fullName})`,
+          module: 'LOGIN_SYSTEM'
+        }
+      });
+    } catch (logError) {
+      console.error("⚠️ ไม่สามารถบันทึก Log ลง Database ได้:", logError.message);
+    }
 
     // 3. 🎟️ สร้าง Token
     const secretKey = JWT_SECRET || process.env.JWT_SECRET || 'default_secret_key';
@@ -87,14 +102,21 @@ router.post('/login-pin', async (req, res) => {
   try {
     const { pin, expectedRole } = req.body; 
 
-    // 🛡️ ตรวจสอบรหัส PIN
+    // ป้องกันกรณีส่งค่า undefined หรือ null มา
+    if (!pin) {
+      return res.status(400).json({ success: false, message: 'กรุณาส่งข้อมูล PIN' });
+    }
+
+    const inputPin = String(pin).trim(); // แปลงเป็น String และตัดช่องว่างป้องกัน Error
+
+    // 🛡️ ตรวจสอบรหัส PIN 
     const pinRoles = {
       '001122': { assignedRole: 'SECURITY', assignedDept: 'SECURITY' },
       '741963': { assignedRole: 'ADMIN', assignedDept: 'HR' },
       '852000': { assignedRole: 'ADMIN', assignedDept: 'IT' }
     };
 
-    const roleData = pinRoles[pin];
+    const roleData = pinRoles[inputPin];
 
     if (!roleData) {
       return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง' }); 
@@ -107,15 +129,37 @@ router.post('/login-pin', async (req, res) => {
       return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
     }
 
+    // 🔍 ค้นหา user_id จากฐานข้อมูลโดยใช้รหัส PIN เพื่อระบุตัวตน
+    let actualUserId = null;
+    let actualUserName = "ไม่ทราบชื่อ";
+    
+    try {
+      const matchedUser = await prisma.user.findFirst({
+        where: { pin: inputPin },
+        include: { employee: true }
+      });
+      
+      if (matchedUser) {
+        actualUserId = matchedUser.id;
+        actualUserName = matchedUser.employee?.fullName || "ไม่ระบุชื่อ";
+      } else {
+        console.warn(`[คำเตือน] รหัส PIN ${inputPin} เข้าระบบได้ แต่ไม่มีข้อมูลผูกไว้ในตาราง User`);
+      }
+    } catch (dbError) {
+      console.error("⚠️ ไม่สามารถค้นหาข้อมูลผู้ใช้จาก PIN ได้:", dbError.message);
+    }
+
+    // 🚀 ระบบบันทึกประวัติ (Log)
     // 🚀 ระบบบันทึกประวัติ (Log)
     try {
       await prisma.auditLog.create({
         data: {
-          action: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${assignedRole}, แผนก: ${assignedDept})`,
-          module: 'LOGIN_SYSTEM' 
+          userId: actualUserId || undefined, // ส่ง userId ไปบันทึกถ้ามีข้อมูล ถ้าไม่มี (เป็น null) Prisma จะข้ามฟิลด์นี้ไปเพื่อไม่ให้ Error
+          action: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${assignedRole}, แผนก: ${assignedDept}, ชื่อ: ${actualUserName})`,
+          module: "LOGIN_SYSTEM",
         }
       });
-      console.log(`[Log] บันทึกประวัติการเข้าใช้งานของ ${assignedRole} เรียบร้อยแล้ว`);
+      console.log(`[Log] บันทึกประวัติการเข้าใช้งานของ ${actualUserName} สำเร็จ`);
     } catch (logError) {
       console.error("⚠️ ไม่สามารถบันทึก Log ลง Database ได้:", logError.message);
     }
@@ -123,7 +167,11 @@ router.post('/login-pin', async (req, res) => {
     // 🎟️ สร้าง Token
     const secretKey = JWT_SECRET || process.env.JWT_SECRET || 'default_secret_key';
     const token = jwt.sign(
-      { role: assignedRole, department: assignedDept }, 
+      { 
+        userId: actualUserId, // เพิ่ม userId เข้าไปใน Token
+        role: assignedRole, 
+        department: assignedDept 
+      }, 
       secretKey, 
       { expiresIn: '12h' }
     );
@@ -204,7 +252,7 @@ router.get('/login-users-list', async (req, res) => {
 router.get('/me', authenticateToken, async (req, res) => {
   try {
     if (!req.user || !req.user.userId) {
-        return res.status(400).json({ success: false, error: "ข้อมูลผู้ใช้งานใน Token ไม่สมบูรณ์ (อาจเป็น Token จากประตู PIN)" });
+        return res.status(400).json({ success: false, error: "ข้อมูลผู้ใช้งานใน Token ไม่สมบูรณ์ (อาจเป็น Token จากประตู PIN ที่ค้นหาผู้ใช้ไม่พบ)" });
     }
 
     const user = await prisma.user.findUnique({

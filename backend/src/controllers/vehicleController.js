@@ -15,14 +15,41 @@ const safeDeleteFile = async (filePath) => {
     }
 };
 
-// 1. ดึงข้อมูลรถยนต์ทั้งหมด
+// 1. ดึงข้อมูลรถยนต์ทั้งหมด (ปรับปรุงข้อ 9: เพิ่มระบบแบ่งหน้า Pagination และดึงข้อมูลแบบรวดเร็วด้วย $transaction)
 exports.getVehicles = async (req, res) => {
     try {
-        const vehicles = await prisma.vehicle.findMany({
-            where: { isDeleted: false },
-            orderBy: { createdAt: 'desc' }
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const skip = (page - 1) * limit;
+
+        const whereCondition = { isDeleted: false };
+
+        // ใช้ $transaction เพื่อรัน count และ findMany ควบคู่กัน เพิ่มความเร็วในการทำงานของ Database
+        const [totalItems, vehicles] = await prisma.$transaction([
+            prisma.vehicle.count({ where: whereCondition }),
+            prisma.vehicle.findMany({
+                where: whereCondition,
+                skip: skip,
+                take: limit,
+                orderBy: { createdAt: 'desc' }
+            })
+        ]);
+
+        const totalPages = Math.ceil(totalItems / limit);
+
+        return res.status(200).json({ 
+            success: true, 
+            message: "ดึงข้อมูลรายการรถยนต์ส่วนกลางสำเร็จ",
+            pagination: {
+                totalItems,
+                totalPages,
+                currentPage: page,
+                limit,
+                hasNextPage: page < totalPages,
+                hasPreviousPage: page > 1
+            },
+            data: vehicles 
         });
-        return res.status(200).json({ success: true, data: vehicles });
     } catch (error) {
         console.error("Get Vehicles Error:", error);
         return res.status(500).json({ success: false, error: "ระบบขัดข้องในการดึงข้อมูลรถ" });
@@ -188,5 +215,84 @@ exports.deleteVehicle = async (req, res) => {
     } catch (error) {
         console.error("Delete Vehicle Error:", error);
         return res.status(500).json({ success: false, error: "ไม่สามารถลบข้อมูลรถได้" });
+    }
+};
+
+// =========================================================================
+// ⭐ เพิ่มฟังก์ชันข้อ 10: ตรวจสอบและดึงรายการรถยนต์ที่ว่างตามวันเวลา (Available Vehicles)
+// =========================================================================
+exports.getAvailableVehicles = async (req, res) => {
+    try {
+        const { start, end } = req.query;
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const skip = (page - 1) * limit;
+
+        // 1. ตรวจสอบ Validation เบื้องต้น
+        if (!start || !end) {
+            return res.status(400).json({ success: false, error: "กรุณาระบุวันเวลาเริ่มต้น (start) และสิ้นสุด (end) เพื่อตรวจสอบรถว่าง" });
+        }
+
+        const startQueryDate = new Date(start);
+        const endQueryDate = new Date(end);
+
+        if (isNaN(startQueryDate.getTime()) || isNaN(endQueryDate.getTime())) {
+            return res.status(400).json({ success: false, error: "รูปแบบวันเวลาไม่ถูกต้อง ตัวอย่างที่ถูก: 2026-07-03T14:00:00.000Z" });
+        }
+
+        if (startQueryDate >= endQueryDate) {
+            return res.status(400).json({ success: false, error: "วันเวลาเริ่มต้นต้องน้อยกว่าวันเวลาสิ้นสุด" });
+        }
+
+        // 2. ค้นหา ID รถยนต์ทั้งหมดที่มีคิวจองทับซ้อน (Overlapping) กับวันเวลาที่ส่งมา
+        const conflictingBookings = await prisma.vehicleBooking.findMany({
+            where: {
+                status: { notIn: ['Cancelled', 'Rejected'] }, // ไม่สนใจรายการที่ยกเลิกหรือถูกปฏิเสธไปแล้ว
+                // ลอจิกการทับซ้อนของเวลา: (คิวเริ่มก่อนเวลาจองเสร็จ) และ (คิวเสร็จหลังเวลาจองเริ่ม)
+                startDatetime: { lt: endQueryDate },
+                endDatetime: { gt: startQueryDate }
+            },
+            select: { vehicleId: true }
+        });
+
+        // แปลง Array ของ Object ให้เหลือแค่ Array ของ ID ตัวเลขธรรมดา เช่น [1, 3, 5]
+        const conflictingVehicleIds = conflictingBookings.map(booking => booking.vehicleId);
+
+        // 3. ตั้งเงื่อนไข: ค้นหารถที่ 'ไม่ได้ถูกลบ' และ 'ID ต้องไม่อยู่ในกลุ่มที่ติดจองซ้อน'
+        const whereCondition = {
+            isDeleted: false,
+            id: { notIn: conflictingVehicleIds }
+        };
+
+        // 4. ดึงข้อมูลแบบแบ่งหน้า (Pagination) ประสิทธิภาพสูงด้วย $transaction
+        const [totalItems, availableVehicles] = await prisma.$transaction([
+            prisma.vehicle.count({ where: whereCondition }),
+            prisma.vehicle.findMany({
+                where: whereCondition,
+                skip: skip,
+                take: limit,
+                orderBy: { createdAt: 'desc' }
+            })
+        ]);
+
+        const totalPages = Math.ceil(totalItems / limit);
+
+        return res.status(200).json({
+            success: true,
+            message: "ตรวจสอบและดึงข้อมูลรายการรถยนต์ที่ว่างสำเร็จ",
+            pagination: {
+                totalItems,
+                totalPages,
+                currentPage: page,
+                limit,
+                hasNextPage: page < totalPages,
+                hasPreviousPage: page > 1
+            },
+            data: availableVehicles
+        });
+
+    } catch (error) {
+        console.error("Get Available Vehicles Error:", error);
+        return res.status(500).json({ success: false, error: "ระบบขัดข้องในการตรวจสอบสถานะรถว่าง" });
     }
 };

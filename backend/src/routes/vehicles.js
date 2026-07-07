@@ -43,17 +43,32 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({ 
     storage: storage,
     fileFilter: fileFilter,
-    limits: { fileSize: 5 * 1024 * 1024 }
+    limits: { fileSize: 5 * 1024 * 1024 } // จำกัดขนาดไฟล์สูงสุด 5MB
 });
 
 // ==========================================
 // 🚗 แมปปิ้งเส้นทาง API ไปยัง Controller
 // ==========================================
 
+// 1. ดึงข้อมูลรถยนต์ทั้งหมด (รองรับ Pagination)
 router.get('/', verifyToken, vehicleController.getVehicles);
-router.post('/', verifyToken, requireRole(['ADMIN']), upload.single('image'), vehicleController.createVehicle);
+
+// ==========================================
+// ⭐ เพิ่มข้อ 10: เช็กสถานะและกรองรถที่ว่างตามวันเวลา 
+// (คำเตือน: ต้องวาง route นี้ก่อน /:id เสมอเพื่อป้องกันบั๊ก)
+// ==========================================
+router.get('/available', verifyToken, vehicleController.getAvailableVehicles);
+
+// 2. ดึงข้อมูลรถยนต์ 1 คัน ตาม ID
 router.get('/:id', verifyToken, vehicleController.getVehicleById);
+
+// 3. เพิ่มข้อมูลรถยนต์ใหม่ (เฉพาะสิทธิ์ ADMIN) พ่วงอัปโหลดรูป
+router.post('/', verifyToken, requireRole(['ADMIN']), upload.single('image'), vehicleController.createVehicle);
+
+// 4. แก้ไขข้อมูลรถยนต์ (เฉพาะสิทธิ์ ADMIN) พ่วงอัปโหลดรูป
 router.put('/:id', verifyToken, requireRole(['ADMIN']), upload.single('image'), vehicleController.updateVehicle);
+
+// 5. ลบรถแบบ Soft Delete (เฉพาะสิทธิ์ ADMIN)
 router.delete('/:id', verifyToken, requireRole(['ADMIN']), vehicleController.deleteVehicle);
 
 module.exports = router;

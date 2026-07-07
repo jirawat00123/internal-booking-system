@@ -35,22 +35,22 @@ exports.getAllRooms = async (req, res, next) => {
 // =========================================================================
 exports.createRoom = async (req, res, next) => {
   try {
-    const { name, capacity, location } = req.body;
+    const { roomName, capacity, location, status } = req.body;
 
-    // ตรวจสอบว่า Frontend ส่งข้อมูลมาครบหรือไม่
-    if (!name || !capacity) {
+    if (!roomName || !capacity) {
       return res.status(400).json({
         success: false,
-        message: 'กรุณาระบุชื่อห้องประชุมและจำนวนความจุให้ครบถ้วน',
+        message: 'กรุณาระบุชื่อห้องประชุม (roomName) และจำนวนความจุให้ครบถ้วน',
       });
     }
 
-    // 💡 หัวใจสำคัญ: ใช้ await เพื่อบังคับให้ระบบรอจนกว่าจะบันทึกลง PostgreSQL สำเร็จ
+    // เปลี่ยนจาก name เป็น roomName และเพิ่มสถานะเริ่มต้นให้ตรงตาม schema จริงของระบบ
     const newRoom = await prisma.room.create({
       data: {
-        name: name.toString(),
+        roomName: roomName.toString(),
         capacity: parseInt(capacity),
         location: location ? location.toString() : null,
+        status: status || 'AVAILABLE',
       },
     });
 
@@ -65,6 +65,49 @@ exports.createRoom = async (req, res, next) => {
     return res.status(500).json({
       success: false,
       message: 'เกิดข้อผิดพลาดในการสร้างห้องประชุม',
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// [PUT] /api/rooms/:id - อัปเดตข้อมูลห้องประชุมพร้อมรองรับการอัปโหลดไฟล์รูปภาพใหม่
+// =========================================================================
+exports.updateRoom = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { roomName, location, capacity, status } = req.body;
+    let uploadUrl;
+
+    // หากมีการส่งไฟล์ภาพใหม่ผ่าน MultipartRequest มาให้ทำการบันทึกพาธลงตัวแปร
+    if (req.file) {
+      uploadUrl = `/uploads/${req.file.filename}`;
+    }
+
+    // ตรวจสอบฟิลด์และเตรียมข้อมูลสำหรับทำการอัปเดตแบบ Dynamic
+    const updateData = {};
+    if (roomName) updateData.roomName = roomName.toString();
+    if (location) updateData.location = location.toString();
+    if (capacity) updateData.capacity = parseInt(capacity);
+    if (status) updateData.status = status;
+    if (uploadUrl) updateData.uploadUrl = uploadUrl;
+
+    const updatedRoom = await prisma.room.update({
+      where: { id: parseInt(id) },
+      data: updateData,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'อัปเดตข้อมูลห้องประชุมสำเร็จ',
+      data: updatedRoom,
+    });
+
+  } catch (error) {
+    console.error('❌ Error updating room:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูลห้องประชุม',
       error: error.message,
     });
   }

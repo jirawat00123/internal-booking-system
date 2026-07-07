@@ -8,7 +8,7 @@ const { PrismaClient } = require('@prisma/client');
 const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/bookings');
 const resourceRoutes = require('./routes/resources');
-const roomRoutes = require('./routes/roomRouter');
+const roomRoutes = require('./routes/rooms');
 const employeeRoutes = require('./routes/employees');
 const vehicleRoutes = require('./routes/vehicles');
 const vehicleBookingsRouter = require('./routes/vehicleBookings');
@@ -18,6 +18,17 @@ const swaggerUi = require('swagger-ui-express');
 
 const app = express();
 const prisma = new PrismaClient(); 
+
+// ==========================================
+// 🛡️ ดักจับ Error ระดับ Process (ป้องกันเซิร์ฟเวอร์ดับเงียบ)
+// ==========================================
+process.on('uncaughtException', (err) => {
+  console.error('🔴 [Uncaught Exception] พบข้อผิดพลาดร้ายแรงที่ไม่ถูกจัดการ:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔴 [Unhandled Rejection] Promise ไม่ถูกจัดการ:', reason);
+});
 
 // ==========================================
 // 🛠️ ตั้งค่า Middleware พื้นฐาน
@@ -350,39 +361,6 @@ app.post('/api/rooms', async (req, res) => {
   }
 });
 
-// ✨ [PUT] อัปเดต/แก้ไขห้องประชุม (เพิ่มใหม่)
-app.put('/api/rooms/:id', async (req, res) => {
-  const roomId = parseInt(req.params.id, 10);
-  const { roomName, capacity, location, status } = req.body;
-
-  if (isNaN(roomId)) {
-    return res.status(400).json({ message: 'ID ห้องประชุมไม่ถูกต้อง' });
-  }
-
-  try {
-    // เตรียมข้อมูลที่จะอัปเดต (ถ้าไม่ได้ส่งค่ามา จะใช้ค่าเดิม)
-    const updateData = {};
-    if (roomName !== undefined) updateData.roomName = roomName.trim();
-    if (capacity !== undefined) updateData.capacity = parseInt(capacity, 10) || 0;
-    if (location !== undefined) updateData.location = location.trim();
-    if (status !== undefined) updateData.status = status.trim();
-
-    const updatedRoom = await prisma.room.update({
-      where: { id: roomId },
-      data: updateData,
-    });
-
-    return res.status(200).json({ success: true, message: 'อัปเดตห้องประชุมสำเร็จ', room: updatedRoom });
-  } catch (error) {
-    console.error('Error updating room:', error);
-    // รหัส P2025 ของ Prisma คือ Record to update not found.
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'ไม่พบห้องประชุมที่ต้องการแก้ไข' });
-    }
-    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการแก้ไขห้องประชุม' });
-  }
-});
-
 // ✨ [DELETE] ลบห้องประชุม (เพิ่มใหม่)
 app.delete('/api/rooms/:id', async (req, res) => {
   const roomId = parseInt(req.params.id, 10);
@@ -541,10 +519,21 @@ app.use((err, req, res, next) => {
 });
 
 // ==========================================
-// 🚀 เริ่มต้นทำงาน Server
+// 🚀 เริ่มต้นทำงาน Server พร้อมจัดการสถานะพอร์ต
 // ==========================================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 3001;
+const server = app.listen(PORT, () => {
   console.log(`🚀 Clean Server is running on http://localhost:${PORT}`);
   console.log(`📖 เปิดดูคู่มือ API ได้ที่ http://localhost:${PORT}/api-docs`);
+});
+
+// ตรวจจับกรณีที่รันเซิร์ฟเวอร์ไม่ได้ (เช่น พอร์ต 3001 มีโปรแกรมอื่นใช้อยู่)
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`🔴 เกิดข้อผิดพลาด: พอร์ต ${PORT} กำลังถูกใช้งานโดยโปรแกรมอื่น!`);
+    console.error(`💡 วิธีแก้: ให้เปลี่ยนพอร์ตในไฟล์ .env หรือปิดโปรแกรมที่ใช้พอร์ต ${PORT} อยู่`);
+  } else {
+    console.error('🔴 เซิร์ฟเวอร์ดับเนื่องจาก:', err.message);
+  }
+  process.exit(1); // บังคับปิดเพื่อแสดงผลให้ชัดเจน
 });

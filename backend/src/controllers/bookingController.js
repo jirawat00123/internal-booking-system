@@ -21,7 +21,7 @@ const checkOverlapping = async (roomId, start, end) => {
   const duplicate = await prisma.roomBooking.findFirst({
     where: {
       roomId: parseInt(roomId),
-      status: { not: "Cancelled" },
+      status: { not: "Cancelled" }, // ยกเว้นรายการที่ถูกยกเลิกไปแล้ว
       AND: [
         { startDatetime: { lt: end } }, 
         { endDatetime: { gt: start } }
@@ -80,7 +80,7 @@ exports.checkAvailability = async (req, res, next) => {
 };
 
 // =========================================================================
-// [POST] /api/bookings - API สร้างรายการจองห้องประชุม
+// [POST] /api/bookings - API สร้างรายการจองห้องประชุม (อัปเดตระบบ History)
 // =========================================================================
 exports.createBooking = async (req, res, next) => {
   try {
@@ -116,23 +116,40 @@ exports.createBooking = async (req, res, next) => {
       });
     }
 
-    const newBooking = await prisma.roomBooking.create({
-      data: {
-        roomId: parseInt(roomId), 
-        userId: userId, 
-        startDatetime: start,     
-        endDatetime: end,         
-        purpose: title,           
-        status: 'Pending'         
-      },
-      include: {
-        room: true 
-      }
+    // 💡 ใช้ Transaction เพื่อสร้างการจอง และ สร้างประวัติการจอง พร้อมกัน!
+    const newBooking = await prisma.$transaction(async (tx) => {
+      // 1. สร้างการจอง
+      const booking = await tx.roomBooking.create({
+        data: {
+          roomId: parseInt(roomId), 
+          userId: userId, 
+          startDatetime: start,     
+          endDatetime: end,         
+          purpose: title,           
+          status: 'Pending'         
+        },
+        include: {
+          room: true 
+        }
+      });
+
+      // 2. บันทึกประวัติ
+      await tx.roomBookingHistory.create({
+        data: {
+          roomBookingId: booking.id,
+          changedById: userId,
+          action: 'CREATED',
+          statusSnapshot: 'Pending',
+          remark: 'สร้างการจองห้องประชุมใหม่'
+        }
+      });
+
+      return booking;
     });
 
     return res.status(201).json({
       success: true,
-      message: '🎉 บันทึกการจองห้องประชุมเรียบร้อยแล้ว!',
+      message: '🎉 บันทึกการจองห้องประชุมและประวัติเรียบร้อยแล้ว!',
       data: newBooking
     });
 
@@ -148,20 +165,17 @@ exports.createBooking = async (req, res, next) => {
 };
 
 // =========================================================================
-// [GET] /api/bookings - API แสดงประวัติการจอง (Optimize เพิ่ม Pagination ป้องกันค้าง)
+// [GET] /api/bookings - API แสดงประวัติการจอง (Optimize เพิ่ม Pagination)
 // =========================================================================
 exports.getBookingHistory = async (req, res, next) => {
   try {
-    // แก้บั๊ก: อ่านจาก query หรือ token เท่านั้น ห้ามอ่านจาก req.body ใน GET Request
     const userId = req.query?.userId || req.query?.user_id || req.user?.id;
     const whereClause = userId ? { userId: parseInt(userId) } : {};
 
-    // 💡 การแบ่งหน้า (Pagination) เพื่อเพิ่มประสิทธิภาพ (Optimize)
     const page = parseInt(req.query?.page) || 1;
     const limit = parseInt(req.query?.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // รันนับจำนวนรวมและดึงข้อมูลพร้อมกัน (Parallel) ช่วยให้โหลดไวขึ้น
     const [totalItems, history] = await Promise.all([
       prisma.roomBooking.count({ where: whereClause }),
       prisma.roomBooking.findMany({
@@ -198,16 +212,26 @@ exports.getBookingHistory = async (req, res, next) => {
 };
 
 // =========================================================================
-// [PATCH] /api/bookings/:id/cancel - API ยกเลิกการจอง (Soft Delete)
+// [PATCH] /api/bookings/:id/cancel - API ยกเลิกการจอง (อัปเดตระบบ History)
 // =========================================================================
 exports.cancelBooking = async (req, res, next) => {
   try {
     const bookingId = parseInt(req.params.id);
+    // รับค่า userId ของคนที่กดยกเลิก เพื่อนำไปลง History
+    const rawUserId = req.body?.userId || req.body?.user_id || (req.user ? req.user.id : null);
+    const cancelRemark = req.body?.remark || 'ยกเลิกการจองโดยผู้ใช้งาน';
 
     if (isNaN(bookingId)) {
       return res.status(400).json({
         success: false,
         message: 'รหัสรายการจองต้องเป็นตัวเลขที่ถูกต้องเท่านั้น'
+      });
+    }
+
+    if (!rawUserId) {
+      return res.status(400).json({
+        success: false,
+        message: 'กรุณาระบุรหัสผู้ใช้งาน (userId) เพื่อบันทึกประวัติการยกเลิก'
       });
     }
 
@@ -222,14 +246,31 @@ exports.cancelBooking = async (req, res, next) => {
       });
     }
 
-    const updatedBooking = await prisma.roomBooking.update({
-      where: { id: bookingId },
-      data: { status: 'Cancelled' }
+    // 💡 ใช้ Transaction เพื่ออัปเดตสถานะ และ สร้างประวัติการยกเลิก พร้อมกัน
+    const updatedBooking = await prisma.$transaction(async (tx) => {
+      // 1. อัปเดตสถานะห้องเป็นการยกเลิก
+      const booking = await tx.roomBooking.update({
+        where: { id: bookingId },
+        data: { status: 'Cancelled' }
+      });
+
+      // 2. บันทึกประวัติการยกเลิก
+      await tx.roomBookingHistory.create({
+        data: {
+          roomBookingId: bookingId,
+          changedById: parseInt(rawUserId),
+          action: 'CANCELLED',
+          statusSnapshot: 'Cancelled',
+          remark: cancelRemark
+        }
+      });
+
+      return booking;
     });
 
     return res.status(200).json({
       success: true,
-      message: '✅ ยกเลิกการจองสำเร็จ! ห้องกลับมาสถานะว่างในช่วงเวลานั้นแล้ว',
+      message: '✅ ยกเลิกการจองสำเร็จ! บันทึกประวัติเรียบร้อยแล้ว',
       data: updatedBooking
     });
 

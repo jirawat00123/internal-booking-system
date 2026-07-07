@@ -25,7 +25,7 @@ const authenticateToken = (req, res, next) => {
 // นามแฝง เพื่อให้ vehicles.js เรียกใช้ verifyToken ได้
 const verifyToken = authenticateToken; 
 
-// 3. 🚨 Middleware ตรวจสอบ Role (ตัวที่ Error ฟ้องหาไม่เจอ คือตัวนี้ครับ!)
+// 3. 🚨 Middleware ตรวจสอบ Role
 const requireRole = (allowedRoles) => {
     return (req, res, next) => {
         if (!req.user || !allowedRoles.includes(req.user.role)) {
