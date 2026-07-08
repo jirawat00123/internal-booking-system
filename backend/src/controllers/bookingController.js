@@ -88,15 +88,16 @@ exports.createBooking = async (req, res, next) => {
     const startDatetime = req.body?.startDatetime;
     const endDatetime = req.body?.endDatetime;
     const title = req.body?.title || req.body?.purpose;
-    const rawUserId = req.body?.userId || req.body?.user_id || (req.user ? req.user.id : null);
+    // 💡 เปลี่ยนจาก req.user.id เป็น req.user.userId ให้ตรงกับโครงสร้าง Token
+    const rawUserId = req.body?.userId || req.body?.user_id || (req.user ? req.user.userId : null);
 
+    // 💡 ลบแถวที่เกินออกเหลือเพียงชุดเดียว ปีกกาจะกลับมาจับคู่กันถูกต้องพอดีครับ
     if (!roomId || !rawUserId || !startDatetime || !endDatetime || !title) {
       return res.status(400).json({ 
         success: false, 
         message: 'กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน (roomId, userId, startDatetime, endDatetime, title)' 
       });
     }
-
     const userId = parseInt(rawUserId);
     const start = new Date(startDatetime);
     const end = new Date(endDatetime);
@@ -132,6 +133,16 @@ exports.createBooking = async (req, res, next) => {
           room: true 
         }
       });
+
+      //อัปเดตห้องประชุมเป็น BOOKED หลังจากสร้างการจองสำเร็จ
+      await tx.room.update({
+  where: {
+    id: parseInt(roomId),
+  },
+  data: {
+    status: 'RESERVED',
+  },
+});
 
       // 2. บันทึกประวัติ
       await tx.roomBookingHistory.create({
@@ -253,6 +264,16 @@ exports.cancelBooking = async (req, res, next) => {
         where: { id: bookingId },
         data: { status: 'Cancelled' }
       });
+
+      // อัปเดตสถานะห้องประชุมเป็น AVAILABLE หลังจากยกเลิกการจอง
+      await tx.room.update({
+  where: {
+    id: booking.roomId,
+  },
+  data: {
+    status: 'AVAILABLE',
+  },
+});
 
       // 2. บันทึกประวัติการยกเลิก
       await tx.roomBookingHistory.create({

@@ -14,15 +14,14 @@ datasource db {
 
 enum RoomStatus {
   AVAILABLE
-  MAINTENANCE
-  INACTIVE
+  IN_USE   @map("IN USE")
+  RESERVED
 }
 
 enum VehicleStatus {
   AVAILABLE
   IN_USE      @map("IN USE")
-  MAINTENANCE
-  INACTIVE
+  RESERVED
 }
 
 // ==========================================
@@ -161,6 +160,7 @@ model RoomBooking {
 // 9. ตารางรถยนต์ (Vehicles)
 model Vehicle {
   id          Int           @id @default(autoincrement())
+  vehicleName String        @map("vehicle_name")
   plateNumber String        @unique @map("license_plate")
   brand       String
   model       String

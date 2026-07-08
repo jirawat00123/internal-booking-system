@@ -12,7 +12,6 @@ const authenticateToken = (req, res, next) => {
     if (!token) {
         return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบก่อนใช้งาน (No Token)' });
     }
-
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded; // เก็บข้อมูล user ลงใน req

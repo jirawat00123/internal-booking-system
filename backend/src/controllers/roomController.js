@@ -36,6 +36,12 @@ exports.getAllRooms = async (req, res, next) => {
 exports.createRoom = async (req, res, next) => {
   try {
     const { roomName, capacity, location, status } = req.body;
+    let uploadUrl = null; // 💡 1. เพิ่มตัวแปรสำหรับเก็บ path รูปภาพ
+
+    // 💡 2. ตรวจสอบว่ามีการแนบไฟล์มาด้วยหรือไม่
+    if (req.file) {
+      uploadUrl = `/uploads/${req.file.filename}`;
+    }
 
     if (!roomName || !capacity) {
       return res.status(400).json({
@@ -44,13 +50,13 @@ exports.createRoom = async (req, res, next) => {
       });
     }
 
-    // เปลี่ยนจาก name เป็น roomName และเพิ่มสถานะเริ่มต้นให้ตรงตาม schema จริงของระบบ
     const newRoom = await prisma.room.create({
       data: {
         roomName: roomName.toString(),
         capacity: parseInt(capacity),
         location: location ? location.toString() : null,
         status: status || 'AVAILABLE',
+        uploadUrl: uploadUrl, // 💡 3. บันทึก path รูปภาพลงฐานข้อมูล
       },
     });
 
@@ -108,6 +114,43 @@ exports.updateRoom = async (req, res, next) => {
     return res.status(500).json({
       success: false,
       message: 'เกิดข้อผิดพลาดในการอัปเดตข้อมูลห้องประชุม',
+      error: error.message,
+    });
+  }
+};
+// =========================================================================
+// [DELETE] /api/rooms/:id - ลบห้องประชุมออกจากฐานข้อมูลถาวร (เพิ่มใหม่ 🔥)
+// =========================================================================
+exports.deleteRoom = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // สั่ง Prisma ลบข้อมูลในตาราง PostgreSQL ตาม ID ที่ส่งมาจากหน้าบ้าน
+    const deletedRoom = await prisma.room.delete({
+      where: {
+        id: parseInt(id, 10), 
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'ลบห้องประชุมออกจากฐานข้อมูลสำเร็จ',
+      data: deletedRoom,
+    });
+  } catch (error) {
+    console.error('❌ Error deleting room:', error);
+
+    // ดักจับกรณีส่ง ID มาลบ แต่ไม่มี ID นี้อยู่ในฐานข้อมูลแล้ว (Prisma Error Code P2025)
+    if (error.code === 'P2025') {
+      return res.status(404).json({
+        success: false,
+        message: 'ไม่พบข้อมูลห้องประชุมที่ต้องการลบในระบบ',
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'เกิดข้อผิดพลาดในการลบข้อมูลห้องประชุม',
       error: error.message,
     });
   }
