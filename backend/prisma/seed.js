@@ -146,7 +146,7 @@ async function seedDatabase() {
       { name: 'วิศวกรการตลาด', deptIndex: 10 }, { name: 'วิศวกรขายและการตลาด', deptIndex: 10 }, { name: 'เจ้าหน้าที่เขียนแบบ', deptIndex: 10 }, { name: 'ผจก.ฝ่ายวิศวกรรมการขายและการตลาด', deptIndex: 10 }, { name: 'ผู้ช่วยวิศวกรการขายและการตลาด', deptIndex: 10 }, { name: 'Senior Sales and Marketing Manager', deptIndex: 10 },
       { name: 'หัวหน้าทีมวิศวกรรมติดตั้งเครื่องจักร', deptIndex: 11 }, { name: 'วิศวกรติดตั้งเครื่องจักร', deptIndex: 11 },
       { name: 'หัวหน้าแผนกวิศวกรรมซ่อมบำรุง', deptIndex: 12 }, { name: 'วิศวกรซ่อมบำรุง', deptIndex: 12 },
-      { name: 'หัวหน้าทีมวิศวกรสารสนเทศ IT', deptIndex: 13 }, { name: 'วิศวกรสารสนเทศและเทคโนโลยี', deptIndex: 13 },
+      { name: 'หัวหน้าทีมวิศวกรสารสนเทศและเทคโนโลยี', deptIndex: 13 }, { name: 'วิศวกรสารสนเทศและเทคโนโลยี', deptIndex: 13 },
       { name: 'วิศวกรการออกแบบ', deptIndex: 14 }, { name: 'ผู้ช่วยวิศวกรการออกแบบ', deptIndex: 14 },
       { name: 'เจ้าหน้าที่งานขนส่ง', deptIndex: 15 }, { name: 'เจ้าหน้าที่ขนส่ง', deptIndex: 15 }
     ];
@@ -162,7 +162,7 @@ async function seedDatabase() {
 
     // 3. สร้างข้อมูลพนักงาน (Employees) และ บัญชีผู้ใช้ (Users)
     const employeesData = [
-      { code: 'IT001', name: 'สมชาย ไอที (Admin)', posName: 'หัวหน้าทีมวิศวกรสารสนเทศ IT', role: 'ADMIN' },
+      { code: 'IT001', name: 'สมชาย ไอที (Admin)', posName: 'หัวหน้าทีมวิศวกรสารสนเทศและเทคโนโลยี', role: 'ADMIN' },
       { code: 'HR001', name: 'สมหญิง บุคคล (User)', posName: 'ผจก.ฝ่ายทรัพยากรบุคคลและธุรการ', role: 'USER' },
       { code: 'SEC001', name: 'สมหมาย รปภ (Guard)', posName: 'จป.เทคนิค', role: 'GUARD', pin: '123456' }, 
       { code: 'ENG001', name: 'สมเกียรติ วิศวกร (User)', posName: 'วิศวกรผลิต', role: 'USER' },
@@ -226,11 +226,11 @@ async function seedDatabase() {
       { code: 'MC-EN0539', name: 'นายนครินทร์ บุญมาก (ไม้)', posName: 'วิศวกรซ่อมบำรุง', role: 'USER' },
       { code: 'MC-WK0619', name: 'นายวันชนะ สังข์ลักษณ์ (เบลล์)', posName: 'วิศวกรซ่อมบำรุง', role: 'USER' },
 
-      { code: 'MC-EN0326', name: 'นายสมบูรณ์ กมลภูจิตรคุปต์ (แซม)', posName: 'หัวหน้าทีมวิศวกรสารสนเทศ IT', role: 'USER' },
-      { code: 'MC-EN0494', name: 'นายพงศ์พัทธ์ แตงอ่อน (มด)', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
-      { code: 'MC-EN0596', name: 'นายกิตติ บุญเลิศ (ไผ่)', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
-      { code: 'MC-EN0644', name: 'นายรณกฤต เหลืองอ่อน (ซัน)', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
-      { code: 'MC-EN0646', name: 'นายนิติภูมิ กองฟู (ฮ้อ)', posName: 'วิศวกรสารสนเทศ IT', role: 'USER' },
+      { code: 'MC-EN0326', name: 'นายสมบูรณ์ กมลภูจิตรคุปต์ (แซม)', posName: 'หัวหน้าทีมวิศวกรสารสนเทศและเทคโนโลยี', role: 'USER' },
+      { code: 'MC-EN0494', name: 'นายพงศ์พัทธ์ แตงอ่อน (มด)', posName: 'วิศวกรสารสนเทศและเทคโนโลยี', role: 'USER' },
+      { code: 'MC-EN0596', name: 'นายกิตติ บุญเลิศ (ไผ่)', posName: 'วิศวกรสารสนเทศและเทคโนโลยี', role: 'USER' },
+      { code: 'MC-EN0644', name: 'นายรณกฤต เหลืองอ่อน (ซัน)', posName: 'วิศวกรสารสนเทศและเทคโนโลยี', role: 'USER' },
+      { code: 'MC-EN0646', name: 'นายนิติภูมิ กองฟู (ฮ้อ)', posName: 'วิศวกรสารสนเทศและเทคโนโลยี', role: 'USER' },
 
       { code: 'MC-EN0386', name: 'นายวรยุทธ เนตรจ๋อย (เจเล่)', posName: 'วิศวกรการออกแบบ', role: 'USER' },
       { code: 'MC-EN0439', name: 'นายศิวดล นนทะภา (เบนซ์)', posName: 'ผู้ช่วยวิศวกรการออกแบบ', role: 'USER' },
