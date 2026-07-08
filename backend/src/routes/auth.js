@@ -168,9 +168,9 @@ router.post('/login-pin', async (req, res) => {
     const secretKey = JWT_SECRET || process.env.JWT_SECRET || 'default_secret_key';
     const token = jwt.sign(
       { 
-        userId: actualUserId, // เพิ่ม userId เข้าไปใน Token
-        role: assignedRole, 
-        department: assignedDept 
+        userId: actualUserId,   // ✨ ใช้ actualUserId ที่ระบบหามาจากฐานข้อมูลด้านบน
+        role: assignedRole,     // ✨ ใช้ assignedRole ที่ผูกไว้กับรหัส PIN
+        department: assignedDept // ✨ ใช้ assignedDept ที่ผูกไว้กับรหัส PIN
       }, 
       secretKey, 
       { expiresIn: '12h' }

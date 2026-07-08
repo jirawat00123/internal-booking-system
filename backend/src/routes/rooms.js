@@ -26,7 +26,13 @@ const upload = multer({ storage: storage });
 
 // ย้าย Logic ทั้งหมดไปจัดการผ่าน Controller เพื่อให้โค้ดเป็นระเบียบตามสถาปัตยกรรมที่ถูกต้อง
 router.get('/', authenticateToken, roomController.getAllRooms);
-router.post('/', authenticateToken, roomController.createRoom);
+
+// 💡 1. เพิ่ม upload.single('image') เข้ามาเพื่อให้รองรับการส่งภาพจากหน้าแอป Add Room
+router.post('/', authenticateToken, upload.single('image'), roomController.createRoom);
+
 router.put('/:id', authenticateToken, upload.single('image'), roomController.updateRoom);
+
+// 💡 2. เพิ่ม authenticateToken ป้องกันไม่ให้คนนอกที่ไม่ได้ล็อกอินแอบมายิงคำสั่งลบห้อง
+router.delete('/:id', authenticateToken, roomController.deleteRoom);
 
 module.exports = router;
