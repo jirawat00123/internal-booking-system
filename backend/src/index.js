@@ -13,6 +13,19 @@ const employeeRoutes = require('./routes/employees');
 const vehicleRoutes = require('./routes/vehicles');
 const vehicleBookingsRouter = require('./routes/vehicleBookings');
 
+const multer = require('multer');
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // ระบุให้นำไฟล์รูปภาพไปเก็บไว้ที่โฟลเดอร์ uploads ของหลังบ้าน
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname)); // ตั้งชื่อไฟล์แบบสุ่มป้องกันชื่อซ้ำ
+  }
+});
+
+const upload = multer({ storage: storage });
+
 // 📖 นำเข้า Swagger
 const swaggerUi = require('swagger-ui-express');
 
@@ -339,21 +352,31 @@ app.get('/api/rooms', async (req, res) => {
 });
 
 // [POST] สร้างห้องประชุม
-app.post('/api/rooms', async (req, res) => {
-  const { roomName, capacity, location } = req.body;
-
-  if (!roomName) {
-    return res.status(400).json({ message: 'กรุณากรอกชื่อห้องประชุม' });
-  }
-
+app.post('/api/rooms', upload.single('image'), async (req, res) => {
   try {
+    // เมื่อผ่าน Multer แล้ว req.body จะสามารถดึงข้อมูลฟิลด์ตัวหนังสืออกมาได้ครบถ้วน
+    const { roomName, capacity, location, status } = req.body;
+
+    if (!roomName) {
+      return res.status(400).json({ message: 'กรุณากรอกชื่อห้องประชุม' });
+    }
+
+    // ตรวจสอบและบันทึกข้อมูลตำแหน่งไฟล์ภาพที่ถูกส่งขึ้นมาจริง
+    let uploadUrl = null;
+    if (req.file) {
+      uploadUrl = `/uploads/${req.file.filename}`; // บันทึก Path สำหรับนำไปแสดงผลรูปภาพ
+    }
+
     const newRoom = await prisma.room.create({
       data: {
         roomName: roomName.trim(),
         capacity: parseInt(capacity, 10) || 0,
         location: location ? location.trim() : '',
+        status: status || 'AVAILABLE', // บันทึกสถานะห้องเริ่มต้นเป็น AVAILABLE
+        uploadUrl: uploadUrl,          // บันทึกที่อยู่รูปภาพลงตาราง Room ใน Database
       }
     });
+
     return res.status(201).json({ success: true, message: 'สร้างห้องประชุมสำเร็จ', room: newRoom });
   } catch (error) {
     console.error('Error creating room:', error);
@@ -363,27 +386,30 @@ app.post('/api/rooms', async (req, res) => {
 
 // ✨ [DELETE] ลบห้องประชุม (เพิ่มใหม่)
 app.delete('/api/rooms/:id', async (req, res) => {
-  const roomId = parseInt(req.params.id, 10);
-
-  if (isNaN(roomId)) {
-    return res.status(400).json({ message: 'ID ห้องประชุมไม่ถูกต้อง' });
-  }
+  const { id } = req.params; // รับ ID ของห้องประชุมจาก URL เช่น /api/rooms/5
 
   try {
-    await prisma.room.delete({
-      where: { id: roomId },
+    // 💡 สั่ง Prisma ค้นหาและลบห้องตาม ID ที่ส่งมาจากแอป
+    const deletedRoom = await prisma.room.delete({
+      where: {
+        id: parseInt(id, 10), // แปลงค่า ID จาก String เป็น Integer ให้ตรงกับประเภทใน Database
+      },
     });
-    return res.status(200).json({ success: true, message: 'ลบห้องประชุมสำเร็จ' });
+
+    return res.status(200).json({ 
+      success: true, 
+      message: 'ลบห้องประชุมออกจากฐานข้อมูลสำเร็จ', 
+      room: deletedRoom 
+    });
   } catch (error) {
     console.error('Error deleting room:', error);
+    
+    // ดักจับกรณีที่ Prisma หา ID นี้ไม่เจอในระบบ (อาจจะถูกลบไปแล้ว)
     if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'ไม่พบห้องประชุมที่ต้องการลบ' });
+      return res.status(404).json({ message: 'ไม่พบข้อมูลห้องประชุมที่ต้องการลบในระบบ' });
     }
-    // ดัก Error กรณีที่ห้องถูกนำไปใช้ใน Booking แล้วลบไม่ได้ (Foreign Key Constraint)
-    if (error.code === 'P2003') {
-      return res.status(400).json({ message: 'ไม่สามารถลบได้ เนื่องจากห้องนี้มีประวัติการจองอยู่' });
-    }
-    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการลบห้องประชุม' });
+    
+    return res.status(500).json({ message: 'เกิดข้อผิดพลาด ไม่สามารถลบข้อมูลออกจากฐานข้อมูลได้' });
   }
 });
 
