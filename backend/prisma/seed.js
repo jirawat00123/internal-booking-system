@@ -4,7 +4,7 @@ const { PrismaClient } = require('@prisma/client');
 
 const app = express();
 const prisma = new PrismaClient();
-const PORT = 3000;
+const PORT = 3001;
 
 // ✅ เปิดใช้งาน CORS และ JSON Parser
 app.use(cors());
@@ -146,7 +146,7 @@ async function seedDatabase() {
       { name: 'วิศวกรการตลาด', deptIndex: 10 }, { name: 'วิศวกรขายและการตลาด', deptIndex: 10 }, { name: 'เจ้าหน้าที่เขียนแบบ', deptIndex: 10 }, { name: 'ผจก.ฝ่ายวิศวกรรมการขายและการตลาด', deptIndex: 10 }, { name: 'ผู้ช่วยวิศวกรการขายและการตลาด', deptIndex: 10 }, { name: 'Senior Sales and Marketing Manager', deptIndex: 10 },
       { name: 'หัวหน้าทีมวิศวกรรมติดตั้งเครื่องจักร', deptIndex: 11 }, { name: 'วิศวกรติดตั้งเครื่องจักร', deptIndex: 11 },
       { name: 'หัวหน้าแผนกวิศวกรรมซ่อมบำรุง', deptIndex: 12 }, { name: 'วิศวกรซ่อมบำรุง', deptIndex: 12 },
-      { name: 'หัวหน้าทีมวิศวกรสารสนเทศ IT', deptIndex: 13 }, { name: 'วิศวกรสารสนเทศ IT', deptIndex: 13 },
+      { name: 'หัวหน้าทีมวิศวกรสารสนเทศ IT', deptIndex: 13 }, { name: 'วิศวกรสารสนเทศและเทคโนโลยี', deptIndex: 13 },
       { name: 'วิศวกรการออกแบบ', deptIndex: 14 }, { name: 'ผู้ช่วยวิศวกรการออกแบบ', deptIndex: 14 },
       { name: 'เจ้าหน้าที่งานขนส่ง', deptIndex: 15 }, { name: 'เจ้าหน้าที่ขนส่ง', deptIndex: 15 }
     ];
@@ -261,10 +261,11 @@ async function seedDatabase() {
         });
 
         // สร้างสิทธิ์บัญชีผู้ใช้ (User) ผูกกับพนักงาน
+        // สร้างสิทธิ์บัญชีผู้ใช้ (User) ผูกกับพนักงาน
         await prisma.user.create({
           data: {
-            employee: { connect: { id: newEmployee.id } },
-            role: { connect: { id: roleMap[emp.role] } },
+            employeeId: newEmployee.id,    // 💡 ใช้ employeeId ส่งค่าตรงๆ
+            roleId: roleMap[emp.role],     // 💡 ใช้ roleId ส่งค่าตรงๆ
             pin: emp.pin || null,
             active: true
           }
