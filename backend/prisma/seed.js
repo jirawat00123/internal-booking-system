@@ -91,6 +91,8 @@ async function seedDatabase() {
   console.log('🌱 กำลังเริ่มฝังข้อมูลตั้งต้น (Database Seeding)...');
 
   try {
+    await prisma.roomBookingHistory.deleteMany().catch(() => {});
+    await prisma.vehicleBookingHistory.deleteMany().catch(() => {});
     // 0. ล้างข้อมูลเก่าตามลำดับความสัมพันธ์ (ป้องกัน FK Constraint)
     await prisma.vehicleLog.deleteMany().catch(() => {});
     await prisma.attachment.deleteMany().catch(() => {});
@@ -235,11 +237,18 @@ async function seedDatabase() {
   ];
 
     // ⚡ Optimization: แปลงข้อมูลเป็น Map เพื่อดึงข้อมูลความเร็ว O(1) ประสิทธิภาพสูง
-    const positionMap = new Map(createdPositions.map(p => [p.positionName, p.id]));
+    const deptToDefaultPosMap = new Map();
+    for (const dept of createdDepts) {
+      const firstPosInDept = createdPositions.find(p => p.departmentId === dept.id);
+      if (firstPosInDept) {
+        deptToDefaultPosMap.set(dept.departmentName, firstPosInDept.id);
+      }
+    }
 
     let successCount = 0;
     for (const emp of employeesData) {
-      const positionId = positionMap.get(emp.posName);
+      // 💡 เปลี่ยนไปดึง ID ตำแหน่ง โดยใช้ชื่อแผนก (emp.posName) แทน
+      const positionId = deptToDefaultPosMap.get(emp.posName);
 
       if (positionId) {
         // สร้างข้อมูลพนักงาน (Employee)
