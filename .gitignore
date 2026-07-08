@@ -1,16 +1,15 @@
 ############################
 # Backend
 ############################
-
 backend/node_modules/
 backend/.env
 backend/dist/
 backend/coverage/
+backend/uploads/
 
 ############################
 # Flutter
 ############################
-
 frontend/mobile_app/.dart_tool/
 frontend/mobile_app/build/
 frontend/mobile_app/.flutter-plugins
@@ -18,21 +17,18 @@ frontend/mobile_app/.flutter-plugins-dependencies
 frontend/mobile_app/.pub-cache/
 
 ############################
-# VS Code
+# IDE
 ############################
-
 .vscode/settings.json
 
 ############################
 # OS
 ############################
-
 .DS_Store
 Thumbs.db
 
 ############################
 # Node
 ############################
-
 node_modules/
 npm-debug.log*

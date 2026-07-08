@@ -55,10 +55,95 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     loadRooms();
   }
 
+  Future<void> _deleteRoomFromServer(int roomId) async {
+    // ⚠️ หมายเหตุ: เปลี่ยน localhost เป็น IP ของฝั่งเซิร์ฟเวอร์ตามที่ระบบจำลองคุณตั้งไว้
+    final url = Uri.parse('http://localhost:3001/api/rooms/$roomId');
+
+    try {
+      // 💡 1. ดึง Token จากตัวแปรส่วนกลางเพื่อใช้ในการยืนยันสิทธิ์
+      String token = globalToken;
+
+      // 💡 2. แนบ Authorization Header ไปพร้อมกับ HTTP DELETE request เพื่อผ่านด่านหลังบ้าน
+      final response = await http.delete(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token', // 🔥 ยืนยันสิทธิ์ความเป็น ADMIN
+        },
+      );
+
+      // ตรวจสอบ Log ดูสเตตัสตอบกลับจากเซิร์ฟเวอร์
+      if (response.statusCode == 200) {
+        print('📱 [Flutter Delete] Response Status: ${response.statusCode}');
+        print('📱 [Flutter Delete] Response Body: ${response.body}');
+
+        // 🟢 3. เมื่อหลังบ้านแจ้งว่าลบสำเร็จ (Status 200) ค่อยสั่งเคลียร์ข้อมูลออกจาก UI ทันที
+        final currentRooms = List<MeetingRoom>.from(globalMeetingRooms.value);
+
+        // 🔥 ป้องกัน Bug ด้วยการแปลง id เป็น String (.toString()) ทั้งคู่ก่อนที่จะนำมาเปรียบเทียบกัน
+        currentRooms.removeWhere(
+          (room) => room.id.toString() == roomId.toString(),
+        );
+
+        // ส่งค่ากลับไปให้ ValueNotifier เพื่อสั่งให้หน้าจอรีเฟรชตัวเองแบบ Real-time
+        globalMeetingRooms.value = currentRooms;
+
+        // 🔔 แสดง SnackBar แจ้งเตือนเมื่อลบสำเร็จสำเร็จ
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'ลบห้องประชุมออกจากระบบสำเร็จแล้ว',
+              style: TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        print(
+          '🛑 [Flutter Delete] Failed to delete room. Status: ${response.statusCode}',
+        );
+
+        // 🔴 กรณีหลังบ้านปฏิเสธ (เช่น Token หมดอายุ หรือไม่มีสิทธิ์ความเป็น Admin)
+        final errorData = jsonDecode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'ไม่สามารถลบได้: ${errorData['message'] ?? 'เกิดข้อผิดพลาด'}',
+              style: const TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (error) {
+      // 🚨 เกิดข้อผิดพลาดด้านเครือข่าย/การเชื่อมต่อ
+      print('❌ Connection Error on Delete: $error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย',
+            style: TextStyle(fontFamily: 'Kanit'),
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
   Future<void> loadRooms() async {
     try {
+      // 💡 ปรับ Base URL ให้รองรับ Web และ Emulator อัตโนมัติ (พอร์ต 3001)
+      final String baseUrl = kIsWeb
+          ? 'http://localhost:3001'
+          : 'http://10.0.2.2:3001';
+      String token = globalToken; // ดึง Token จากตัวแปรส่วนกลาง
+
       final response = await http.get(
-        Uri.parse('http://localhost:3001/api/rooms'),
+        Uri.parse('$baseUrl/api/rooms'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token', // 💡 แนบ Token เพื่อสิทธิ์ดึงข้อมูล
+        },
       );
 
       print(response.statusCode);
@@ -138,16 +223,15 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                       child: SizedBox(
                         height: 44,
                         child: ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(dialogContext);
-                            final updatedList = List<MeetingRoom>.from(
-                              globalMeetingRooms.value,
-                            );
-                            updatedList.removeAt(index);
-                            globalMeetingRooms.value = updatedList;
+                          onPressed: () async {
+                            // 🟢 ประกาศไว้ด้านในเครื่องหมายปีกกา { ของปุ่มกดได้เลย ปลอดภัย 100%
+                            // 🟢 เปลี่ยนจาก rooms เป็น globalMeetingRooms.value
+                            final room = globalMeetingRooms.value[index];
 
-                            setState(() {});
+                            await _deleteRoomFromServer(int.parse(room.id));
+                            Navigator.pop(dialogContext);
                           },
+
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFB70000),
                             foregroundColor: Colors.white,
@@ -275,10 +359,12 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: rooms.length,
+                    itemCount: globalMeetingRooms.value.length,
                     itemBuilder: (context, index) {
-                      return _buildRoomCard(rooms[index], index);
+                      // 🟢 ย้ายมาประกาศไว้ด้านบนสุด ตรงนี้ปลอดภัย 100%
+                      final room = globalMeetingRooms.value[index];
+
+                      return _buildRoomCard(room, index);
                     },
                   ),
           ),
@@ -287,11 +373,29 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     );
   }
 
+  String displayStatus(String status) {
+    switch (status) {
+      case 'AVAILABLE':
+        return 'ว่างพร้อมใช้งาน';
+      case 'RESERVED': // 💡 เปลี่ยนตาม Schema ใหม่
+        return 'จองแล้ว';
+      case 'IN_USE': // 💡 เปลี่ยนตาม Schema ใหม่
+        return 'กำลังใช้งาน';
+      default:
+        return status;
+    }
+  }
+
   Widget _buildRoomCard(MeetingRoom room, int index) {
-    bool isAvailable = room.status == 'AVAILABLE';
-    Color statusColor = isAvailable
-        ? const Color(0xFF2EC4B6)
-        : const Color(0xFFE11D48);
+    // 💡 ปรับให้รองรับ 3 สีตามสถานะของ Backend
+    Color statusColor;
+    if (room.status == 'AVAILABLE') {
+      statusColor = const Color(0xFF2EC4B6); // สีเขียว
+    } else if (room.status == 'RESERVED') {
+      statusColor = const Color(0xFFF59E0B); // สีส้ม/เหลือง
+    } else {
+      statusColor = const Color(0xFFE11D48); // สีแดง (IN_USE)
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
@@ -323,9 +427,10 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                       ? (kIsWeb
                             ? Image.network(
                                 // 💡 เช็กว่ามีคำว่า http หรือยัง ถ้ายังให้เติม URL ของหลังบ้านเข้าไป
+                                // 💡 เช็กว่ามีคำว่า http หรือยัง ถ้ายังให้เติม URL ของหลังบ้านเข้าไป
                                 room.imagePath!.startsWith('http')
                                     ? room.imagePath!
-                                    : 'http://127.0.0.1:3001${room.imagePath!}',
+                                    : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${room.imagePath}',
                                 height: 180,
                                 width: double.infinity,
                                 fit: BoxFit.cover,
@@ -394,7 +499,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         Icon(Icons.circle, color: statusColor, size: 8),
                         const SizedBox(width: 6),
                         Text(
-                          room.status,
+                          displayStatus(room.status),
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,

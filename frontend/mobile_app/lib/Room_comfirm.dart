@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'Room_model.dart';
 import 'Room_Completed.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class RoomConfirmScreen extends StatelessWidget {
   final MeetingRoom room;
@@ -76,35 +78,76 @@ class RoomConfirmScreen extends StatelessWidget {
                         elevation: 4,
                         shadowColor: Colors.black26,
                       ),
-                      onPressed: () {
-                        final currentHistory = List<BookingHistory>.from(
-                          globalBookingHistory.value,
-                        );
-                        currentHistory.add(
-                          BookingHistory(
-                            roomId: room.id,
-                            title: bookingTitle, // 💡 ส่งชื่อหัวข้อเข้าไปเก็บ
-                            date: formattedDate,
-                            startTime: startTime,
-                            endTime: endTime,
-                            participantCount:
-                                participantCount, // 💡 ส่งจำนวนคนเข้าไปเก็บ
-                            type:
-                                'ห้องประชุม', // 💡 ระบุประเภทเป็น 'ห้องประชุม'
-                            bookedBy:
-                                globalCurrentUserName, // 💡 ส่งชื่อผู้จองเข้าไปเก็บ
-                          ),
-                        );
-                        globalBookingHistory.value =
-                            currentHistory; // ยิงสัญญาณเรียลไทม์!
+                      onPressed: () async {
+                        try {
+                          // จัดการ Base URL อัตโนมัติระหว่าง Web กับ Emulator
+                          final String baseUrl = kIsWeb
+                              ? 'http://localhost:3001'
+                              : 'http://10.0.2.2:3001';
+                          final String jwtToken =
+                              globalToken; // TODO: นำ Token ที่ได้จากการ Login มาใส่ที่นี่
 
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const RoomCompletedScreen(),
-                          ),
-                          (route) => route.isFirst,
-                        );
+                          // แปลงรูปแบบวันที่จาก DD/MM/YYYY เป็น YYYY-MM-DD สำหรับส่งให้ Database
+                          final dateParts = formattedDate.split('/');
+                          final formattedForApi = dateParts.length == 3
+                              ? '${dateParts[2]}-${dateParts[1]}-${dateParts[0]}'
+                              : formattedDate;
+
+                          final String startDateTimeStr =
+                              '$formattedForApi ${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00';
+                          final String endDateTimeStr =
+                              '$formattedForApi ${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00';
+
+                          final response = await http.post(
+                            Uri.parse('$baseUrl/api/bookings'),
+                            headers: {
+                              // 💡 ต้องบอก Backend ว่าข้อมูลใน body เป็น JSON
+                              'Content-Type': 'application/json',
+                              'Authorization': 'Bearer $jwtToken',
+                            },
+                            body: jsonEncode({
+                              "roomId": int.parse(room.id.toString()),
+                              "title": bookingTitle.trim().isEmpty
+                                  ? 'ประชุมงานทั่วไป'
+                                  : bookingTitle,
+                              "startDatetime": startDateTimeStr,
+                              "endDatetime": endDateTimeStr,
+                            }),
+                          );
+
+                          if (response.statusCode == 201) {
+                            if (context.mounted) {
+                              Navigator.pushAndRemoveUntil(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const RoomCompletedScreen(),
+                                ),
+                                (route) => route.isFirst,
+                              );
+                            }
+                          } else {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'จองไม่สำเร็จ: ${response.statusCode}',
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('ข้อผิดพลาดการเชื่อมต่อ: $e'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
                       },
                       child: const Text(
                         'ยืนยันการจองห้อง',
@@ -257,11 +300,28 @@ class RoomConfirmScreen extends StatelessWidget {
                   width: double.infinity,
                   color: Colors.grey[300],
                   child: room.imagePath != null
-                      ? (kIsWeb
-                            ? Image.network(room.imagePath!, fit: BoxFit.cover)
+                      ? (kIsWeb || room.imagePath!.startsWith('/')
+                            ? Image.network(
+                                room.imagePath!.startsWith('http')
+                                    ? room.imagePath!
+                                    : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${room.imagePath}',
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(
+                                      Icons.broken_image,
+                                      size: 50,
+                                      color: Colors.grey,
+                                    ),
+                              )
                             : Image.file(
                                 File(room.imagePath!),
                                 fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(
+                                      Icons.broken_image,
+                                      size: 50,
+                                      color: Colors.grey,
+                                    ),
                               ))
                       : const Icon(Icons.image, size: 50, color: Colors.grey),
                 ),

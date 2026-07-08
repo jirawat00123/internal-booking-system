@@ -121,67 +121,62 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                         height: 44,
                         child: ElevatedButton(
                           onPressed: () async {
-                            // 💡 ตัวอย่างโค้ดเตรียมส่งข้อมูลแบบ Multipart ไปยัง API (รอหลังบ้านพร้อมค่อยเปิดใช้งาน)
-                            if (_imageBytes != null && _imageFile != null) {
-                              /*
-                              var uri = Uri.parse('https://your-backend-api.com/upload-room');
-                              var request = http.MultipartRequest('POST', uri);
-                              
-                              // แนบข้อมูล Text ฟอร์มลงไปในก้อน Request
-                              request.fields['floor'] = floorNumber.toString();
-                              request.fields['side'] = selectedSide;
-                              request.fields['capacity'] = capacity.toString();
-                              
-                              // แนบไฟล์ภาพจาก Bytes
-                              var multipartFile = http.MultipartFile.fromBytes(
-                                'image',
-                                _imageBytes!,
-                                filename: _imageFile!.name,
+                            try {
+                              // 💡 1. กำหนด URL ของ API (เปลี่ยนเป็น IP หรือ Domain ของ Backend คุณ)
+                              var uri = Uri.parse(
+                                'http://127.0.0.1:3001/api/rooms',
                               );
-                              request.files.add(multipartFile);
-                              
-                              // สั่งยิง API พร้อมดักการตอบกลับ
-                              var response = await request.send();
-                              if (response.statusCode == 200) {
-                                // ระบบหลังบ้านจะส่ง string ที่เป็น URL ของรูปภาพกลับมา (เช่น responseData['uploadUrl']) ให้นำไปบันทึก
-                                debugPrint('อัปโหลดไฟล์สำเร็จ!');
+                              var request = http.MultipartRequest('POST', uri);
+
+                              // 💡 บังคับระบุ Content-Type ของคำขอให้เป็น Multipart Form-Data ให้ชัดเจนยิ่งขึ้น
+                              request.headers.addAll({
+                                'Accept': 'application/json',
+                              });
+
+                              request.fields['roomName'] =
+                                  'Floor $floorNumber - Side $selectedSide';
+                              request.fields['location'] =
+                                  'Floor $floorNumber - Side $selectedSide';
+                              request.fields['capacity'] = capacity.toString();
+                              request.fields['status'] = 'AVAILABLE';
+
+                              if (_imageBytes != null && _imageFile != null) {
+                                var multipartFile = http.MultipartFile.fromBytes(
+                                  'image', // 💡 ชื่อคีย์นี้ต้องสะกดพิมพ์เล็กตรงกันกับใน upload.single('image') ของหลังบ้าน
+                                  _imageBytes!,
+                                  filename: _imageFile!.name,
+                                );
+                                request.files.add(multipartFile);
                               }
-                              */
+
+                              var response = await request.send();
+
+                              if (response.statusCode == 201 ||
+                                  response.statusCode == 200) {
+                                debugPrint(
+                                  '📱 [Flutter] บันทึกข้อมูลลงฐานข้อมูลสำเร็จ!',
+                                );
+
+                                // เมื่อสำเร็จ จึงจะปิด Dialog และไปหน้า Success
+                                Navigator.pop(dialogContext);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        const MobileFrameSuccessContainer(),
+                                  ),
+                                );
+                              } else {
+                                debugPrint(
+                                  '❌ [Flutter] ข้อผิดพลาดจากเซิร์ฟเวอร์ Code: ${response.statusCode}',
+                                );
+                                // (ทางเลือก) สามารถเพิ่มโชว์ SnackBar แจ้งเตือนผู้ใช้ตรงนี้ได้
+                              }
+                            } catch (e) {
+                              debugPrint(
+                                '❌ [Flutter] เกิดข้อผิดพลาดในการเชื่อมต่อ: $e',
+                              );
                             }
-
-                            // 💡 แก้ไขจุดบันทึกข้อมูลเรียลไทม์: แปลงดึงข้อมูลอาเรย์ชุดเดิมออกมาและสร้างอันใหม่เพื่อยิงสัญญาณอัปเดตไปทุกหน้าจอค้าง
-                            final updatedList = List<MeetingRoom>.from(
-                              globalMeetingRooms.value,
-                            );
-
-                            // จำลองสุ่มหรือใช้ ID อิงตามสัดส่วนความยาว
-
-                            // สร้าง ID ใหม่จากจำนวนข้อมูลปัจจุบัน
-                            final generatedId =
-                                (globalMeetingRooms.value.length + 1)
-                                    .toString();
-
-                            updatedList.add(
-                              MeetingRoom(
-                                id: generatedId,
-                                roomName: 'Meeting Room $generatedId',
-                                location:
-                                    'Floor $floorNumber - Side $selectedSide',
-                                capacity: capacity,
-                                imagePath: _imageFile
-                                    ?.path, // (ในอนาคต: นำ URL จาก API มายัดใส่ตัวแปรนี้แทน)
-                                status: 'AVAILABLE',
-                              ),
-                            );
-
-                            globalMeetingRooms.value =
-                                updatedList; // ข้อมูลเปลี่ยนเรียลไทม์ทันทีในพริบตา!
-
-                            Navigator.pop(dialogContext);
-
-                            debugPrint(
-                              'บันทึกข้อมูลเข้าสู่ globalMeetingRooms (ValueNotifier) เรียบร้อยแล้ว',
-                            );
 
                             Navigator.push(
                               context,

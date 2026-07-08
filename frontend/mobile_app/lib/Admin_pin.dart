@@ -4,6 +4,7 @@ import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
 import 'package:shared_preferences/shared_preferences.dart'; // 💡 เพิ่มแพ็กเกจนี้เพื่อใช้เซฟ Token
 import 'PinError.dart';
 import 'AdminGroupPage.dart';
+import 'Room_model.dart';
 
 class Admin_pinPage extends StatefulWidget {
   const Admin_pinPage({super.key});
@@ -82,6 +83,9 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
           // 💡 บันทึก Token ลง SharedPreferences เพื่อใช้ส่งข้อมูลในหน้าอื่นๆ
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('token', responseData['token'] ?? '');
+
+          // 🔥 2. เพิ่มบรรทัดนี้ลงไป เพื่อบันทึกค่าไว้ใช้ตอนลบข้อมูลหน้า Admin_roompage
+          globalToken = responseData['token'] ?? '';
 
           // 🟢 รหัสถูก สิทธิ์ถูกต้อง พาเข้าหน้า AdminGroupPage เลย
           Navigator.pushReplacement(

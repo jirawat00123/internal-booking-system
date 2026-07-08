@@ -1,6 +1,8 @@
 // Room_model.dart
 import 'package:flutter/material.dart';
 
+String globalToken = '';
+
 // 💡 1. คลาสโมเดลสำหรับเก็บข้อมูลห้องประชุม
 class MeetingRoom {
   final String id;
@@ -70,10 +72,12 @@ class BookingHistory {
   final int participantCount;
   final String type;
   final String bookedBy;
+  final int? id; // 💡 เพิ่มตัวแปร id สำหรับใช้ในการยกเลิกการจอง
   String?
   status; // 💡 เปลี่ยนเป็นแบบไม่บังคับ (Optional) หรือตั้งเป็น String status;
 
   BookingHistory({
+    this.id, // 💡 รับค่า id (ไม่บังคับ)
     required this.roomId,
     required this.title,
     required this.date,
@@ -89,7 +93,21 @@ class BookingHistory {
   // 💡 ให้แก้ไขฟังก์ชัน get currentStatus ในไฟล์ Room_model.dart เป็นแบบนี้ครับ
   String get currentStatus {
     // 1. ถ้ามีการกดยกเลิกหรือเปลี่ยนสเตตัสโดยตรงจากปุ่ม ให้ใช้ค่านั้นทันที
-    if (status != null) return status!;
+    if (status != null) {
+      switch (status) {
+        case 'AVAILABLE':
+          return 'ว่าง';
+
+        case 'RESERVED':
+          return 'จองแล้ว';
+
+        case 'IN_USE':
+          return 'กำลังใช้งาน';
+
+        default:
+          return status!;
+      }
+    }
 
     try {
       // 2. แปลงสตริงวันที่จอง (เช่น "27/05/2026") แยกส่วน วัน/เดือน/ปี

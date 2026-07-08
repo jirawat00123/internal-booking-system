@@ -56,8 +56,10 @@ class AdminGroupPage extends StatelessWidget {
                         ),
                       ),
                       style: OutlinedButton.styleFrom(
-                        backgroundColor: Colors.white.withOpacity(0.2),
-                        side: BorderSide(color: Colors.white.withOpacity(0.5)),
+                        backgroundColor: Colors.white.withValues(alpha: 0.2),
+                        side: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
                         ),
@@ -90,7 +92,7 @@ class AdminGroupPage extends StatelessWidget {
                           Container(
                             width: 320,
                             height: 1,
-                            color: Colors.white.withOpacity(0.9),
+                            color: Colors.white.withValues(alpha: 0.9),
                           ),
 
                           const SizedBox(height: 20),
@@ -160,7 +162,7 @@ class AdminGroupPage extends StatelessWidget {
                         Container(
                           height: 1,
                           width: double.infinity,
-                          color: Colors.white.withOpacity(0.9),
+                          color: Colors.white.withValues(alpha: 0.9),
                         ),
                         const SizedBox(height: 20),
                         const Text(
@@ -210,7 +212,7 @@ class AdminMenuCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),

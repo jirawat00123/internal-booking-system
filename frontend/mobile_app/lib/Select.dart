@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'Manage.dart'; 
-import 'Admin_pin.dart'; 
+import 'Manage.dart';
+import 'Admin_pin.dart';
 
 class LoginSelectionPage extends StatelessWidget {
   const LoginSelectionPage({super.key});
@@ -15,7 +15,7 @@ class LoginSelectionPage extends StatelessWidget {
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/images/bgmmk.png'), 
+                image: AssetImage('assets/images/bgmmk.png'),
                 fit: BoxFit.cover,
               ),
             ),
@@ -38,7 +38,9 @@ class LoginSelectionPage extends StatelessWidget {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const SizedBox(height: 70), // เว้นที่ว่างหลบปุ่ม Back ด้านบน
+                              const SizedBox(
+                                height: 70,
+                              ), // เว้นที่ว่างหลบปุ่ม Back ด้านบน
                               Image.asset(
                                 'assets/images/MMK_logo.png',
                                 height: 100,
@@ -46,11 +48,14 @@ class LoginSelectionPage extends StatelessWidget {
                               ),
                               const SizedBox(height: 16),
                               Container(
-                                width: 300, // ความยาวของเส้นใต้โลโก้ ปรับเพิ่ม-ลดได้ตามต้องการ
-                                height: 2,   // ความหนาของเส้น
-                                color: Colors.white.withValues(alpha: 0.6), // สีขาวแบบโปร่งแสงเล็กน้อยให้ดูเนียนตา
+                                width:
+                                    300, // ความยาวของเส้นใต้โลโก้ ปรับเพิ่ม-ลดได้ตามต้องการ
+                                height: 2, // ความหนาของเส้น
+                                color: Colors.white.withValues(
+                                  alpha: 0.6,
+                                ), // สีขาวแบบโปร่งแสงเล็กน้อยให้ดูเนียนตา
                               ),
-                              
+
                               const SizedBox(height: 32),
 
                               const Text(
@@ -86,7 +91,8 @@ class LoginSelectionPage extends StatelessWidget {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => const ManagePage(), 
+                                        builder: (context) =>
+                                            const ManagePage(),
                                       ),
                                     );
                                   },
@@ -109,7 +115,8 @@ class LoginSelectionPage extends StatelessWidget {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => const Admin_pinPage(), 
+                                        builder: (context) =>
+                                            const Admin_pinPage(),
                                       ),
                                     );
                                   },
@@ -146,7 +153,7 @@ class LoginSelectionPage extends StatelessWidget {
               },
             ),
           ),
-          
+
           // Layer 3: ปุ่มย้อนกลับ (อยู่เลเยอร์บนสุดเสมอ)
           SafeArea(
             child: Align(
@@ -154,7 +161,11 @@ class LoginSelectionPage extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.only(left: 8.0, top: 8.0),
                 child: IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+                  icon: const Icon(
+                    Icons.arrow_back,
+                    color: Colors.white,
+                    size: 28,
+                  ),
                   onPressed: () {
                     Navigator.pop(context);
                   },

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'Room_model.dart';
 import 'Admin_roompage.dart';
+import 'Room_booking.dart';
 
 class RoomListScreen extends StatefulWidget {
   const RoomListScreen({super.key});
@@ -151,12 +152,19 @@ class _RoomListScreenState extends State<RoomListScreen> {
       );
     }
 
-    // ถ้ารูปเป็น URL จากอินเทอร์เน็ต หรือรันบน Web
     if (kIsWeb ||
         imagePath.startsWith('http://') ||
-        imagePath.startsWith('https://')) {
+        imagePath.startsWith('https://') ||
+        imagePath.startsWith('/')) {
+      final String baseUrl = kIsWeb
+          ? 'http://localhost:3001'
+          : 'http://10.0.2.2:3001';
+      final imageUrl = imagePath.startsWith('http')
+          ? imagePath
+          : '$baseUrl$imagePath';
+
       return Image.network(
-        imagePath,
+        imageUrl,
         height: 180,
         width: double.infinity,
         fit: BoxFit.cover,
@@ -168,7 +176,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
       );
     }
 
-    // ถ้ารันบน Mobile และเป็นไฟล์ในเครื่อง
     return Image.file(
       File(imagePath),
       height: 180,
@@ -184,10 +191,21 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   // ส่วนสร้าง Card ห้องประชุม
   Widget _buildRoomCard(MeetingRoom room) {
-    bool isAvailable = room.status == 'ว่างพร้อมใช้งาน';
-    Color statusColor = isAvailable
-        ? const Color(0xFF2EC4B6)
-        : const Color(0xFFE11D48);
+    bool isAvailable = room.status == 'AVAILABLE';
+    Color statusColor;
+
+    switch (room.status) {
+      case 'AVAILABLE':
+        statusColor = const Color(0xFF2EC4B6);
+        break;
+
+      case 'RESERVED':
+        statusColor = Colors.orange;
+        break;
+
+      default:
+        statusColor = const Color(0xFFE11D48);
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
@@ -237,7 +255,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
                       Text(
                         room.status == 'AVAILABLE'
                             ? 'ว่างพร้อมใช้งาน'
-                            : 'ไม่พร้อมใช้งาน',
+                            : room.status == 'RESERVED'
+                            ? 'จองแล้ว'
+                            : 'กำลังใช้งาน',
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
@@ -307,11 +327,10 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   child: ElevatedButton(
                     onPressed: isAvailable
                         ? () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'เลือกห้อง ${room.roomName} สำเร็จ!',
-                                ),
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => RoomBookingAScreen(room: room),
                               ),
                             );
                           }

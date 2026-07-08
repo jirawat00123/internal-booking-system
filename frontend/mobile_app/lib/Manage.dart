@@ -64,7 +64,7 @@ class _ManagePageState extends State<ManagePage> {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/departments/$departmentId/employees'),
+        Uri.parse('$baseUrl/employees?departmentId=$departmentId'),
       );
       if (response.statusCode == 200) {
         // 1. แปลงข้อมูลเป็น Map ก่อนเช่นเดียวกัน

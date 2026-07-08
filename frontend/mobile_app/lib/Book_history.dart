@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart'
+    show kIsWeb; // เพิ่ม kIsWeb สำหรับตรวจสอบ Platform
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -41,8 +43,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       String rawToken = await getSavedToken();
       String cleanToken = rawToken.trim();
 
+      // ปรับ Base URL อัตโนมัติและแก้ Port เป็น 3001 ให้ตรงกับ Backend
+      final String baseUrl = kIsWeb
+          ? 'http://localhost:3001'
+          : 'http://10.0.2.2:3001';
+
       final response = await http.get(
-        Uri.parse('http://localhost:3001/api/bookings?page=1&limit=50'),
+        Uri.parse('$baseUrl/api/bookings?page=1&limit=50'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $cleanToken',
@@ -57,11 +64,15 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           DateTime start = DateTime.parse(item['startDatetime']).toLocal();
           DateTime end = DateTime.parse(item['endDatetime']).toLocal();
 
-          // 💡 [แก้ไข] ถอด id ออกทั้งหมดเพื่อใช้การจัดการสถานะภายในแอปแบบ 100%
           return BookingHistory(
+            id: item['id'], // 💡 ดึง ID กลับมา เพื่อใช้ในการยกเลิกการจอง
+            status: item['status'], // 💡 ดึง Status จริงจาก Backend
             type: 'ห้องประชุม',
             roomId: item['roomId'].toString(),
-            title: item['purpose'] ?? 'ไม่มีหัวข้อ',
+            title:
+                item['title'] ??
+                item['purpose'] ??
+                'ไม่มีหัวข้อ', // 💡 เผื่อกรณีใช้ key title หรือ purpose
             date:
                 '${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')}/${start.year}',
             startTime: TimeOfDay(hour: start.hour, minute: start.minute),
