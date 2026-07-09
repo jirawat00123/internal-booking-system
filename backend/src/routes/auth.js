@@ -107,7 +107,7 @@ router.post('/login-pin', async (req, res) => {
       return res.status(400).json({ success: false, message: 'กรุณาส่งข้อมูล PIN' });
     }
 
-    const inputPin = String(pin).trim(); // แปลงเป็น String และตัดช่องว่างป้องกัน Error
+    const inputPin = String(pin).trim();
 
     // 🛡️ ตรวจสอบรหัส PIN 
     const pinRoles = {
@@ -124,18 +124,18 @@ router.post('/login-pin', async (req, res) => {
 
     const { assignedRole, assignedDept } = roleData;
 
-    // 🛑 ด่านตรวจสิทธิ์: ป้องกันการเข้าผิดประตู
     if (expectedRole && assignedRole !== expectedRole) {
       return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
     }
 
-    // 🔍 ค้นหา user_id จากฐานข้อมูลโดยใช้รหัส PIN เพื่อระบุตัวตน
     let actualUserId = null;
     let actualUserName = "ไม่ทราบชื่อ";
     
     try {
+      // 💡 เปลี่ยนการค้นหา: หา user ที่มี role เป็น ADMIN หรือตามสิทธิ์นั้นๆ แทนการหาจาก pin อย่างเดียว (กรณีพินส่วนกลาง)
+      // หรือดึง admin คนแรกของระบบมาสวมรอยชั่วคราวเพื่อให้ออก Token ได้
       const matchedUser = await prisma.user.findFirst({
-        where: { pin: inputPin },
+        where: { role: { name: assignedRole } }, // ค้นหาจาก Role 
         include: { employee: true }
       });
       
@@ -143,18 +143,19 @@ router.post('/login-pin', async (req, res) => {
         actualUserId = matchedUser.id;
         actualUserName = matchedUser.employee?.fullName || "ไม่ระบุชื่อ";
       } else {
-        console.warn(`[คำเตือน] รหัส PIN ${inputPin} เข้าระบบได้ แต่ไม่มีข้อมูลผูกไว้ในตาราง User`);
+        // หากไม่พบ User ที่มี Role นี้เลย ให้ปฏิเสธการเข้าระบบ
+        return res.status(401).json({ success: false, message: 'ไม่พบผู้ดูแลระบบในฐานข้อมูล ไม่สามารถออก Token ได้' });
       }
     } catch (dbError) {
       console.error("⚠️ ไม่สามารถค้นหาข้อมูลผู้ใช้จาก PIN ได้:", dbError.message);
+      return res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดในการตรวจสอบผู้ใช้' });
     }
 
-    // 🚀 ระบบบันทึกประวัติ (Log)
     // 🚀 ระบบบันทึกประวัติ (Log)
     try {
       await prisma.auditLog.create({
         data: {
-          userId: actualUserId || undefined, // ส่ง userId ไปบันทึกถ้ามีข้อมูล ถ้าไม่มี (เป็น null) Prisma จะข้ามฟิลด์นี้ไปเพื่อไม่ให้ Error
+          userId: actualUserId, // ตอนนี้ actualUserId จะไม่มีทางเป็น null แน่นอน
           action: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${assignedRole}, แผนก: ${assignedDept}, ชื่อ: ${actualUserName})`,
           module: "LOGIN_SYSTEM",
         }
@@ -168,9 +169,9 @@ router.post('/login-pin', async (req, res) => {
     const secretKey = JWT_SECRET || process.env.JWT_SECRET || 'default_secret_key';
     const token = jwt.sign(
       { 
-        userId: actualUserId,   // ✨ ใช้ actualUserId ที่ระบบหามาจากฐานข้อมูลด้านบน
-        role: assignedRole,     // ✨ ใช้ assignedRole ที่ผูกไว้กับรหัส PIN
-        department: assignedDept // ✨ ใช้ assignedDept ที่ผูกไว้กับรหัส PIN
+        userId: actualUserId,   // ✨ userId มีข้อมูลครบถ้วนแล้ว!
+        role: assignedRole,     
+        department: assignedDept 
       }, 
       secretKey, 
       { expiresIn: '12h' }

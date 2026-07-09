@@ -4,17 +4,16 @@ const bookingController = require('../controllers/bookingController');
 
 const router = express.Router();
 
-// 🚗 [GET] /api/bookings - ดึงประวัติรายการจองทั้งหมดจาก Database (รองรับระบบ Booking History)
+// ดึงประวัติ
 router.get('/', authenticateToken, bookingController.getBookingHistory);
-
-// 🔍 [POST] /api/bookings/check-availability - เส้นทางสำหรับเช็คเวลาว่าง (ย้ายลอจิกไปรวมศูนย์ที่ Controller เพื่อความปลอดภัย)
+// เช็คเวลาซ้ำ
 router.post('/check-availability', authenticateToken, bookingController.checkAvailability);
-
-// ➕ [POST] /api/bookings - เส้นทางสำหรับสร้างรายการจองใหม่ (ดักจับบั๊ก Foreign Key)
+// สร้างการจอง
 router.post('/', authenticateToken, bookingController.createBooking);
-
-// ❌ [PATCH] /api/bookings/:id/cancel - เส้นทางสำหรับยกเลิกการจอง (Soft Delete)
+// ยกเลิกการจอง
 router.patch('/:id/cancel', authenticateToken, bookingController.cancelBooking);
 
-// 🚨 ส่งออก router นี้ออกไปให้ index.js เรียกใช้งาน
+// 🚀 เพิ่ม Route ใหม่สำหรับรับการอัปเดตสถานะทั่วไป (เช่น คืนห้อง) 
+router.put('/:id', authenticateToken, bookingController.updateBookingStatus);
+
 module.exports = router;

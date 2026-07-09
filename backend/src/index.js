@@ -386,21 +386,51 @@ app.post('/api/rooms', upload.single('image'), async (req, res) => {
 
 // ✨ [DELETE] ลบห้องประชุม (เพิ่มใหม่)
 app.delete('/api/rooms/:id', async (req, res) => {
-  const { id } = req.params; // รับ ID ของห้องประชุมจาก URL เช่น /api/rooms/5
+  const { id } = req.params; // รับ ID ของห้องประชุมจาก URL
+  const roomIdInt = parseInt(id, 10);
 
   try {
-    // 💡 สั่ง Prisma ค้นหาและลบห้องตาม ID ที่ส่งมาจากแอป
-    const deletedRoom = await prisma.room.delete({
-      where: {
-        id: parseInt(id, 10), // แปลงค่า ID จาก String เป็น Integer ให้ตรงกับประเภทใน Database
-      },
+    // 💡 1. ดึง ID ของการจอง (Booking) ทั้งหมดที่ผูกกับห้องนี้มาก่อน
+    const relatedBookings = await prisma.roomBooking.findMany({
+      where: { roomId: roomIdInt },
+      select: { id: true }
     });
+    const bookingIds = relatedBookings.map(b => b.id);
+
+    // 💡 2. เตรียมคำสั่งลบข้อมูลที่เกี่ยวข้องกันทั้งหมด (ต้องลบลูกก่อนลบแม่)
+    // ลบประวัติการเปลี่ยนสถานะของการจอง (History)
+    const deleteHistories = prisma.roomBookingHistory.deleteMany({
+      where: { roomBookingId: { in: bookingIds } }
+    });
+
+    // ลบไฟล์แนบของการจอง (Attachment)
+    const deleteAttachments = prisma.attachment.deleteMany({
+      where: { roomBookingId: { in: bookingIds } }
+    });
+
+    // ลบประวัติการจองห้อง (Booking)
+    const deleteBookings = prisma.roomBooking.deleteMany({
+      where: { roomId: roomIdInt }
+    });
+
+    // ลบตัวห้องประชุม (Room)
+    const deleteRoom = prisma.room.delete({
+      where: { id: roomIdInt }
+    });
+
+    // 💡 3. รันคำสั่งทั้งหมดพร้อมกันใน Transaction (ถ้ามีจังหวะใดพัง จะ Rollback อัตโนมัติทั้งหมด)
+    await prisma.$transaction([
+      deleteHistories,
+      deleteAttachments,
+      deleteBookings,
+      deleteRoom
+    ]);
 
     return res.status(200).json({ 
       success: true, 
-      message: 'ลบห้องประชุมออกจากฐานข้อมูลสำเร็จ', 
-      room: deletedRoom 
+      message: 'ลบห้องประชุมและประวัติที่เกี่ยวข้องออกจากฐานข้อมูลสำเร็จ'
     });
+    
   } catch (error) {
     console.error('Error deleting room:', error);
     
