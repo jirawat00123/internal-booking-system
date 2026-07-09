@@ -40,13 +40,12 @@ router.get('/employees', async (req, res, next) => {
                 fullName: true,
                 position: { // ดึงชื่อตำแหน่งและแผนกพ่วงมาด้วยเลย
                     select: {
-                        positionName: true,
-                        department: {
-                            select: {
-                                id: true,
-                                departmentName: true
-                            }
-                        }
+                        positionName: true
+                    }
+                },
+                department: {
+                    select: {
+                        departmentName: true
                     }
                 }
             },
