@@ -9,11 +9,9 @@ datasource db {
 
 model Department {
   id             Int        @id @default(autoincrement())
-  departmentCode String     @map("department_code") 
+  departmentCode String?    @map("department_code") // 👈 เติม ? ตรงนี้ครับ สำคัญมาก!
   departmentName String     @map("department_name")
   employee       Employee[]
-  
-  // 👇 เพิ่มบรรทัดนี้เข้าไปครับ เพื่อบอกว่าแผนกนึงมีได้หลายตำแหน่ง
   positions      Position[]
 
   @@map("departments")
