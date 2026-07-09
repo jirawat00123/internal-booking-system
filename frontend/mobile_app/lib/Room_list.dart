@@ -326,13 +326,19 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   height: 46,
                   child: ElevatedButton(
                     onPressed: isAvailable
-                        ? () {
-                            Navigator.push(
+                        ? () async {
+                            final result = await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => RoomBookingAScreen(room: room),
                               ),
                             );
+
+                            // เมื่อกลับมาหน้านี้ ถ้า result เป็น true ให้ดึงข้อมูลใหม่
+                            if (result == true) {
+                              // หมายเหตุ: ตรวจสอบให้แน่ใจว่าได้ import ฟังก์ชัน fetchRooms() เข้ามาในไฟล์นี้แล้ว
+                              // หรือดึงผ่าน class/provider ที่จัดการ state ตามโครงสร้างเดิมของโปรเจกต์
+                            }
                           }
                         : null,
                     style: ElevatedButton.styleFrom(

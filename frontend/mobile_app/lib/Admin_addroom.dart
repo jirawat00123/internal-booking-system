@@ -122,13 +122,12 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                         child: ElevatedButton(
                           onPressed: () async {
                             try {
-                              // 💡 1. กำหนด URL ของ API (เปลี่ยนเป็น IP หรือ Domain ของ Backend คุณ)
+                              // 💡 1. กำหนด URL ของ API
                               var uri = Uri.parse(
                                 'http://127.0.0.1:3001/api/rooms',
                               );
                               var request = http.MultipartRequest('POST', uri);
 
-                              // 💡 บังคับระบุ Content-Type ของคำขอให้เป็น Multipart Form-Data ให้ชัดเจนยิ่งขึ้น
                               request.headers.addAll({
                                 'Accept': 'application/json',
                               });
@@ -141,11 +140,12 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                               request.fields['status'] = 'AVAILABLE';
 
                               if (_imageBytes != null && _imageFile != null) {
-                                var multipartFile = http.MultipartFile.fromBytes(
-                                  'image', // 💡 ชื่อคีย์นี้ต้องสะกดพิมพ์เล็กตรงกันกับใน upload.single('image') ของหลังบ้าน
-                                  _imageBytes!,
-                                  filename: _imageFile!.name,
-                                );
+                                var multipartFile =
+                                    http.MultipartFile.fromBytes(
+                                      'image',
+                                      _imageBytes!,
+                                      filename: _imageFile!.name,
+                                    );
                                 request.files.add(multipartFile);
                               }
 
@@ -157,34 +157,49 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                                   '📱 [Flutter] บันทึกข้อมูลลงฐานข้อมูลสำเร็จ!',
                                 );
 
-                                // เมื่อสำเร็จ จึงจะปิด Dialog และไปหน้า Success
-                                Navigator.pop(dialogContext);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const MobileFrameSuccessContainer(),
-                                  ),
-                                );
+                                // เมื่อสำเร็จ จึงจะปิด Dialog และไปหน้า Success (ทำงานครั้งเดียว)
+                                if (mounted) {
+                                  Navigator.pop(dialogContext);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const MobileFrameSuccessContainer(),
+                                    ),
+                                  );
+                                }
                               } else {
                                 debugPrint(
                                   '❌ [Flutter] ข้อผิดพลาดจากเซิร์ฟเวอร์ Code: ${response.statusCode}',
                                 );
-                                // (ทางเลือก) สามารถเพิ่มโชว์ SnackBar แจ้งเตือนผู้ใช้ตรงนี้ได้
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ (Code: ${response.statusCode})',
+                                      ),
+                                      backgroundColor: const Color(0xFFB70000),
+                                    ),
+                                  );
+                                }
                               }
                             } catch (e) {
                               debugPrint(
                                 '❌ [Flutter] เกิดข้อผิดพลาดในการเชื่อมต่อ: $e',
                               );
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง',
+                                    ),
+                                    backgroundColor: Color(0xFFB70000),
+                                  ),
+                                );
+                              }
                             }
 
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    const MobileFrameSuccessContainer(),
-                              ),
-                            );
+                            // 🗑️ ลบ Navigator.push บรรทัดสุดท้ายที่เคยวางไว้ตรงนี้ออกเรียบร้อยแล้ว เพื่อความปลอดภัยของข้อมูล
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF0096C7),

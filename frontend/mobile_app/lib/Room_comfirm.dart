@@ -35,7 +35,7 @@ class RoomConfirmScreen extends StatelessWidget {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(context, true),
         ),
         title: const Text(
           'จองห้องประชุม',
@@ -126,12 +126,63 @@ class RoomConfirmScreen extends StatelessWidget {
                                 (route) => route.isFirst,
                               );
                             }
+                          } else if (response.statusCode == 409) {
+                            // 🔥 [สิ่งที่เปลี่ยนไป]: เพิ่มบล็อกสำหรับจัดการ Error 409 (เวลาทับซ้อน) โดยเฉพาะ
+                            if (context.mounted) {
+                              String errorMessage =
+                                  'ไม่สามารถจองได้ เนื่องจากมีการจองในช่วงเวลานี้แล้ว';
+                              try {
+                                // พยายามดึงข้อความแจ้งเตือนที่เจาะจงจาก Backend
+                                final errorData = jsonDecode(response.body);
+                                if (errorData['message'] != null) {
+                                  errorMessage = errorData['message'];
+                                }
+                              } catch (_) {}
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.warning_amber_rounded,
+                                        color: Colors.white,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          errorMessage,
+                                          style: const TextStyle(
+                                            fontFamily: 'Kanit',
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  backgroundColor: const Color(
+                                    0xFFD32F2F,
+                                  ), // สีแดงแจ้งเตือน
+                                  behavior: SnackBarBehavior
+                                      .floating, // ให้แสดงแบบลอย ไม่ติดขอบล่าง
+                                  margin: const EdgeInsets.all(20),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  duration: const Duration(
+                                    seconds: 4,
+                                  ), // ค้างไว้ 4 วินาทีให้อ่านทัน
+                                ),
+                              );
+                            }
                           } else {
+                            // 💡 Error อื่นๆ ที่ไม่ใช่ 409 (เช่น 400, 500)
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    'จองไม่สำเร็จ: ${response.statusCode}',
+                                    'จองไม่สำเร็จ รหัส: ${response.statusCode}',
+                                    style: const TextStyle(fontFamily: 'Kanit'),
                                   ),
                                   backgroundColor: Colors.red,
                                 ),
@@ -142,7 +193,10 @@ class RoomConfirmScreen extends StatelessWidget {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('ข้อผิดพลาดการเชื่อมต่อ: $e'),
+                                content: Text(
+                                  'เกิดข้อผิดพลาด: $e',
+                                  style: const TextStyle(fontFamily: 'Kanit'),
+                                ),
                                 backgroundColor: Colors.red,
                               ),
                             );

@@ -87,7 +87,9 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
         // ส่งค่ากลับไปให้ ValueNotifier เพื่อสั่งให้หน้าจอรีเฟรชตัวเองแบบ Real-time
         globalMeetingRooms.value = currentRooms;
-
+        if (mounted) {
+          setState(() {});
+        }
         // 🔔 แสดง SnackBar แจ้งเตือนเมื่อลบสำเร็จสำเร็จ
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -547,15 +549,20 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         ),
                         const SizedBox(height: 12),
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          // 🔥 สิ่งที่เปลี่ยนไป 2.1: ใช้ Expanded แบ่งพื้นที่คนละครึ่ง ป้องกันฝั่งใดฝั่งหนึ่งดันจนพื้นที่ล้น
                           children: [
-                            _buildIconDetail(
-                              Icons.location_on_outlined,
-                              room.location,
+                            Expanded(
+                              child: _buildIconDetail(
+                                Icons.location_on_outlined,
+                                room.location,
+                              ),
                             ),
-                            _buildIconDetail(
-                              Icons.people_outline,
-                              'รองรับสูงสุด ${room.capacity} ท่าน',
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildIconDetail(
+                                Icons.people_outline,
+                                'รองรับสูงสุด ${room.capacity} ท่าน',
+                              ),
                             ),
                           ],
                         ),
@@ -623,15 +630,20 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
   static Widget _buildIconDetail(IconData icon, String text) {
     return Row(
+      mainAxisSize: MainAxisSize.min, // ให้หดตัวพอดีกับเนื้อหา
       children: [
         Icon(icon, size: 16, color: Colors.blueGrey),
         const SizedBox(width: 4),
-        Text(
-          text,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.blueGrey,
-            fontFamily: 'Kanit',
+        // 🔥 สิ่งที่เปลี่ยนไป 2.2: หุ้ม Flexible เพื่อให้ข้อความยอมตัดคำแทนการดันขอบจอ
+        Flexible(
+          child: Text(
+            text,
+            overflow: TextOverflow.ellipsis, // ตัดคำเป็น ... ถ้ายาวเกิน
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.blueGrey,
+              fontFamily: 'Kanit',
+            ),
           ),
         ),
       ],

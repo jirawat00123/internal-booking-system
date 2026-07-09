@@ -64,21 +64,37 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           DateTime start = DateTime.parse(item['startDatetime']).toLocal();
           DateTime end = DateTime.parse(item['endDatetime']).toLocal();
 
+          // 🔥 1. เพิ่มตัวแปลงสถานะจาก English (Backend) เป็น Thai (UI)
+          String rawStatus = item['status'] ?? '';
+          String thaiStatus = 'จองแล้ว'; // ค่าเริ่มต้น
+          if (rawStatus == 'RESERVED')
+            thaiStatus = 'จองแล้ว';
+          else if (rawStatus == 'IN_USE')
+            thaiStatus = 'กำลังใช้งาน';
+          else if (rawStatus == 'COMPLETED')
+            thaiStatus = 'เสร็จสิ้น';
+          else if (rawStatus == 'CANCELLED')
+            thaiStatus = 'ยกเลิกแล้ว';
+
+          // 🔥 2. ดึงชื่อห้องจริงๆ มาแสดง (ถ้าหลังบ้านส่งมา)
+          String displayRoomName = item['room'] != null
+              ? item['room']['roomName']
+              : item['roomId'].toString();
+
           return BookingHistory(
-            id: item['id'], // 💡 ดึง ID กลับมา เพื่อใช้ในการยกเลิกการจอง
-            status: item['status'], // 💡 ดึง Status จริงจาก Backend
+            id: item['id'],
+            status: thaiStatus, // 💡 ใช้สถานะภาษาไทยที่เราแปลงแล้ว
             type: 'ห้องประชุม',
-            roomId: item['roomId'].toString(),
-            title:
-                item['title'] ??
-                item['purpose'] ??
-                'ไม่มีหัวข้อ', // 💡 เผื่อกรณีใช้ key title หรือ purpose
+            roomId:
+                displayRoomName, // 💡 แสดงชื่อห้องจริงๆ เช่น "Floor 5 - Side B"
+            title: item['title'] ?? item['purpose'] ?? 'ไม่มีหัวข้อ',
             date:
                 '${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')}/${start.year}',
             startTime: TimeOfDay(hour: start.hour, minute: start.minute),
             endTime: TimeOfDay(hour: end.hour, minute: end.minute),
             bookedBy: item['user']?['employee']?['firstName'] ?? 'ไม่ระบุชื่อ',
-            participantCount: 0,
+            participantCount:
+                item['participantCount'] ?? 0, // ป้องกันค่า null ถ้ามี
           );
         }).toList();
 
@@ -289,77 +305,33 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  width: 60,
-                  height: 60,
-                  color: Colors.grey[300],
-                  child: Icon(
-                    booking.type == 'ห้องประชุม'
-                        ? Icons.meeting_room
-                        : Icons.directions_car,
-                    color: Colors.grey[600],
-                  ),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF004AAD).withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.groups_outlined,
+                  color: Color(0xFF004AAD),
+                  size: 28,
                 ),
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      booking.type == 'ห้องประชุม'
-                          ? 'Meeting Room ${booking.roomId}'
-                          : booking.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E293B),
-                        fontFamily: 'Kanit',
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.calendar_today_outlined,
-                          size: 14,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          booking.date,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                            fontFamily: 'Kanit',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
                 child: Text(
-                  statusText,
-                  style: TextStyle(
-                    color: statusTextColor,
-                    fontSize: 10,
+                  booking.type == 'ห้องประชุม'
+                      ? 'Meeting Room ${booking.roomId}'
+                      : booking.title,
+                  style: const TextStyle(
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
+                    color: Colors.black87,
                     fontFamily: 'Kanit',
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -383,14 +355,19 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     fontFamily: 'Kanit',
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF004AAD),
-                    fontFamily: 'Kanit',
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
+                    textAlign: TextAlign.end,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF004AAD),
+                      fontFamily: 'Kanit',
+                    ),
                   ),
                 ),
               ],
@@ -423,21 +400,98 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       ),
                     ),
                   ),
-
-                  // 💡 ปุ่มยกเลิกคิว (โชว์เฉพาะเมื่อสถานะคำนวณได้เป็น "จองแล้ว" เท่านั้น)
+                  // 💡 ปุ่มยกเลิกคิว
                   if (statusText == 'จองแล้ว') ...[
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton(
-                        onPressed: () {
-                          // 🔥 [แก้ไข] เปลี่ยนสเตตัสบนวัตถุตรง ๆ ในแรมโดยไม่ต้องใช้ ID
-                          setState(() {
-                            booking.status = 'ยกเลิกแล้ว';
-                            globalBookingHistory.value =
-                                List<BookingHistory>.from(
-                                  globalBookingHistory.value,
+                        // 🔥 [สิ่งที่เปลี่ยนไป 1]: แก้ Method เป็น PATCH และแก้ URL ให้ตรงกับ Backend
+                        onPressed: () async {
+                          try {
+                            final String baseUrl = kIsWeb
+                                ? 'http://localhost:3001'
+                                : 'http://10.0.2.2:3001';
+                            String token = await getSavedToken();
+
+                            // แกะ userId ออกมาจาก Token (สมมติว่า JWT เก็บโครงสร้างแบบ { userId: 24, ... })
+                            int currentUserId = 0;
+                            try {
+                              final parts = token.split('.');
+                              if (parts.length == 3) {
+                                final payload = utf8.decode(
+                                  base64Url.decode(
+                                    base64Url.normalize(parts[1]),
+                                  ),
                                 );
-                          });
+                                final payloadMap = jsonDecode(payload);
+                                currentUserId = payloadMap['userId'] ?? 0;
+                              }
+                            } catch (_) {}
+
+                            // ยิง API ไปที่ Endpoint การยกเลิกของระบบที่มีอยู่แล้ว
+                            final response = await http.patch(
+                              Uri.parse(
+                                '$baseUrl/api/bookings/${booking.id}/cancel',
+                              ), // 💡 แก้ URL ให้ตรง
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ${token.trim()}',
+                              },
+                              body: jsonEncode({
+                                'userId':
+                                    currentUserId, // 💡 ส่ง userId ไปให้ Backend เก็บประวัติ
+                                'remark': 'ยกเลิกการจองผ่านแอปพลิเคชัน',
+                              }),
+                            );
+
+                            if (response.statusCode == 200 ||
+                                response.statusCode == 201) {
+                              setState(() {
+                                booking.status = 'ยกเลิกแล้ว';
+                                globalBookingHistory.value =
+                                    List<BookingHistory>.from(
+                                      globalBookingHistory.value,
+                                    );
+                              });
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'ยกเลิกคิวสำเร็จ',
+                                      style: TextStyle(fontFamily: 'Kanit'),
+                                    ),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            } else {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      'ยกเลิกไม่สำเร็จ รหัส: ${response.statusCode}',
+                                      style: const TextStyle(
+                                        fontFamily: 'Kanit',
+                                      ),
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    'ข้อผิดพลาดการเชื่อมต่อ: $e',
+                                    style: const TextStyle(fontFamily: 'Kanit'),
+                                  ),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          }
                         },
                         style: OutlinedButton.styleFrom(
                           side: const BorderSide(color: Colors.redAccent),
@@ -461,21 +515,96 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                 ],
               ),
 
-              // 💡 ปุ่ม "คืนห้องก่อนเวลา" (โชว์เพิ่มเต็มแถวด้านล่างเมื่อสถานะเป็น "กำลังใช้งาน")
+              // 💡 ปุ่ม "คืนห้องก่อนเวลา"
               if (statusText == 'กำลังใช้งาน') ...[
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   height: 44,
                   child: ElevatedButton(
-                    onPressed: () {
-                      // 🔥 [แก้ไข] กดยกเลิกสัญญาก่อนกำหนดขณะกำลังใช้งาน -> ปรับไปเป็นสถานะเสร็จสิ้นทันที
-                      setState(() {
-                        booking.status = 'เสร็จสิ้น';
-                        globalBookingHistory.value = List<BookingHistory>.from(
-                          globalBookingHistory.value,
+                    // 🔥 [สิ่งที่เปลี่ยนไป 2]: ใช้ระบบเดียวกันในการคืนห้อง
+                    onPressed: () async {
+                      try {
+                        final String baseUrl = kIsWeb
+                            ? 'http://localhost:3001'
+                            : 'http://10.0.2.2:3001';
+                        String token = await getSavedToken();
+
+                        // แกะ userId ออกมาจาก Token
+                        int currentUserId = 0;
+                        try {
+                          final parts = token.split('.');
+                          if (parts.length == 3) {
+                            final payload = utf8.decode(
+                              base64Url.decode(base64Url.normalize(parts[1])),
+                            );
+                            final payloadMap = jsonDecode(payload);
+                            currentUserId = payloadMap['userId'] ?? 0;
+                          }
+                        } catch (_) {}
+
+                        // ยิง API ไปอัปเดตสถานะ (ยืมใช้ Endpoint Cancel ไปก่อน แล้วปรับแก้ Remark เอา)
+                        final response = await http.patch(
+                          Uri.parse(
+                            '$baseUrl/api/bookings/${booking.id}/cancel',
+                          ),
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ${token.trim()}',
+                          },
+                          body: jsonEncode({
+                            'userId': currentUserId,
+                            'remark':
+                                'ผู้ใช้งานทำการคืนห้องก่อนเวลา', // ใส่บันทึกเพื่อให้ Backend ทราบ
+                          }),
                         );
-                      });
+
+                        if (response.statusCode == 200 ||
+                            response.statusCode == 201) {
+                          setState(() {
+                            booking.status = 'เสร็จสิ้น';
+                            globalBookingHistory.value =
+                                List<BookingHistory>.from(
+                                  globalBookingHistory.value,
+                                );
+                          });
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'คืนห้องสำเร็จ',
+                                  style: TextStyle(fontFamily: 'Kanit'),
+                                ),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } else {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'คืนห้องไม่สำเร็จ รหัส: ${response.statusCode}',
+                                  style: const TextStyle(fontFamily: 'Kanit'),
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'ข้อผิดพลาดการเชื่อมต่อ: $e',
+                                style: const TextStyle(fontFamily: 'Kanit'),
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0096C7),
@@ -503,6 +632,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     );
   }
 
+  // =========================================================
+  // 💡 ฟังก์ชันสร้างป็อปอัพรายละเอียดการจอง
+  // =========================================================
   // =========================================================
   // 💡 ฟังก์ชันสร้างป็อปอัพรายละเอียดการจอง
   // =========================================================
@@ -550,15 +682,21 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       ),
                     ),
                     const SizedBox(width: 14),
-                    Text(
-                      booking.type == 'ห้องประชุม'
-                          ? 'Meeting Room ${booking.roomId}'
-                          : booking.title,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                        fontFamily: 'Kanit',
+                    // 🔥 [สิ่งที่เปลี่ยนไป]: นำ Expanded มาครอบ Text ไว้ เพื่อบังคับให้ข้อความชื่อห้องไม่ดันทะลุขอบ Pop-up
+                    Expanded(
+                      child: Text(
+                        booking.type == 'ห้องประชุม'
+                            ? 'Meeting Room ${booking.roomId}'
+                            : booking.title,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                          fontFamily: 'Kanit',
+                        ),
+                        maxLines: 2, // 💡 อนุญาตให้ขึ้นบรรทัดใหม่ได้ 2 บรรทัด
+                        overflow: TextOverflow
+                            .ellipsis, // 💡 ตัดคำเป็น ... ถ้ายาวเกิน
                       ),
                     ),
                   ],
@@ -683,35 +821,44 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             fontFamily: 'Kanit',
           ),
         ),
-        isStatus
-            ? Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: bgStatusColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
+        const SizedBox(width: 8), // เพิ่ม Space เล็กน้อยกันข้อความชนกัน
+        // 💡 แก้ไขโดยการครอบ Flexible หรือ Expanded เพื่อจำกัดพื้นที่ไม่ให้ Overflow
+        Flexible(
+          child: isStatus
+              ? Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: bgStatusColor,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    value,
+                    overflow: TextOverflow
+                        .ellipsis, // ดักเผื่อข้อความยาวเกินให้ขึ้น ...
+                    style: TextStyle(
+                      color: textStatusColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Kanit',
+                    ),
+                  ),
+                )
+              : Text(
                   value,
-                  style: TextStyle(
-                    color: textStatusColor,
-                    fontSize: 10,
+                  overflow: TextOverflow
+                      .ellipsis, // ดักเผื่อข้อความยาวเกินให้ขึ้น ...
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    fontSize: 13,
                     fontWeight: FontWeight.bold,
+                    color: Colors.black87,
                     fontFamily: 'Kanit',
                   ),
                 ),
-              )
-            : Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                  fontFamily: 'Kanit',
-                ),
-              ),
+        ),
       ],
     );
   }

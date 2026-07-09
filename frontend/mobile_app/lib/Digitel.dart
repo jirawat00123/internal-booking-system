@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'Room_List.dart';
+import 'Book_history.dart'; // 💡 เพิ่มบรรทัดนี้เพื่อดึงหน้าประวัติการจองมาใช้งาน
 
 class UserMenuPage extends StatelessWidget {
   const UserMenuPage({super.key});
@@ -114,7 +115,14 @@ class UserMenuPage extends StatelessWidget {
                     Center(
                       child: TextButton.icon(
                         onPressed: () {
-                          // TODO: ไปยังหน้าประวัติการจอง
+                          // 🔥 [สิ่งที่เปลี่ยนไป]: ใส่คำสั่ง Navigator.push เพื่อเปลี่ยนไปหน้า Book_history.dart
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const BookingHistoryScreen(),
+                            ),
+                          );
                         },
                         icon: const Icon(
                           Icons.history,
@@ -123,7 +131,11 @@ class UserMenuPage extends StatelessWidget {
                         ),
                         label: const Text(
                           'ประวัติการจอง',
-                          style: TextStyle(color: Colors.white, fontSize: 14),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontFamily: 'Kanit',
+                          ),
                         ),
                         style: TextButton.styleFrom(
                           backgroundColor: Colors.white.withValues(alpha: 0.3),
