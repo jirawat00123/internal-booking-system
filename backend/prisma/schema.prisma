@@ -5,8 +5,8 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
+
 
 // ==========================================
 // ENUMS (ประเภทข้อมูลแบบตัวเลือก)
@@ -33,7 +33,7 @@ model Department {
   id             Int        @id @default(autoincrement())
   departmentName String     @map("department_name")
 
-  positions      Position[]
+  employee      Employee[]
 
   @@map("departments")
 }
@@ -44,7 +44,6 @@ model Position {
   positionName String     @map("position_name")
   departmentId Int        @map("department_id")
 
-  department   Department @relation(fields: [departmentId], references: [id])
   employees    Employee[]
 
   @@index([departmentId])
@@ -57,8 +56,10 @@ model Employee {
   employeeCode   String           @unique @map("employee_code")
   fullName       String           @map("full_name")
   positionId     Int              @map("position_id")
+  departmentId   Int              @map("departments_id")
 
   position       Position         @relation(fields: [positionId], references: [id])
+  department     Department       @relation(fields: [departmentId], references: [id])
   users          User[]
   driverBookings VehicleBooking[] @relation("DriverEmployee")
 
