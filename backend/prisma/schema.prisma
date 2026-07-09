@@ -9,8 +9,12 @@ datasource db {
 
 model Department {
   id             Int        @id @default(autoincrement())
+  departmentCode String     @map("department_code") 
   departmentName String     @map("department_name")
   employee       Employee[]
+  
+  // 👇 เพิ่มบรรทัดนี้เข้าไปครับ เพื่อบอกว่าแผนกนึงมีได้หลายตำแหน่ง
+  positions      Position[]
 
   @@map("departments")
 }
@@ -18,10 +22,16 @@ model Department {
 model Position {
   id           Int        @id @default(autoincrement())
   positionName String     @map("position_name")
-  departmentId Int        @map("department_id")
+
+  // 1. ช่องเก็บเลข ID ของแผนก (จัดเก็บลงฐานข้อมูลจริง)
+  departmentId Int        @map("department_id")   
+
+  // 2. ตัวเชื่อมความสัมพันธ์เสมือน เพื่อให้ Prisma ทำงานร่วมกับตาราง Department ได้
+  department   Department @relation(fields: [departmentId], references: [id])
+
   employees    Employee[]
 
-  @@index([departmentId])
+  @@index([departmentId]) // ทำหน้าที่ช่วยให้ค้นหาตำแหน่งตามแผนกได้เร็วขึ้น
   @@map("positions")
 }
 
