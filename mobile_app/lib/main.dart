@@ -54,8 +54,6 @@ class WelcomeApp extends StatelessWidget {
     );
   }
 }
-
-// โครงสร้างคลาส WelcomeScreen ด้านล่างนี้เหมือนเดิมทุกอย่าง...
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
 

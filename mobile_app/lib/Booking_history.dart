@@ -42,7 +42,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       String cleanToken = rawToken.trim(); 
 
       final response = await http.get(
-        Uri.parse('http://localhost:3000/api/bookings?page=1&limit=50'),
+        Uri.parse('http://localhost:3001/api/bookings?page=1&limit=50'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $cleanToken',

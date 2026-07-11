@@ -38,7 +38,6 @@ class MeetingRoom {
     );
   }
 }
-
 // 1. คลาสสำหรับเก็บโครงสร้างข้อมูลการจอง
 class BookingHistory{
   final String roomId;

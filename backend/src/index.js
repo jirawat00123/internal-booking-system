@@ -8,16 +8,40 @@ const { PrismaClient } = require('@prisma/client');
 const authRoutes = require('./routes/auth');
 const bookingRoutes = require('./routes/bookings');
 const resourceRoutes = require('./routes/resources');
-const roomRoutes = require('./routes/roomRouter');
+const roomRoutes = require('./routes/rooms');
 const employeeRoutes = require('./routes/employees');
 const vehicleRoutes = require('./routes/vehicles');
 const vehicleBookingsRouter = require('./routes/vehicleBookings');
+
+const multer = require('multer');
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); // ระบุให้นำไฟล์รูปภาพไปเก็บไว้ที่โฟลเดอร์ uploads ของหลังบ้าน
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname)); // ตั้งชื่อไฟล์แบบสุ่มป้องกันชื่อซ้ำ
+  }
+});
+
+const upload = multer({ storage: storage });
 
 // 📖 นำเข้า Swagger
 const swaggerUi = require('swagger-ui-express');
 
 const app = express();
 const prisma = new PrismaClient(); 
+
+// ==========================================
+// 🛡️ ดักจับ Error ระดับ Process (ป้องกันเซิร์ฟเวอร์ดับเงียบ)
+// ==========================================
+process.on('uncaughtException', (err) => {
+  console.error('🔴 [Uncaught Exception] พบข้อผิดพลาดร้ายแรงที่ไม่ถูกจัดการ:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔴 [Unhandled Rejection] Promise ไม่ถูกจัดการ:', reason);
+});
 
 // ==========================================
 // 🛠️ ตั้งค่า Middleware พื้นฐาน
@@ -328,21 +352,31 @@ app.get('/api/rooms', async (req, res) => {
 });
 
 // [POST] สร้างห้องประชุม
-app.post('/api/rooms', async (req, res) => {
-  const { roomName, capacity, location } = req.body;
-
-  if (!roomName) {
-    return res.status(400).json({ message: 'กรุณากรอกชื่อห้องประชุม' });
-  }
-
+app.post('/api/rooms', upload.single('image'), async (req, res) => {
   try {
+    // เมื่อผ่าน Multer แล้ว req.body จะสามารถดึงข้อมูลฟิลด์ตัวหนังสืออกมาได้ครบถ้วน
+    const { roomName, capacity, location, status } = req.body;
+
+    if (!roomName) {
+      return res.status(400).json({ message: 'กรุณากรอกชื่อห้องประชุม' });
+    }
+
+    // ตรวจสอบและบันทึกข้อมูลตำแหน่งไฟล์ภาพที่ถูกส่งขึ้นมาจริง
+    let uploadUrl = null;
+    if (req.file) {
+      uploadUrl = `/uploads/${req.file.filename}`; // บันทึก Path สำหรับนำไปแสดงผลรูปภาพ
+    }
+
     const newRoom = await prisma.room.create({
       data: {
         roomName: roomName.trim(),
         capacity: parseInt(capacity, 10) || 0,
         location: location ? location.trim() : '',
+        status: status || 'AVAILABLE', // บันทึกสถานะห้องเริ่มต้นเป็น AVAILABLE
+        uploadUrl: uploadUrl,          // บันทึกที่อยู่รูปภาพลงตาราง Room ใน Database
       }
     });
+
     return res.status(201).json({ success: true, message: 'สร้างห้องประชุมสำเร็จ', room: newRoom });
   } catch (error) {
     console.error('Error creating room:', error);
@@ -350,62 +384,62 @@ app.post('/api/rooms', async (req, res) => {
   }
 });
 
-// ✨ [PUT] อัปเดต/แก้ไขห้องประชุม (เพิ่มใหม่)
-app.put('/api/rooms/:id', async (req, res) => {
-  const roomId = parseInt(req.params.id, 10);
-  const { roomName, capacity, location, status } = req.body;
-
-  if (isNaN(roomId)) {
-    return res.status(400).json({ message: 'ID ห้องประชุมไม่ถูกต้อง' });
-  }
-
-  try {
-    // เตรียมข้อมูลที่จะอัปเดต (ถ้าไม่ได้ส่งค่ามา จะใช้ค่าเดิม)
-    const updateData = {};
-    if (roomName !== undefined) updateData.roomName = roomName.trim();
-    if (capacity !== undefined) updateData.capacity = parseInt(capacity, 10) || 0;
-    if (location !== undefined) updateData.location = location.trim();
-    if (status !== undefined) updateData.status = status.trim();
-
-    const updatedRoom = await prisma.room.update({
-      where: { id: roomId },
-      data: updateData,
-    });
-
-    return res.status(200).json({ success: true, message: 'อัปเดตห้องประชุมสำเร็จ', room: updatedRoom });
-  } catch (error) {
-    console.error('Error updating room:', error);
-    // รหัส P2025 ของ Prisma คือ Record to update not found.
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'ไม่พบห้องประชุมที่ต้องการแก้ไข' });
-    }
-    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการแก้ไขห้องประชุม' });
-  }
-});
-
 // ✨ [DELETE] ลบห้องประชุม (เพิ่มใหม่)
 app.delete('/api/rooms/:id', async (req, res) => {
-  const roomId = parseInt(req.params.id, 10);
-
-  if (isNaN(roomId)) {
-    return res.status(400).json({ message: 'ID ห้องประชุมไม่ถูกต้อง' });
-  }
+  const { id } = req.params; // รับ ID ของห้องประชุมจาก URL
+  const roomIdInt = parseInt(id, 10);
 
   try {
-    await prisma.room.delete({
-      where: { id: roomId },
+    // 💡 1. ดึง ID ของการจอง (Booking) ทั้งหมดที่ผูกกับห้องนี้มาก่อน
+    const relatedBookings = await prisma.roomBooking.findMany({
+      where: { roomId: roomIdInt },
+      select: { id: true }
     });
-    return res.status(200).json({ success: true, message: 'ลบห้องประชุมสำเร็จ' });
+    const bookingIds = relatedBookings.map(b => b.id);
+
+    // 💡 2. เตรียมคำสั่งลบข้อมูลที่เกี่ยวข้องกันทั้งหมด (ต้องลบลูกก่อนลบแม่)
+    // ลบประวัติการเปลี่ยนสถานะของการจอง (History)
+    const deleteHistories = prisma.roomBookingHistory.deleteMany({
+      where: { roomBookingId: { in: bookingIds } }
+    });
+
+    // ลบไฟล์แนบของการจอง (Attachment)
+    const deleteAttachments = prisma.attachment.deleteMany({
+      where: { roomBookingId: { in: bookingIds } }
+    });
+
+    // ลบประวัติการจองห้อง (Booking)
+    const deleteBookings = prisma.roomBooking.deleteMany({
+      where: { roomId: roomIdInt }
+    });
+
+    // ลบตัวห้องประชุม (Room)
+    const deleteRoom = prisma.room.delete({
+      where: { id: roomIdInt }
+    });
+
+    // 💡 3. รันคำสั่งทั้งหมดพร้อมกันใน Transaction (ถ้ามีจังหวะใดพัง จะ Rollback อัตโนมัติทั้งหมด)
+    await prisma.$transaction([
+      deleteHistories,
+      deleteAttachments,
+      deleteBookings,
+      deleteRoom
+    ]);
+
+    return res.status(200).json({ 
+      success: true, 
+      message: 'ลบห้องประชุมและประวัติที่เกี่ยวข้องออกจากฐานข้อมูลสำเร็จ'
+    });
+    
   } catch (error) {
     console.error('Error deleting room:', error);
+    
+    // ดักจับกรณีที่ Prisma หา ID นี้ไม่เจอในระบบ (อาจจะถูกลบไปแล้ว)
     if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'ไม่พบห้องประชุมที่ต้องการลบ' });
+      return res.status(404).json({ message: 'ไม่พบข้อมูลห้องประชุมที่ต้องการลบในระบบ' });
     }
-    // ดัก Error กรณีที่ห้องถูกนำไปใช้ใน Booking แล้วลบไม่ได้ (Foreign Key Constraint)
-    if (error.code === 'P2003') {
-      return res.status(400).json({ message: 'ไม่สามารถลบได้ เนื่องจากห้องนี้มีประวัติการจองอยู่' });
-    }
-    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการลบห้องประชุม' });
+    
+    return res.status(500).json({ message: 'เกิดข้อผิดพลาด ไม่สามารถลบข้อมูลออกจากฐานข้อมูลได้' });
   }
 });
 
@@ -541,10 +575,21 @@ app.use((err, req, res, next) => {
 });
 
 // ==========================================
-// 🚀 เริ่มต้นทำงาน Server
+// 🚀 เริ่มต้นทำงาน Server พร้อมจัดการสถานะพอร์ต
 // ==========================================
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Clean Server is running on http://localhost:${PORT}`);
   console.log(`📖 เปิดดูคู่มือ API ได้ที่ http://localhost:${PORT}/api-docs`);
+});
+
+// ตรวจจับกรณีที่รันเซิร์ฟเวอร์ไม่ได้ (เช่น พอร์ต 3001 มีโปรแกรมอื่นใช้อยู่)
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`🔴 เกิดข้อผิดพลาด: พอร์ต ${PORT} กำลังถูกใช้งานโดยโปรแกรมอื่น!`);
+    console.error(`💡 วิธีแก้: ให้เปลี่ยนพอร์ตในไฟล์ .env หรือปิดโปรแกรมที่ใช้พอร์ต ${PORT} อยู่`);
+  } else {
+    console.error('🔴 เซิร์ฟเวอร์ดับเนื่องจาก:', err.message);
+  }
+  process.exit(1); // บังคับปิดเพื่อแสดงผลให้ชัดเจน
 });

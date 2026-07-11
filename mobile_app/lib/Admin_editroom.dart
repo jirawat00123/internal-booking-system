@@ -275,7 +275,7 @@ Widget _buildSideToggle() {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
-        children: ['A', 'B'].map((s) => Expanded(
+        children: ['สำนักงาน', 'โรงงาน'].map((s) => Expanded(
           child: GestureDetector(
             onTap: () => setState(() => selectedSide = s),
             child: Container(

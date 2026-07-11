@@ -242,7 +242,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  'Meeting Room ${room.id}',
+                  'ห้องประชุม ชั้น ${room.floor}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,

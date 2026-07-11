@@ -366,9 +366,9 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        _buildSideToggleButton('A'),
+                        _buildSideToggleButton('สำนักงาน'),
                         const SizedBox(width: 10),
-                        _buildSideToggleButton('B'),
+                        _buildSideToggleButton('โรงงาน'),
                       ],
                     ),
                   ],

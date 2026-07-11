@@ -25,7 +25,7 @@ class _ManagePageState extends State<ManagePage> {
   bool _isLoadingDepartments = true;
   bool _isLoadingEmployees = false;
 
-  final String baseUrl = 'http://localhost:3000/api';
+  final String baseUrl = 'http://localhost:3001/api';
 
   @override
   void initState() {
@@ -38,8 +38,12 @@ class _ManagePageState extends State<ManagePage> {
     try {
       final response = await http.get(Uri.parse('$baseUrl/departments'));
       if (response.statusCode == 200) {
+        // 1. แปลงข้อมูลเป็น Map ก่อนเนื่องจากข้อมูลห่อหุ้มมาเป็น Object
+        final Map<String, dynamic> responseData = json.decode(response.body);
+
         setState(() {
-          _departments = json.decode(response.body);
+          // 2. ดึง List ออกมาจากภายในคีย์ 'data'
+          _departments = responseData['data'] ?? [];
           _isLoadingDepartments = false;
         });
       }
@@ -63,8 +67,12 @@ class _ManagePageState extends State<ManagePage> {
         Uri.parse('$baseUrl/employees?departmentId=$departmentId'),
       );
       if (response.statusCode == 200) {
+        // 1. แปลงข้อมูลเป็น Map ก่อนเช่นเดียวกัน
+        final Map<String, dynamic> responseData = json.decode(response.body);
+
         setState(() {
-          _names = json.decode(response.body);
+          // 2. เจาะเข้าไปนำ List ข้อมูลพนักงานมาจากคีย์ 'data'
+          _names = responseData['data'] ?? [];
           _isLoadingEmployees = false;
         });
       }
@@ -295,32 +303,46 @@ class _ManagePageState extends State<ManagePage> {
                 Column(
                   children: [
                     SizedBox(
-  width: double.infinity,
-  height: 46,
-  child: // 🔍 ไปที่ปุ่มยืนยันในฟังก์ชัน _showConfirmDialog ของหน้า ManagePage.dart
-// 🔍 มองหา ElevatedButton ปุ่ม 'ยืนยัน' (ประมาณบรรทัดที่ 111-120 ในรูปของคุณ)
-ElevatedButton(
-  onPressed: () {
-    if (_selectedEmployeeText != null && _selectedEmployeeText!.isNotEmpty) {
-    globalCurrentUserName = _selectedEmployeeText!; // บันทึกชื่อผู้ใช้งานปัจจุบันเข้าสู่ไฟล์กลาง
-  }
-    Navigator.pop(context);  Navigator.pushNamed(
-      context, 
-      '/digitel', 
-      arguments: _selectedEmployeeObj, 
-    );
-    
-    print("เปลี่ยนเส้นทางไปหน้าดิจิทัลสำเร็จ: $_selectedEmployeeText");
-  },
-  style: ElevatedButton.styleFrom(
-    backgroundColor: const Color(0xFF0096C7),
-    foregroundColor: Colors.white,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-    elevation: 2,
-  ),
-  child: const Text('ยืนยัน', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
-),
-),
+                      width: double.infinity,
+                      height: 46,
+                      child: // 🔍 ไปที่ปุ่มยืนยันในฟังก์ชัน _showConfirmDialog ของหน้า ManagePage.dart
+                          // 🔍 มองหา ElevatedButton ปุ่ม 'ยืนยัน' (ประมาณบรรทัดที่ 111-120 ในรูปของคุณ)
+                          ElevatedButton(
+                            onPressed: () {
+                              if (_selectedEmployeeText != null &&
+                                  _selectedEmployeeText!.isNotEmpty) {
+                                globalCurrentUserName =
+                                    _selectedEmployeeText!; // บันทึกชื่อผู้ใช้งานปัจจุบันเข้าสู่ไฟล์กลาง
+                              }
+                              Navigator.pop(context);
+                              Navigator.pushNamed(
+                                context,
+                                '/digitel',
+                                arguments: _selectedEmployeeObj,
+                              );
+
+                              print(
+                                "เปลี่ยนเส้นทางไปหน้าดิจิทัลสำเร็จ: $_selectedEmployeeText",
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0096C7),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              elevation: 2,
+                            ),
+                            child: const Text(
+                              'ยืนยัน',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Kanit',
+                              ),
+                            ),
+                          ),
+                    ),
                     const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,

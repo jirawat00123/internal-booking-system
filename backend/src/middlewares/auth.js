@@ -12,7 +12,6 @@ const authenticateToken = (req, res, next) => {
     if (!token) {
         return res.status(401).json({ success: false, message: 'กรุณาเข้าสู่ระบบก่อนใช้งาน (No Token)' });
     }
-
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
         req.user = decoded; // เก็บข้อมูล user ลงใน req
@@ -25,7 +24,7 @@ const authenticateToken = (req, res, next) => {
 // นามแฝง เพื่อให้ vehicles.js เรียกใช้ verifyToken ได้
 const verifyToken = authenticateToken; 
 
-// 3. 🚨 Middleware ตรวจสอบ Role (ตัวที่ Error ฟ้องหาไม่เจอ คือตัวนี้ครับ!)
+// 3. 🚨 Middleware ตรวจสอบ Role
 const requireRole = (allowedRoles) => {
     return (req, res, next) => {
         if (!req.user || !allowedRoles.includes(req.user.role)) {
