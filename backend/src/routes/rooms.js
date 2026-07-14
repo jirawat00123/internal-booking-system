@@ -2,17 +2,19 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs'); // 📌 1. นำเข้าโมดูล fs (File System) เพื่อใช้จัดการไฟล์
-const roomController = require('../controllers/roomController'); // อ้างอิงไปยัง Controller จริง
+const fs = require('fs'); 
+const roomController = require('../controllers/roomController'); 
 const { authenticateToken } = require('../middlewares/auth');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
-// 📌 2. เพิ่มโค้ดเช็กและสร้างโฟลเดอร์ uploads อัตโนมัติ ป้องกัน Multer Error
+// สร้างโฟลเดอร์ uploads อัตโนมัติ ป้องกัน Multer Error
 const uploadDir = 'uploads/';
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// ตั้งค่า multer สำหรับรองรับการอัปโหลดไฟล์รูปภาพห้องประชุมไปยังโฟลเดอร์ uploads
+// ตั้งค่า multer สำหรับรองรับการอัปโหลดไฟล์
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         cb(null, uploadDir);
@@ -24,15 +26,53 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-// ย้าย Logic ทั้งหมดไปจัดการผ่าน Controller เพื่อให้โค้ดเป็นระเบียบตามสถาปัตยกรรมที่ถูกต้อง
+// ==========================================
+// 🚨 จุดสำคัญ: โยง Route ไปหา Controller เท่านั้น ห้ามมี Logic ลบข้อมูลในหน้านี้
+// ==========================================
 router.get('/', authenticateToken, roomController.getAllRooms);
-
-// 💡 1. เพิ่ม upload.single('image') เข้ามาเพื่อให้รองรับการส่งภาพจากหน้าแอป Add Room
 router.post('/', authenticateToken, upload.single('image'), roomController.createRoom);
-
 router.put('/:id', authenticateToken, upload.single('image'), roomController.updateRoom);
 
-// 💡 2. เพิ่ม authenticateToken ป้องกันไม่ให้คนนอกที่ไม่ได้ล็อกอินแอบมายิงคำสั่งลบห้อง
+// 💡 บรรทัดนี้คือหัวใจ: ชี้ไปที่ฟังก์ชัน deleteRoom เท่านั้น
 router.delete('/:id', authenticateToken, roomController.deleteRoom);
+
+// 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง (เพื่อแก้ 404 และกันการจองซ้อน)
+// 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง
+// 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง
+router.get('/:id/schedule', authenticateToken, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const schedules = await prisma.roomBooking.findMany({
+      where: { 
+        roomId: parseInt(id),
+        // 🟢 เพิ่ม 'CANCELLED' (ตัวพิมพ์ใหญ่ทั้งหมด) เข้าไปใน List นี้ครับ
+        status: { 
+          notIn: ['CANCELLED', 'Cancelled', 'Cancel', 'Canceled', 'ยกเลิก', 'เสร็จสิ้น', 'Completed'] 
+        } 
+      },
+      select: {
+        id: true,
+        status: true,
+        startDatetime: true,
+        endDatetime: true,
+      },
+      orderBy: {
+        startDatetime: 'asc'
+      }
+    });
+
+    console.log(`\n================================`);
+    console.log(`📡 มีคนกำลังเช็กคิวห้อง ID: ${id}`);
+    console.log(`📦 คิวที่ระบบมองว่า "ยังถูกจองอยู่" มีทั้งหมด ${schedules.length} คิว ได้แก่:`);
+    console.log(schedules);
+    console.log(`================================\n`);
+
+    return res.json(schedules);
+  } catch (error) {
+    console.error('Error fetching room schedule:', error);
+    next(error);
+  }
+});
 
 module.exports = router;

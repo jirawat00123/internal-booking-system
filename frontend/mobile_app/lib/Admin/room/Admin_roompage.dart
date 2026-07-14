@@ -1,13 +1,12 @@
-import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'Admin_addroom.dart';
 import 'Admin_editroom.dart';
-import 'Room_model.dart';
-import 'AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-
+import '../../Booking_room/Room_model.dart';
+import '../../AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
+import '../../auth_service.dart'; // นำเข้าคลาส AuthService เพื่อดึง Token สำหรับการลบห้องประชุม
 // 💡 รายการข้อมูลส่วนกลาง ValueNotifier
 
 class MobileFrameContainer extends StatelessWidget {
@@ -61,7 +60,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
     try {
       // 💡 1. ดึง Token จากตัวแปรส่วนกลางเพื่อใช้ในการยืนยันสิทธิ์
-      String token = globalToken;
+      String? token = await AuthService.instance.getToken();
 
       // 💡 2. แนบ Authorization Header ไปพร้อมกับ HTTP DELETE request เพื่อผ่านด่านหลังบ้าน
       final response = await http.delete(
@@ -86,11 +85,8 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
         );
 
         // ส่งค่ากลับไปให้ ValueNotifier เพื่อสั่งให้หน้าจอรีเฟรชตัวเองแบบ Real-time
-        globalMeetingRooms.value = currentRooms;
-        if (mounted) {
-          setState(() {});
-        }
         // 🔔 แสดง SnackBar แจ้งเตือนเมื่อลบสำเร็จสำเร็จ
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -138,7 +134,8 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
       final String baseUrl = kIsWeb
           ? 'http://localhost:3001'
           : 'http://10.0.2.2:3001';
-      String token = globalToken; // ดึง Token จากตัวแปรส่วนกลาง
+      String? token = await AuthService.instance
+          .getToken(); // ดึง Token จาก AuthService
 
       final response = await http.get(
         Uri.parse('$baseUrl/api/rooms'),
@@ -156,13 +153,16 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
         final List rooms = body is List ? body : (body['data'] ?? []);
 
-        globalMeetingRooms.value = rooms
+        // 🟢 เพิ่มการกรองข้อมูล (Filter) เอาเฉพาะห้องที่ isDeleted เป็น false เท่านั้น
+        final activeRooms = rooms.where((room) {
+          // ดักจับกรณี backend ส่งมาเป็น boolean หรือ string
+          return room['isDeleted'] == false || room['isDeleted'] == 'false';
+        }).toList();
+
+        // 🟢 นำข้อมูลที่กรองแล้ว (activeRooms) ไป Map เข้า Model
+        globalMeetingRooms.value = activeRooms
             .map((e) => MeetingRoom.fromJson(e))
             .toList();
-
-        if (mounted) {
-          setState(() {});
-        }
       } else {
         debugPrint('Load rooms failed: ${response.statusCode}');
       }
@@ -226,14 +226,30 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         height: 44,
                         child: ElevatedButton(
                           onPressed: () async {
-                            // 🟢 ประกาศไว้ด้านในเครื่องหมายปีกกา { ของปุ่มกดได้เลย ปลอดภัย 100%
-                            // 🟢 เปลี่ยนจาก rooms เป็น globalMeetingRooms.value
                             final room = globalMeetingRooms.value[index];
+                            Navigator.pop(
+                              dialogContext,
+                            ); // ปิด Pop-up ก่อนเพื่อกันผู้ใช้กดเบิ้ล
 
-                            await _deleteRoomFromServer(int.parse(room.id));
-                            Navigator.pop(dialogContext);
+                            // 🟢 ใช้ tryParse ป้องกันแอป Crash (Safe Parsing)
+                            final parsedId = int.tryParse(room.id.toString());
+                            if (parsedId != null) {
+                              await _deleteRoomFromServer(parsedId);
+                            } else {
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'ID ห้องประชุมไม่ถูกต้อง ไม่สามารถลบได้',
+                                      style: TextStyle(fontFamily: 'Kanit'),
+                                    ),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                              }
+                            }
                           },
-
+                          // 🟢 เติม style และ child คืนให้ปุ่มลบ
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFB70000),
                             foregroundColor: Colors.white,
@@ -253,6 +269,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                       ),
                     ),
                     const SizedBox(width: 14),
+                    // 🟢 นำปุ่ม "ยกเลิก" คืนมา
                     Expanded(
                       child: SizedBox(
                         height: 44,
@@ -288,8 +305,6 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rooms = globalMeetingRooms.value;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
@@ -353,22 +368,32 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
           ),
           const SizedBox(height: 20),
           Expanded(
-            child: rooms.isEmpty
-                ? const Center(
+            // 🟢 ครอบ ValueListenableBuilder เพื่อให้ UI รีเฟรชทันทีที่ข้อมูลถูกลบ
+            child: ValueListenableBuilder<List<MeetingRoom>>(
+              valueListenable: globalMeetingRooms,
+              builder: (context, roomsList, child) {
+                if (roomsList.isEmpty) {
+                  return const Center(
                     child: Text(
                       'ยังไม่มีห้องประชุมในระบบ',
                       style: TextStyle(fontFamily: 'Kanit', color: Colors.grey),
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: globalMeetingRooms.value.length,
-                    itemBuilder: (context, index) {
-                      // 🟢 ย้ายมาประกาศไว้ด้านบนสุด ตรงนี้ปลอดภัย 100%
-                      final room = globalMeetingRooms.value[index];
+                  );
+                }
 
-                      return _buildRoomCard(room, index);
-                    },
-                  ),
+                return ListView.builder(
+                  itemCount: roomsList.length,
+                  itemBuilder: (context, index) {
+                    // 🟢 ทำ Bounds Check ตรวจสอบความปลอดภัย 100% ป้องกันแอปเด้ง
+                    if (index >= roomsList.length)
+                      return const SizedBox.shrink();
+
+                    final room = roomsList[index];
+                    return _buildRoomCard(room, index);
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -425,48 +450,28 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                   borderRadius: const BorderRadius.vertical(
                     top: Radius.circular(24),
                   ),
-                  child: room.imagePath != null
-                      ? (kIsWeb
-                            ? Image.network(
-                                // 💡 เช็กว่ามีคำว่า http หรือยัง ถ้ายังให้เติม URL ของหลังบ้านเข้าไป
-                                // 💡 เช็กว่ามีคำว่า http หรือยัง ถ้ายังให้เติม URL ของหลังบ้านเข้าไป
-                                room.imagePath!.startsWith('http')
-                                    ? room.imagePath!
-                                    : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${room.imagePath}',
-                                height: 180,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    height: 180,
-                                    width: double.infinity,
-                                    color: Colors.grey[300],
-                                    child: const Icon(
-                                      Icons.broken_image,
-                                      size: 50,
-                                      color: Colors.grey,
-                                    ),
-                                  );
-                                },
-                              )
-                            : Image.file(
-                                File(room.imagePath!),
-                                height: 180,
-                                width: double.infinity,
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    height: 180,
-                                    width: double.infinity,
-                                    color: Colors.grey[300],
-                                    child: const Icon(
-                                      Icons.broken_image,
-                                      size: 50,
-                                      color: Colors.grey,
-                                    ),
-                                  );
-                                },
-                              ))
+                  // 🟢 ดึงรูปจาก Network เสมอ ทั้ง Web และ Mobile พร้อมทำ Null & Empty check
+                  child: room.imagePath != null && room.imagePath!.isNotEmpty
+                      ? Image.network(
+                          room.imagePath!.startsWith('http')
+                              ? room.imagePath!
+                              : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${room.imagePath}',
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 180,
+                              width: double.infinity,
+                              color: Colors.grey[300],
+                              child: const Icon(
+                                Icons.broken_image,
+                                size: 50,
+                                color: Colors.grey,
+                              ),
+                            );
+                          },
+                        )
                       : Container(
                           height: 180,
                           width: double.infinity,

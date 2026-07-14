@@ -1,6 +1,15 @@
 import 'package:flutter/material.dart';
-import 'Room_List.dart';
-import 'Book_history.dart'; // 💡 เพิ่มบรรทัดนี้เพื่อดึงหน้าประวัติการจองมาใช้งาน
+
+// 🏢 ฟีเจอร์จองห้องประชุม (User) - อัปเดตตามโฟลเดอร์ล่าสุดที่คุณจัดกลุ่มไว้
+import 'package:mobile_app/Booking_room/Room_list.dart';
+
+// 🚗 ฟีเจอร์จองยานพาหนะ (User)
+import 'package:mobile_app/Booking_vehicle/vehicle_list.dart';
+
+// 📦 ไฟล์แกนหลักที่อยู่ระดับเดียวกัน (Root Level)
+import 'package:mobile_app/Book_history.dart';
+import 'package:mobile_app/Manage.dart';
+import 'package:mobile_app/Select.dart';
 
 class UserMenuPage extends StatelessWidget {
   const UserMenuPage({super.key});
@@ -10,7 +19,9 @@ class UserMenuPage extends StatelessWidget {
     return Scaffold(
       body: Stack(
         children: [
-          // 1. Background Image
+          // ==========================================
+          // Layer 1: Background Image
+          // ==========================================
           Container(
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
@@ -21,11 +32,13 @@ class UserMenuPage extends StatelessWidget {
             ),
           ),
 
-          // 2. Main Content
+          // ==========================================
+          // Layer 2: Main Content
+          // ==========================================
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                padding: const EdgeInsets.symmetric(horizontal: 40.0),
                 child: Column(
                   children: [
                     const SizedBox(height: 40),
@@ -35,30 +48,25 @@ class UserMenuPage extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Logo Image
                             Image.asset(
                               'assets/images/MMK_logo.png',
                               height: 100,
                               fit: BoxFit.contain,
                             ),
                             const SizedBox(height: 16),
-
-                            // เส้นใต้โลโก้
                             Container(
-                              width: 300,
+                              width: 320,
                               height: 2,
-                              color: Colors.white.withValues(alpha: 0.6),
+                              color: Colors.white,
                             ),
-
                             const SizedBox(height: 40),
-
-                            // Welcome Texts
                             const Text(
                               'ยินดีต้อนรับ',
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
+                                fontFamily: 'Kanit',
                               ),
                             ),
                             const SizedBox(height: 6),
@@ -66,7 +74,8 @@ class UserMenuPage extends StatelessWidget {
                               'โปรดเลือกรายการเข้าทำเพื่อดำเนินการต่อ',
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.white.withValues(alpha: 0.8),
+                                color: Colors.white.withOpacity(0.8),
+                                fontFamily: 'Kanit',
                               ),
                             ),
                           ],
@@ -76,7 +85,7 @@ class UserMenuPage extends StatelessWidget {
 
                     const SizedBox(height: 32),
 
-                    // 3. Menu Selection Cards (ห้องประชุม & ยานพาหนะ)
+                    // เมนูที่ 1: ห้องประชุม
                     SelectionCard(
                       icon: Icons.groups_outlined,
                       title: 'ห้องประชุม',
@@ -92,6 +101,7 @@ class UserMenuPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
 
+                    // เมนูที่ 2: ยานพาหนะ
                     SelectionCard(
                       icon: Icons.directions_car_filled_outlined,
                       title: 'ยานพาหนะ',
@@ -100,22 +110,18 @@ class UserMenuPage extends StatelessWidget {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            // ⚠️ หมายเหตุ: ให้คุณเปลี่ยนชื่อ "ManagePage()" ตรงนี้
-                            // ให้ตรงกับชื่อคลาส (class) หน้าหลักจริง ๆ ที่อยู่ภายในไฟล์ Manage.dart ของคุณ
-                            builder: (context) => const RoomListScreen(),
+                            builder: (context) => const VehicleBooking(),
                           ),
                         );
                       },
-                      // ==========================================
                     ),
 
                     const SizedBox(height: 24),
 
-                    // 4. ปุ่ม "ประวัติการจอง" สีเทาโปร่งแสง
+                    // เมนูที่ 3: ประวัติการจอง (ปุ่มโปร่งแสง)
                     Center(
                       child: TextButton.icon(
                         onPressed: () {
-                          // 🔥 [สิ่งที่เปลี่ยนไป]: ใส่คำสั่ง Navigator.push เพื่อเปลี่ยนไปหน้า Book_history.dart
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -138,7 +144,7 @@ class UserMenuPage extends StatelessWidget {
                           ),
                         ),
                         style: TextButton.styleFrom(
-                          backgroundColor: Colors.white.withValues(alpha: 0.3),
+                          backgroundColor: Colors.white.withOpacity(0.3),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 24,
                             vertical: 10,
@@ -157,18 +163,19 @@ class UserMenuPage extends StatelessWidget {
                       child: Column(
                         children: [
                           Container(
-                            height: 1,
+                            height: 2,
                             width: 300,
-                            color: Colors.white.withValues(alpha: 0.3),
+                            color: Colors.white.withOpacity(0.9),
                           ),
                           const SizedBox(height: 16),
-                          Text(
+                          const Text(
                             'MENAM MECHANIKA © 2026',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1,
+                              fontFamily: 'Kanit',
                             ),
                           ),
                         ],
@@ -181,19 +188,26 @@ class UserMenuPage extends StatelessWidget {
             ),
           ),
 
-          // 3. Layer ปุ่มย้อนกลับ
+          // ==========================================
+          // Layer 3: Logout Button (Top Right)
+          // ==========================================
           SafeArea(
             child: Align(
-              alignment: Alignment.topLeft,
+              alignment: Alignment.topRight,
               child: Padding(
-                padding: const EdgeInsets.only(left: 8.0, top: 8.0),
+                padding: const EdgeInsets.only(right: 12.0, top: 8.0),
                 child: IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.logout, color: Colors.white, size: 26),
+                  onPressed: () {
+                    // ทำลายสแต็กและกลับไปหน้าเลือกสิทธิ์
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const LoginSelectionPage(),
+                      ),
+                      (route) => false,
+                    );
+                  },
                 ),
               ),
             ),
@@ -204,7 +218,9 @@ class UserMenuPage extends StatelessWidget {
   }
 }
 
-// Reusable Widget สำหรับสร้างการ์ดแต่ละตัวเลือก (ห้องประชุม / ยานพาหนะ)
+// ==========================================
+// Custom Widget: SelectionCard
+// ==========================================
 class SelectionCard extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -227,7 +243,7 @@ class SelectionCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
+            color: Colors.black.withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -265,12 +281,17 @@ class SelectionCard extends StatelessWidget {
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: Colors.black87,
+                          fontFamily: 'Kanit',
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontFamily: 'Kanit',
+                        ),
                       ),
                     ],
                   ),

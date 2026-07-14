@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'Admin_roompage.dart';
-import 'AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
+import '../../AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 
-class MobileFrameSuccessContainer extends StatelessWidget {
-  const MobileFrameSuccessContainer({super.key});
+// 🟢 1. เปลี่ยนชื่อ Class ไม่ให้ซ้ำกับหน้า Add
+class MobileFrameEditSuccessContainer extends StatelessWidget {
+  const MobileFrameEditSuccessContainer({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -21,15 +22,15 @@ class MobileFrameSuccessContainer extends StatelessWidget {
               BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5),
             ],
           ),
-          child: const AdminAddSuccessPage(), // เรียกใช้หน้าจอสำเร็จด้านใน
+          child: const AdminEditSuccessPage(), // 🟢 เรียกใช้คลาสใหม่
         ),
       ),
     );
   }
 }
 
-class AdminAddSuccessPage extends StatelessWidget {
-  const AdminAddSuccessPage({Key? key}) : super(key: key);
+class AdminEditSuccessPage extends StatelessWidget {
+  const AdminEditSuccessPage({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +53,9 @@ class AdminAddSuccessPage extends StatelessWidget {
                   color: const Color(0xFF2EC4B6),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.grey.shade500.withValues(alpha: 0.4),
+                    color: Colors.grey.shade500.withOpacity(
+                      0.4,
+                    ), // 🟢 ปรับเป็น withOpacity ให้รองรับเวอร์ชันปัจจุบัน
                     width: 6,
                   ),
                 ),
@@ -61,9 +64,9 @@ class AdminAddSuccessPage extends StatelessWidget {
 
               const SizedBox(height: 32),
 
-              // 2. ข้อความ "เพิ่มห้องประชุมสำเร็จ"
+              // 2. 🟢 ข้อความ "แก้ไขห้องประชุมสำเร็จ"
               const Text(
-                'เพิ่มห้องประชุมสำเร็จ',
+                'แก้ไขห้องประชุมสำเร็จ',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,
@@ -78,18 +81,19 @@ class AdminAddSuccessPage extends StatelessWidget {
               // 3. ปุ่มกดตัวเลือกทั้งสอง
               Column(
                 children: [
-                  // ปุ่มด้านบน: "กลับไปหน้าห้องประชุม" (แก้ไขการเชื่อมโยงแล้ว)
+                  // ปุ่มด้านบน: "กลับไปหน้าห้องประชุม"
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () {
-                        // 💡 เปลี่ยนเส้นทางกลับไปหน้า AdminRoomPage พร้อมเคลียร์สแต็กหน้าจอเก่า
-                        Navigator.push(
+                        // 🟢 ใช้ pushAndRemoveUntil ล้าง Stack ป้องกันการกด Back ย้อนกลับ
+                        Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const MobileFrameContainer(),
                           ),
+                          (Route<dynamic> route) => false,
                         );
                       },
                       style: ElevatedButton.styleFrom(
@@ -114,17 +118,19 @@ class AdminAddSuccessPage extends StatelessWidget {
 
                   const SizedBox(height: 16),
 
-                  // ปุ่มด้านล่าง: "กลับไปหน้า Login
+                  // ปุ่มด้านล่าง: "กลับไปหน้า Login"
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () {
-                        Navigator.push(
+                        // 🟢 ใช้ pushAndRemoveUntil ล้าง Stack ป้องกันการกด Back ย้อนกลับ
+                        Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const AdminGroupPage(),
                           ),
+                          (Route<dynamic> route) => false,
                         );
                       },
                       style: ElevatedButton.styleFrom(
@@ -156,13 +162,4 @@ class AdminAddSuccessPage extends StatelessWidget {
     );
   }
 }
-
-// 💡 สร้าง Class จำลองไว้รองรับโค้ดด้านบน (สามารถลบออกได้ถ้าคุณมีคลาสนี้อยู่ในไฟล์อื่นแล้ว)
-class AdminRoomPage extends StatelessWidget {
-  const AdminRoomPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: Text('หน้า AdminRoomPage')));
-  }
-}
+// 🟢 ลบคลาสขยะ AdminRoomPage ด้านล่างสุดออกเรียบร้อย

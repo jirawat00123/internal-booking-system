@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
-import 'Book_history.dart';
+import '../Book_history.dart';
 
 class RoomCompletedScreen extends StatelessWidget {
-  const RoomCompletedScreen({Key? key}) : super(key: key);
+  const RoomCompletedScreen({
+    super.key,
+  }); // 💡 ปรับให้ใช้ Super parameters ตามมาตรฐาน Dart ปัจจุบันconst RoomCompletedScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // 💡 ใช้สีพื้นหลังสีกรมท่าเข้มโทนลึกตามภาพดีไซน์ของคุณ
+      // พื้นหลังสีกรมท่าเข้มโทนลึกตามดีไซน์
       backgroundColor: const Color(0xFF1E293B),
       body: Center(
         child: Padding(
@@ -15,7 +17,7 @@ class RoomCompletedScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 💡 วงกลมไอคอนเครื่องหมายติ๊กถูกสีเขียวมินต์ขนาดใหญ่ขอบวงแหวนซ้อน
+              // วงกลมไอคอนเครื่องหมายติ๊กถูกสีเขียวมินต์
               Container(
                 width: 120,
                 height: 120,
@@ -62,11 +64,13 @@ class RoomCompletedScreen extends StatelessWidget {
                     elevation: 0,
                   ),
                   onPressed: () {
-                    Navigator.push(
+                    // 💡 แก้ไขการจัดการ Stack: เคลียร์หน้าก่อนหน้าทั้งหมด (เช่น หน้าฟอร์มจอง) จนถึงหน้าหลัก แล้วเปิดหน้าประวัติ ป้องกันการกดย้อนกลับไปจองซ้ำ
+                    Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(
                         builder: (context) => const BookingHistoryScreen(),
                       ),
+                      (route) => route.isFirst,
                     );
                   },
                   child: const Text(
@@ -81,15 +85,13 @@ class RoomCompletedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
 
-              // ปุ่มที่สอง: กลับหน้าหลัก (ปุ่มสีเทาเข้มโปร่งแสงจาง ๆ)
+              // ปุ่มที่สอง: กลับหน้าหลัก (ปุ่มสีเทาเข้มโปร่งแสง)
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(
-                      0.12,
-                    ), // สีเทาโปร่งแสงตามดีไซน์
+                    backgroundColor: Colors.white.withOpacity(0.12),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14.0),
@@ -101,14 +103,8 @@ class RoomCompletedScreen extends StatelessWidget {
                     ),
                   ),
                   onPressed: () {
-                    // 💡 แก้ไข: เด้งเคลียร์หน้าจอย้อนกลับไปหาหน้าแรกสุด (หน้าแรกของแอปคือหน้า Digital)
-                    //Navigator.of(context).popUntil((route) => route.isFirst);
-
-                    // 💡 หมายเหตุเสริม: หากหน้าแรกสุดของแอปไม่ใช่หน้า Digital แต่คุณใช้โครงสร้างระบบ Named Routes
-                    // ที่เซ็ตชื่อป้ายเส้นทางไว้ในคลาสคู่ขนานย่อย (เช่น '/digital') ให้สลับมาใช้คำสั่งบรรทัดนี้แทนได้ครับ:
-                    Navigator.of(
-                      context,
-                    ).pushNamedAndRemoveUntil('/digitel', (route) => false);
+                    // เคลียร์ Stack ของหน้าต่าง ๆ ออกทั้งหมด แล้วกลับไปหน้าแรกสุด
+                    Navigator.of(context).popUntil((route) => route.isFirst);
                   },
                   child: const Text(
                     'กลับหน้าหลัก',

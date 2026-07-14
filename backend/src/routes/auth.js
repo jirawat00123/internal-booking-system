@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { JWT_SECRET, authenticateToken } = require('../middlewares/auth');
 
 const router = express.Router();
@@ -68,13 +69,22 @@ router.post('/login', async (req, res) => {
     }
 
     // 3. 🎟️ สร้าง Token
+    const newSessionId = crypto.randomUUID(); // 👈 สร้าง Session ID ใหม่
+
+    // 👈 บันทึก Session ID ล่าสุดลง Database
+    await prisma.user.update({
+      where: { id: userAccount.id },
+      data: { currentSessionId: newSessionId }
+    });
+
     const secretKey = JWT_SECRET || process.env.JWT_SECRET || 'default_secret_key';
     const token = jwt.sign(
       { 
         userId: userAccount.id, 
         role: role, 
         employeeCode: employee.employeeCode,
-        fullName: employee.fullName
+        fullName: employee.fullName,
+        sessionId: newSessionId // 👈 ฝัง Session ID ลงใน Token Payload
       }, 
       secretKey, 
       { expiresIn: '1d' }
@@ -96,20 +106,18 @@ router.post('/login', async (req, res) => {
 
 
 // ==========================================
-// 🔑 API 2: Login PIN (สำหรับประตูส่วนกลาง เข้าด้วย PIN อัตโนมัติ)
+// 🔑 API 2: Login PIN (แก้ไขให้รองรับ Session ID ป้องกัน 401 ค้าง)
 // ==========================================
 router.post('/login-pin', async (req, res) => {
   try {
     const { pin, expectedRole } = req.body; 
 
-    // ป้องกันกรณีส่งค่า undefined หรือ null มา
     if (!pin) {
       return res.status(400).json({ success: false, message: 'กรุณาส่งข้อมูล PIN' });
     }
 
     const inputPin = String(pin).trim();
 
-    // 🛡️ ตรวจสอบรหัส PIN 
     const pinRoles = {
       '001122': { assignedRole: 'SECURITY', assignedDept: 'SECURITY' },
       '741963': { assignedRole: 'ADMIN', assignedDept: 'HR' },
@@ -131,47 +139,47 @@ router.post('/login-pin', async (req, res) => {
     let actualUserId = null;
     let actualUserName = "ไม่ทราบชื่อ";
     
-    try {
-      // 💡 เปลี่ยนการค้นหา: หา user ที่มี role เป็น ADMIN หรือตามสิทธิ์นั้นๆ แทนการหาจาก pin อย่างเดียว (กรณีพินส่วนกลาง)
-      // หรือดึง admin คนแรกของระบบมาสวมรอยชั่วคราวเพื่อให้ออก Token ได้
-      const matchedUser = await prisma.user.findFirst({
-        where: { role: { name: assignedRole } }, // ค้นหาจาก Role 
-        include: { employee: true }
-      });
-      
-      if (matchedUser) {
-        actualUserId = matchedUser.id;
-        actualUserName = matchedUser.employee?.fullName || "ไม่ระบุชื่อ";
-      } else {
-        // หากไม่พบ User ที่มี Role นี้เลย ให้ปฏิเสธการเข้าระบบ
-        return res.status(401).json({ success: false, message: 'ไม่พบผู้ดูแลระบบในฐานข้อมูล ไม่สามารถออก Token ได้' });
-      }
-    } catch (dbError) {
-      console.error("⚠️ ไม่สามารถค้นหาข้อมูลผู้ใช้จาก PIN ได้:", dbError.message);
-      return res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดในการตรวจสอบผู้ใช้' });
+    const matchedUser = await prisma.user.findFirst({
+      where: { role: { name: assignedRole } }, 
+      include: { employee: true }
+    });
+    
+    if (matchedUser) {
+      actualUserId = matchedUser.id;
+      actualUserName = matchedUser.employee?.fullName || "ไม่ระบุชื่อ";
+    } else {
+      return res.status(401).json({ success: false, message: 'ไม่พบผู้ดูแลระบบในฐานข้อมูล ไม่สามารถออก Token ได้' });
     }
 
-    // 🚀 ระบบบันทึกประวัติ (Log)
+    // 🚀 1. สร้าง Session ID ใหม่สำหรับ PIN Login เพื่อให้ตรงกับมาตรฐาน Middleware
+    const newSessionId = crypto.randomUUID();
+
+    // 🚀 2. อัปเดต Session ID ลง Database ป้องกัน Token หลุดวงโคจร
+    await prisma.user.update({
+      where: { id: actualUserId },
+      data: { currentSessionId: newSessionId }
+    });
+
     try {
       await prisma.auditLog.create({
         data: {
-          userId: actualUserId, // ตอนนี้ actualUserId จะไม่มีทางเป็น null แน่นอน
+          userId: actualUserId, 
           action: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${assignedRole}, แผนก: ${assignedDept}, ชื่อ: ${actualUserName})`,
           module: "LOGIN_SYSTEM",
         }
       });
-      console.log(`[Log] บันทึกประวัติการเข้าใช้งานของ ${actualUserName} สำเร็จ`);
     } catch (logError) {
       console.error("⚠️ ไม่สามารถบันทึก Log ลง Database ได้:", logError.message);
     }
 
-    // 🎟️ สร้าง Token
+    // 🎟️ 3. ฝัง sessionId ลงใน JWT Payload ให้เหมือนกับ API 1
     const secretKey = JWT_SECRET || process.env.JWT_SECRET || 'default_secret_key';
     const token = jwt.sign(
       { 
-        userId: actualUserId,   // ✨ userId มีข้อมูลครบถ้วนแล้ว!
+        userId: actualUserId,   
         role: assignedRole,     
-        department: assignedDept 
+        department: assignedDept,
+        sessionId: newSessionId // 👈 เพิ่มชิ้นส่วนสำคัญตรงนี้
       }, 
       secretKey, 
       { expiresIn: '12h' }
@@ -314,7 +322,24 @@ const isGuard = (req, res, next) => {
   }
 };
 
+// ==========================================
+// 🚪 API 5: Logout (ล้างค่า Session)
+// ==========================================
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    // ล้างค่า Session ในฐานข้อมูลให้เป็น null
+    await prisma.user.update({
+      where: { id: req.user.userId },
+      data: { currentSessionId: null }
+    });
+    
+    return res.status(200).json({ success: true, message: "ออกจากระบบสำเร็จ" });
+  } catch (error) {
+    console.error('Logout Error:', error);
+    return res.status(500).json({ success: false, error: "ระบบไม่สามารถออกจากระบบได้" });
+  }
+});
+
 router.isAdmin = isAdmin;
 router.isGuard = isGuard;
-
 module.exports = router;

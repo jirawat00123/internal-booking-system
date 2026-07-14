@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'Admin_roompage.dart';
-import 'AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
+import '../../AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 
 class MobileFrameSuccessContainer extends StatelessWidget {
   const MobileFrameSuccessContainer({super.key});
@@ -84,12 +84,14 @@ class AdminAddSuccessPage extends StatelessWidget {
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () {
-                        // 💡 เปลี่ยนเส้นทางกลับไปหน้า AdminRoomPage พร้อมเคลียร์สแต็กหน้าจอเก่า
-                        Navigator.push(
+                        // 🟢 ใช้ pushAndRemoveUntil เพื่อล้างประวัติหน้าจอ ป้องกันการกดย้อนกลับมาหน้า Success
+                        Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const MobileFrameContainer(),
                           ),
+                          (Route<dynamic> route) =>
+                              false, // ลบทิ้งทุกหน้าใน Stack
                         );
                       },
                       style: ElevatedButton.styleFrom(
@@ -120,11 +122,13 @@ class AdminAddSuccessPage extends StatelessWidget {
                     height: 50,
                     child: ElevatedButton(
                       onPressed: () {
-                        Navigator.push(
+                        // 🟢 ใช้ pushAndRemoveUntil เพื่อล้างประวัติหน้าจอทั้งหมดเช่นกัน
+                        Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const AdminGroupPage(),
                           ),
+                          (Route<dynamic> route) => false,
                         );
                       },
                       style: ElevatedButton.styleFrom(
@@ -154,15 +158,5 @@ class AdminAddSuccessPage extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-// 💡 สร้าง Class จำลองไว้รองรับโค้ดด้านบน (สามารถลบออกได้ถ้าคุณมีคลาสนี้อยู่ในไฟล์อื่นแล้ว)
-class AdminRoomPage extends StatelessWidget {
-  const AdminRoomPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: Text('หน้า AdminRoomPage')));
   }
 }

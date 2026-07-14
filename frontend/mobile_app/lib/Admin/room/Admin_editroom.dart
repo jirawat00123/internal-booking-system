@@ -7,7 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'Admin_roompage.dart';
 import 'Admin_editsuccess.dart';
-import 'Room_model.dart';
+import '../../Booking_room/Room_model.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 class MobileFrameEditRoomContainer extends StatelessWidget {
@@ -72,9 +72,10 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
     floorNumber = int.tryParse(widget.room.location.split(' ')[1]) ?? 1;
     selectedSide = widget.room.location.split(' ').last;
     capacity = widget.room.capacity;
+    // 🟢 1. แก้ไขคำให้ตรงกับปุ่ม Toggle ด้านล่าง เพื่อให้ปุ่มถูกเลือก (Highlight) อย่างถูกต้อง
     selectedStatus = widget.room.status == 'AVAILABLE'
         ? 'ว่างพร้อมใช้งาน'
-        : 'ปิดปรับปรุง';
+        : 'ไม่ว่างพร้อมใช้งาน';
   }
 
   Future<void> _pickImage() async {
@@ -101,215 +102,299 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
   }
 
   void _showEditConfirmDialog() {
+    // 🟢 1. สร้าง State จำลองเพื่อดักจับสถานะการโหลด ป้องกันการกดปุ่มซ้ำ
+    bool isSubmitting = false;
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-            width: 320,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.edit_note_outlined,
-                  size: 64,
-                  color: Color(0xFF0D47A1),
+        // 🟢 2. ครอบด้วย StatefulBuilder เพื่อให้อัปเดต UI ภายใน Dialog ได้
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 28,
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'ยืนยันการแก้ไข',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0D47A1),
-                    fontFamily: 'Kanit',
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'คุณต้องการบันทึกการแก้ไขใช่หรือไม่?',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF0D47A1),
-                    fontFamily: 'Kanit',
-                  ),
-                ),
-                const SizedBox(height: 28),
-                Row(
+                width: 320,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              // 1. ดึง Token จาก SharedPreferences ที่เก็บไว้ตอน Login
-                              // 1. ดึง Token จาก SharedPreferences ที่เก็บไว้ตอน Login
-                              final prefs =
-                                  await SharedPreferences.getInstance();
-                              final token = prefs.getString('token') ?? '';
-
-                              debugPrint(
-                                '🔑 Token ที่ดึงได้ก่อนส่ง API: $token',
-                              ); // 💡 พิมพ์เช็กว่า Token หายไปหรือไม่
-                              if (token.isEmpty) {
-                                debugPrint(
-                                  '❌ Error: ไม่พบ Token ในระบบ! ตรวจสอบหน้า Login ว่าได้ทำการบันทึก prefs.setString(\'token\', ...) แล้วหรือยัง',
-                                );
-                              }
-
-                              // 📌 แก้ไข IP:
-                              // - ใช้ 127.0.0.1 สำหรับรันผ่าน Chrome Web หรือ Windows/Mac Desktop
-                              // - ถ้าจะรันบนมือถือเครื่องจริง ต้องแก้เป็น IP ของ Wi-Fi เครื่องเซิร์ฟเวอร์ (เช่น 192.168.1.45)
-                              final uri = Uri.parse(
-                                'http://127.0.0.1:3001/api/rooms/${widget.room.id}',
-                              );
-                              var request = http.MultipartRequest('PUT', uri);
-
-                              // 2. 📌 แนบ Token ไปใน Headers เพื่อให้ผ่านด่าน authenticateToken
-                              // 2. 📌 แนบ Token ไปใน Headers เพื่อให้ผ่านด่าน authenticateToken
-                              // 2. 📌 แนบ Token ไปใน Headers เพื่อให้ผ่านด่าน authenticateToken
-                              request.headers['Authorization'] =
-                                  'Bearer $token';
-
-                              // 💡 เพิ่ม roomName เข้าไปด้วย เพราะ API ฝั่ง Prisma บังคับให้ใช้
-                              request.fields['roomName'] = widget.room.roomName;
-
-                              request.fields['location'] =
-                                  'ชั้น $floorNumber ฝั่ง $selectedSide';
-                              request.fields['capacity'] = capacity.toString();
-                              request.fields['status'] =
-                                  selectedStatus == 'ว่างพร้อมใช้งาน'
-                                  ? 'AVAILABLE'
-                                  : 'MAINTENANCE'; // 💡 เปลี่ยนคำนี้ให้ตรงกับในไฟล์ schema.prisma ของหลังบ้าน
-
-                              if (_imageFile != null) {
-                                final imageBytes = await _imageFile!
-                                    .readAsBytes();
-                                request.files.add(
-                                  http.MultipartFile.fromBytes(
-                                    'image',
-                                    imageBytes,
-                                    filename: _imageFile!.name,
-                                  ),
-                                );
-                              }
-
-                              var response = await request.send();
-
-                              if (response.statusCode == 200 ||
-                                  response.statusCode == 201) {
-                                final respStr = await response.stream
-                                    .bytesToString();
-                                final jsonResp = json.decode(respStr);
-                                final newImageUrl =
-                                    jsonResp['data']['uploadUrl'] ??
-                                    widget.room.imagePath;
-
-                                final updatedList = List<MeetingRoom>.from(
-                                  globalMeetingRooms.value,
-                                );
-                                updatedList[widget.index] = MeetingRoom(
-                                  id: widget.room.id,
-                                  roomName: widget.room.roomName,
-                                  location:
-                                      'ชั้น $floorNumber ฝั่ง $selectedSide',
-                                  capacity: capacity,
-                                  imagePath: newImageUrl,
-                                  status: selectedStatus == 'ว่างพร้อมใช้งาน'
-                                      ? 'AVAILABLE'
-                                      : 'MAINTENANCE',
-                                );
-                                globalMeetingRooms.value = updatedList;
-
-                                if (context.mounted) {
-                                  Navigator.pop(dialogContext);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          const MobileFrameSuccessContainer(),
-                                    ),
-                                  );
-                                }
-                              } else {
-                                // 3. 📌 เพิ่ม UI แจ้งเตือนเวลามี Error จะได้รู้ว่าเกิดอะไรขึ้นแทนที่จะนิ่งไปเฉยๆ
-                                if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'อัปเดตไม่สำเร็จ (Code: ${response.statusCode}) กรุณาล็อกอินใหม่',
-                                      ),
-                                    ),
-                                  );
-                                }
-                                debugPrint(
-                                  '❌ Update failed: ${response.statusCode}',
-                                );
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์: $e',
-                                    ),
-                                  ),
-                                );
-                              }
-                              debugPrint('❌ Exception: $e');
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0096C7),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'ตกลง',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Kanit',
-                            ),
-                          ),
-                        ),
+                    const Icon(
+                      Icons.edit_note_outlined,
+                      size: 64,
+                      color: Color(0xFF0D47A1),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'ยืนยันการแก้ไข',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0D47A1),
+                        fontFamily: 'Kanit',
                       ),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFB70000),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'ยกเลิก',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Kanit',
+                    const SizedBox(height: 6),
+                    const Text(
+                      'คุณต้องการบันทึกการแก้ไขใช่หรือไม่?',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF0D47A1),
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 44,
+                            child: ElevatedButton(
+                              // 🟢 3. ถ้ากำลังโหลดอยู่ให้ปิดปุ่ม (null)
+                              onPressed: isSubmitting
+                                  ? null
+                                  : () async {
+                                      setStateDialog(() {
+                                        isSubmitting = true; // เปิด Loading
+                                      });
+
+                                      try {
+                                        final prefs =
+                                            await SharedPreferences.getInstance();
+                                        final token =
+                                            prefs.getString('token') ?? '';
+
+                                        if (token.isEmpty) {
+                                          debugPrint(
+                                            '❌ Error: ไม่พบ Token ในระบบ!',
+                                          );
+                                        }
+
+                                        final String baseUrl = kIsWeb
+                                            ? 'http://localhost:3001'
+                                            : 'http://10.0.2.2:3001';
+                                        final uri = Uri.parse(
+                                          '$baseUrl/api/rooms/${widget.room.id}',
+                                        );
+                                        var request = http.MultipartRequest(
+                                          'PUT',
+                                          uri,
+                                        );
+
+                                        request.headers['Authorization'] =
+                                            'Bearer $token';
+
+                                        request.fields['roomName'] =
+                                            widget.room.roomName;
+                                        request.fields['location'] =
+                                            'Floor $floorNumber - Side $selectedSide';
+                                        request.fields['capacity'] = capacity
+                                            .toString();
+                                        request.fields['status'] =
+                                            selectedStatus == 'ว่างพร้อมใช้งาน'
+                                            ? 'AVAILABLE'
+                                            : 'IN_USE';
+
+                                        if (_imageFile != null) {
+                                          final imageBytes = await _imageFile!
+                                              .readAsBytes();
+                                          request.files.add(
+                                            http.MultipartFile.fromBytes(
+                                              'image',
+                                              imageBytes,
+                                              filename: _imageFile!.name,
+                                            ),
+                                          );
+                                        }
+
+                                        var response = await request.send();
+
+                                        if (response.statusCode == 200 ||
+                                            response.statusCode == 201) {
+                                          final respStr = await response.stream
+                                              .bytesToString();
+                                          final jsonResp = json.decode(respStr);
+                                          final newImageUrl =
+                                              jsonResp['data']['uploadUrl'] ??
+                                              widget.room.imagePath;
+
+                                          final updatedList =
+                                              List<MeetingRoom>.from(
+                                                globalMeetingRooms.value,
+                                              );
+
+                                          // 🟢 4. ค้นหา Index จาก ID โดยตรงเพื่อความปลอดภัย 100% (กัน List เลื่อน)
+                                          final targetIndex = updatedList
+                                              .indexWhere(
+                                                (r) => r.id == widget.room.id,
+                                              );
+
+                                          if (targetIndex != -1) {
+                                            updatedList[targetIndex] = MeetingRoom(
+                                              id: widget.room.id,
+                                              roomName: widget.room.roomName,
+                                              location:
+                                                  'Floor $floorNumber - Side $selectedSide',
+                                              capacity: capacity,
+                                              imagePath: newImageUrl,
+                                              status:
+                                                  selectedStatus ==
+                                                      'ว่างพร้อมใช้งาน'
+                                                  ? 'AVAILABLE'
+                                                  : 'IN_USE',
+                                            );
+                                            globalMeetingRooms.value =
+                                                updatedList; // อัปเดตข้อมูลให้หน้า List
+                                          }
+
+                                          if (context.mounted) {
+                                            Navigator.pop(
+                                              dialogContext,
+                                            ); // ปิด Dialog
+                                            Navigator.pushReplacement(
+                                              context,
+                                              MaterialPageRoute(
+                                                // 🟢 เปลี่ยนมาเรียกใช้ชื่อคลาสใหม่ที่เราเพิ่งแก้ไปใน Admin_editsuccess
+                                                builder: (context) =>
+                                                    const MobileFrameEditSuccessContainer(),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          final responseBody = await response
+                                              .stream
+                                              .bytesToString();
+                                          String errorMessage =
+                                              'อัปเดตไม่สำเร็จ (Code: ${response.statusCode})';
+                                          try {
+                                            final errorData = jsonDecode(
+                                              responseBody,
+                                            );
+                                            errorMessage =
+                                                errorData['message'] ??
+                                                errorMessage;
+                                          } catch (_) {}
+
+                                          debugPrint(
+                                            '❌ Update failed: $errorMessage',
+                                          );
+                                          if (context.mounted) {
+                                            Navigator.pop(
+                                              dialogContext,
+                                            ); // ปิด Dialog
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  errorMessage,
+                                                  style: const TextStyle(
+                                                    fontFamily: 'Kanit',
+                                                  ),
+                                                ),
+                                                backgroundColor: const Color(
+                                                  0xFFB70000,
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      } catch (e) {
+                                        debugPrint('❌ Exception: $e');
+                                        if (context.mounted) {
+                                          Navigator.pop(dialogContext);
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์ โปรดตรวจสอบอินเทอร์เน็ต',
+                                                style: TextStyle(
+                                                  fontFamily: 'Kanit',
+                                                ),
+                                              ),
+                                              backgroundColor: Colors.orange,
+                                            ),
+                                          );
+                                        }
+                                      } finally {
+                                        // ปิดสถานะ Loading หากเกิด Error
+                                        if (mounted) {
+                                          setStateDialog(() {
+                                            isSubmitting = false;
+                                          });
+                                        }
+                                      }
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0096C7),
+                                disabledBackgroundColor:
+                                    Colors.grey, // สีตอนโดนล็อกปุ่ม
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              // 🟢 5. สลับแสดงข้อความ กับ อนิเมชัน Loading
+                              child: isSubmitting
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.5,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'ตกลง',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Kanit',
+                                      ),
+                                    ),
                             ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: SizedBox(
+                            height: 44,
+                            child: ElevatedButton(
+                              // 🟢 ล็อกปุ่มยกเลิกเวลาโหลดด้วย
+                              onPressed: isSubmitting
+                                  ? null
+                                  : () => Navigator.pop(dialogContext),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFB70000),
+                                disabledBackgroundColor: Colors.grey,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'ยกเลิก',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'Kanit',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -428,7 +513,8 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                               image: NetworkImage(
                                 widget.room.imagePath!.startsWith('http')
                                     ? widget.room.imagePath!
-                                    : 'http://127.0.0.1:3001${widget.room.imagePath!}',
+                                    // 🟢 5. เปลี่ยน URL ดึงภาพเป็น Dynamic ตาม Platform (Web หรือ Emulator)
+                                    : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${widget.room.imagePath!}',
                               ),
                               fit: BoxFit.cover,
                               onError: (exception, stackTrace) {

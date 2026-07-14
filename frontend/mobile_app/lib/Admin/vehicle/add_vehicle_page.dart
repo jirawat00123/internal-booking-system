@@ -1,0 +1,826 @@
+import 'dart:io';
+import 'dart:convert'; // 🟢 เพิ่มสำหรับการแปลง JSON
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' as http; // 🟢 เพิ่ม HTTP
+import 'package:shared_preferences/shared_preferences.dart'; // 🟢 เพิ่ม SharedPreferences
+
+import 'addvehicle_successpage.dart';
+import 'vehicle_page.dart';
+
+class AddVehiclePage extends StatefulWidget {
+  const AddVehiclePage({super.key});
+
+  @override
+  State<AddVehiclePage> createState() => _AddVehiclePageState();
+}
+
+class _AddVehiclePageState extends State<AddVehiclePage> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController plateController = TextEditingController();
+
+  final String currentStatus =
+      'AVAILABLE'; // 🔄 ปรับให้ตรงกับ Backend (AVAILABLE)
+  int passengerCount = 4;
+
+  XFile? _vehicleImage;
+  String? _docFilePath; // เก็บพาธไฟล์เอกสาร
+  String? _docFileName; // เก็บชื่อไฟล์เอกสารไว้โชว์
+
+  bool isSubmitting = false; // 🟢 ตัวแปรสำหรับเช็คสถานะกำลังโหลดส่งข้อมูล
+
+  final ImagePicker _picker = ImagePicker();
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    plateController.dispose();
+    super.dispose();
+  }
+
+  void _incrementPassenger() {
+    setState(() {
+      passengerCount++;
+    });
+  }
+
+  void _decrementPassenger() {
+    if (passengerCount > 1) {
+      setState(() {
+        passengerCount--;
+      });
+    }
+  }
+
+  Future<void> _pickVehicleImage() async {
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image != null) {
+      setState(() {
+        _vehicleImage = image;
+      });
+    }
+  }
+
+  // 📄 ฟังก์ชันเลือกไฟล์เอกสาร (รองรับ PDF, DOC, รูปภาพ)
+  Future<void> _pickDocFile() async {
+    FilePickerResult? result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'png'],
+    );
+
+    if (result != null) {
+      setState(() {
+        _docFilePath = result.files.single.path;
+        _docFileName = result.files.single.name;
+      });
+    }
+  }
+
+  // 🚀 ฟังก์ชันยิง API บันทึกข้อมูลรถยนต์
+  Future<void> _submitVehicleToApi(BuildContext dialogContext) async {
+    setState(() {
+      isSubmitting = true; // เริ่มหมุนติ้วๆ
+    });
+
+    try {
+      final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+      final url = Uri.parse('$baseUrl/api/vehicles');
+
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+
+      // ใช้ MultipartRequest เพราะมีการอัปโหลดไฟล์รูปภาพ
+      var request = http.MultipartRequest('POST', url);
+
+      // 1. แนบ Token
+      request.headers['Authorization'] = 'Bearer ${token.trim()}';
+
+      // 2. แนบข้อมูล Text (ต้องแปลงเป็น String ทั้งหมด)
+      String fullName = nameController.text.trim();
+      String plateText = plateController.text.trim();
+
+      // 🟢 ลอจิกหั่นคำอัจฉริยะ: แยกชื่อรถออกเป็น 'ยี่ห้อ' และ 'รุ่น' อัตโนมัติ (เช่น "Toyota Camry")
+      List<String> nameParts = fullName.split(' ');
+      String brandStr = nameParts.isNotEmpty ? nameParts[0] : 'ไม่ระบุ';
+      String modelStr = nameParts.length > 1
+          ? nameParts.sublist(1).join(' ')
+          : fullName;
+
+      // [ชุดที่ 1] ส่งคีย์เดิมที่ตัวแอปเคยมีอยู่แล้ว
+      // [ชุดที่ 1] ส่งคีย์เดิมที่ตัวแอปเคยมีอยู่แล้ว
+      request.fields['vehicleName'] = fullName;
+      request.fields['plateNumber'] = plateText;
+      request.fields['capacity'] = passengerCount.toString();
+      request.fields['type'] = 'CAR'; // ค่าเริ่มต้น
+      request.fields['status'] = currentStatus;
+
+      // 🚨 [ชุดที่ 2] ส่งคีย์เพิ่มเติมแบบตรงตัว (Explicit) เพื่อเคลียร์ Error 400 จากด่านตรวจ Backend
+      request.fields['plate'] = plateText; // ทะเบียน
+      request.fields['brand'] = brandStr; // ยี่ห้อ (เช่น Toyota)
+      request.fields['model'] = modelStr; // รุ่น (เช่น Camry)
+
+      // 🔥 เพิ่มเติม: ส่งคีย์จำนวนที่นั่งเผื่อไว้ทุกรูปแบบ ป้องกันหลังบ้านตรวจหาคีย์ไม่เจอ
+      request.fields['seats'] = passengerCount
+          .toString(); // เผื่อหลังบ้านใช้คำว่า seats
+      request.fields['seatCount'] = passengerCount
+          .toString(); // เผื่อหลังบ้านใช้คำว่า seatCount
+
+      // 3. แนบไฟล์รูปภาพรถ (รองรับทั้ง Web และ Mobile)
+      if (_vehicleImage != null) {
+        if (kIsWeb) {
+          final bytes = await _vehicleImage!.readAsBytes();
+
+          // ตรวจสอบและบังคับนามสกุลไฟล์บน Web
+          String finalFileName = _vehicleImage!.name;
+          String lowerName = finalFileName.toLowerCase();
+          if (!lowerName.endsWith('.png') &&
+              !lowerName.endsWith('.jpg') &&
+              !lowerName.endsWith('.jpeg')) {
+            finalFileName = 'vehicle_image.png';
+          }
+
+          request.files.add(
+            http.MultipartFile.fromBytes(
+              'image', // 🚨 ชื่อฟิลด์ต้องตรงกับที่ Multer ใน Backend ตั้งไว้
+              bytes,
+              filename:
+                  finalFileName, // ส่งชื่อไฟล์ที่การันตีว่ามีนามสกุลแน่นอน
+            ),
+          );
+        } else {
+          request.files.add(
+            await http.MultipartFile.fromPath('image', _vehicleImage!.path),
+          );
+        }
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        // ✅ สำเร็จ! ปิด Pop-up แล้วเด้งไปหน้า Success
+        if (mounted) {
+          Navigator.pop(dialogContext); // ปิด Dialog ยืนยัน
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const AddVehicleSuccessPage(),
+            ),
+          );
+        }
+      } else {
+        // ❌ ไม่สำเร็จ
+        debugPrint('🔥 Error API: ${response.body}');
+        if (mounted) {
+          Navigator.pop(dialogContext); // ปิด Dialog ยืนยันก่อน
+          _showUploadErrorDialog(context); // เปิด Dialog แดง
+        }
+      }
+    } catch (e) {
+      debugPrint('🔥 Exception: $e');
+      if (mounted) {
+        Navigator.pop(dialogContext);
+        _showUploadErrorDialog(context);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSubmitting = false; // หยุดหมุนติ้วๆ
+        });
+      }
+    }
+  }
+
+  // 🔴 ฟังก์ชันแสดง Popup อัปโหลดรูปภาพไม่สำเร็จ
+  void _showUploadErrorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          backgroundColor: Colors.white,
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFF0000), // สีแดง
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.priority_high,
+                    size: 50,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  'เพิ่มรถยนต์ไม่สำเร็จ',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF003E75),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'เซิร์ฟเวอร์อาจขัดข้อง หรือไฟล์ไม่รองรับ',
+                  style: TextStyle(fontSize: 14, color: Color(0xFF003E75)),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: 140,
+                  height: 45,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF009CB4),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text(
+                      'ตกลง',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showConfirmationDialog(BuildContext context) {
+    showDialog(
+      barrierDismissible: false, // ห้ามกดข้างนอกปิดตอนกำลังโหลด
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: Colors.white,
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: isSubmitting
+                    ? const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Color(0xFF003E75)),
+                          SizedBox(height: 20),
+                          Text(
+                            'กำลังบันทึกข้อมูล...',
+                            style: TextStyle(
+                              color: Color(0xFF003E75),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              const Icon(
+                                Icons.directions_car,
+                                size: 70,
+                                color: Color(0xFF003E75),
+                              ),
+                              Container(
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.add_circle,
+                                  size: 28,
+                                  color: Color(0xFF003E75),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'ยืนยันการเพิ่มรถ',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF003E75),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'คุณต้องการเพิ่มรถใช่หรือไม่?',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Color(0xFF003E75),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    setStateDialog(() {
+                                      isSubmitting = true;
+                                    }); // อัปเดต UI Pop-up เป็นกำลังโหลด
+                                    _submitVehicleToApi(
+                                      dialogContext,
+                                    ); // 🚀 ยิง API ของจริง!
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF009CB4),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'ตกลง',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => Navigator.pop(dialogContext),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFB20000),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'ยกเลิก',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF003E75),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'เพิ่มรถเข้า',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                // 📸 กล่อง 1: เลือกรูปภาพรถยนต์
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                    border: Border.all(color: Colors.grey.shade100),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'เลือกรูปภาพรถยนต์',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _pickVehicleImage,
+                        child: Container(
+                          width: 100,
+                          height: 65,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: _vehicleImage != null
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: kIsWeb
+                                      ? Image.network(
+                                          _vehicleImage!.path,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Image.file(
+                                          File(_vehicleImage!.path),
+                                          fit: BoxFit.cover,
+                                        ),
+                                )
+                              : Stack(
+                                  alignment: Alignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.directions_car,
+                                      color: Colors.grey.shade300,
+                                      size: 50,
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.8),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.camera_alt_outlined,
+                                        color: Colors.black87,
+                                        size: 16,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // 📝 กล่อง 2: ฟอร์มกรอกข้อมูล
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(30),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                    border: Border.all(color: Colors.grey.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTextField(
+                        label: 'ชื่อรถยนต์',
+                        controller: nameController,
+                        isRequired: true,
+                      ),
+                      const SizedBox(height: 24),
+                      Center(
+                        child: SizedBox(
+                          width: 200,
+                          child: _buildTextField(
+                            label: 'ทะเบียนรถ',
+                            controller: plateController,
+                            hint: 'กข 1234',
+                            isRequired: true,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Divider(color: Colors.indigo.shade50, thickness: 1.5),
+                      const SizedBox(height: 20),
+
+                      Center(
+                        child: Column(
+                          children: [
+                            const Text(
+                              'จำนวนผู้โดยสาร (คน)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.grey.shade50,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildCircleButton(
+                                    icon: Icons.remove,
+                                    onPressed: _decrementPassenger,
+                                  ),
+                                  const SizedBox(width: 24),
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.people_outline,
+                                        color: Colors.grey,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        '$passengerCount',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(width: 24),
+                                  _buildCircleButton(
+                                    icon: Icons.add,
+                                    onPressed: _incrementPassenger,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+                      Divider(color: Colors.indigo.shade50, thickness: 1.5),
+                      const SizedBox(height: 20),
+
+                      // 📄 เอกสารรถ (พรบ)
+                      const Text(
+                        'เอกสารรถ (พรบ)',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(10),
+                                color: Colors.grey.shade50,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _docFileName != null
+                                        ? Icons.check_circle
+                                        : Icons.upload_file,
+                                    color: _docFileName != null
+                                        ? Colors.green
+                                        : Colors.grey,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      _docFileName ?? 'ยังไม่ได้เลือกไฟล์',
+                                      style: TextStyle(
+                                        color: _docFileName != null
+                                            ? Colors.black87
+                                            : Colors.grey.shade600,
+                                        fontSize: 12,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          InkWell(
+                            onTap: _pickDocFile,
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: const Color(0xFF009CB4),
+                                ),
+                                borderRadius: BorderRadius.circular(10),
+                                color: const Color(0xFFE5F5F7),
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text(
+                                'เลือกไฟล์',
+                                style: TextStyle(
+                                  color: Color(0xFF009CB4),
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 30),
+
+                // 🟢 ปุ่มยืนยัน
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 40),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (_formKey.currentState!.validate()) {
+                          if (_vehicleImage == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('กรุณาเลือกรูปภาพรถยนต์'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                            return;
+                          }
+                          _showConfirmationDialog(context);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF009CB4),
+                        elevation: 2,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'ยืนยัน',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required String label,
+    required TextEditingController controller,
+    String? hint,
+    bool isRequired = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          style: const TextStyle(color: Colors.black87, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: Color(0xFF9098A9), fontSize: 14),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 14,
+            ),
+            isDense: true,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: Colors.grey.shade400),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(
+                color: Color(0xFF003E75),
+                width: 1.5,
+              ),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+          ),
+          validator: (value) {
+            if (isRequired && (value == null || value.trim().isEmpty)) {
+              return 'กรุณากรอกข้อมูล';
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCircleButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, size: 16, color: const Color(0xFF75BBE1)),
+      ),
+    );
+  }
+}

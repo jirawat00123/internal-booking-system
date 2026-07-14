@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'Select.dart'; // เชื่อมไปหาหน้า LoginSelectionPage
+import 'package:mobile_app/Select.dart';
 import 'Manage.dart';
 import 'Digitel.dart';
-import 'Room_Completed.dart';
+import 'Booking_room/Room_Completed.dart';
 // 👈 เพิ่มชิ้นนี้ (ปรับชื่อไฟล์ .dart ให้ตรงกับชื่อไฟล์จริงของคุณนะครับ เช่น digitel.dart)
 
 void main() {
@@ -20,10 +20,13 @@ class WelcomeApp extends StatelessWidget {
       theme: ThemeData(primarySwatch: Colors.blue),
 
       // ✅ 2. อัปเดตแผนที่เส้นทาง (Routes) จาก /room_list เปลี่ยนเป็น /digitel
+      // ✅ 2. อัปเดตแผนที่เส้นทาง (Routes) จาก /room_list เปลี่ยนเป็น /digitel
       routes: {
         '/manage': (context) => const ManagePage(),
         '/digitel': (context) =>
             const UserMenuPage(), // 👈 ผูกคำว่า /digitel เข้ากับคลาสหน้าจอใหม่ของคุณ
+        '/login': (context) =>
+            const LoginSelectionPage(), // 👈 เพิ่ม Route นี้เพื่อรองรับการเตะออก (401)
       },
 
       builder: (context, child) {

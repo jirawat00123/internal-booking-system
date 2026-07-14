@@ -1,10 +1,9 @@
-import 'package:flutter/foundation.dart'
-    show kIsWeb; // เพิ่ม kIsWeb สำหรับตรวจสอบ Platform
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'Room_model.dart'; // ดึง globalBookingHistory มาใช้งาน
+import 'Booking_room/Room_model.dart'; // ดึง globalBookingHistory มาใช้งาน
 
 class BookingHistoryScreen extends StatefulWidget {
   const BookingHistoryScreen({Key? key}) : super(key: key);
@@ -32,7 +31,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   }
 
   // =========================================================
-  // 💡 ฟังก์ชันดึงประวัติการจองจาก API
+  // 💡 ฟังก์ชันดึงประวัติการจองจาก API (ยึดตามระบบ Backend ของคุณที่เพิ่งทำเสร็จ)
   // =========================================================
   Future<void> fetchHistory() async {
     try {
@@ -43,13 +42,29 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       String rawToken = await getSavedToken();
       String cleanToken = rawToken.trim();
 
+      // 🔥 แกะ userId จาก Token เพื่อเอาไปเป็นเงื่อนไขในการดึงข้อมูลส่วนตัว
+      int currentUserId = 0;
+      try {
+        final parts = cleanToken.split('.');
+        if (parts.length == 3) {
+          final payload = utf8.decode(
+            base64Url.decode(base64Url.normalize(parts[1])),
+          );
+          final payloadMap = jsonDecode(payload);
+          currentUserId = payloadMap['userId'] ?? 0;
+        }
+      } catch (_) {}
+
       // ปรับ Base URL อัตโนมัติและแก้ Port เป็น 3001 ให้ตรงกับ Backend
       final String baseUrl = kIsWeb
           ? 'http://localhost:3001'
           : 'http://10.0.2.2:3001';
 
+      // ยิง API โดยแนบ userId ไปด้วย
       final response = await http.get(
-        Uri.parse('$baseUrl/api/bookings?page=1&limit=50'),
+        Uri.parse(
+          '$baseUrl/api/bookings?userId=$currentUserId&page=1&limit=50',
+        ),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $cleanToken',
@@ -64,7 +79,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           DateTime start = DateTime.parse(item['startDatetime']).toLocal();
           DateTime end = DateTime.parse(item['endDatetime']).toLocal();
 
-          // 🔥 1. เพิ่มตัวแปลงสถานะจาก English (Backend) เป็น Thai (UI)
+          // ตัวแปลงสถานะจาก English เป็น Thai
           String rawStatus = item['status'] ?? '';
           String thaiStatus = 'จองแล้ว'; // ค่าเริ่มต้น
           if (rawStatus == 'RESERVED')
@@ -76,29 +91,46 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           else if (rawStatus == 'CANCELLED')
             thaiStatus = 'ยกเลิกแล้ว';
 
-          // 🔥 2. ดึงชื่อห้องจริงๆ มาแสดง (ถ้าหลังบ้านส่งมา)
           String displayRoomName = item['room'] != null
               ? item['room']['roomName']
               : item['roomId'].toString();
 
           return BookingHistory(
             id: item['id'],
-            status: thaiStatus, // 💡 ใช้สถานะภาษาไทยที่เราแปลงแล้ว
+            status: thaiStatus,
             type: 'ห้องประชุม',
-            roomId:
-                displayRoomName, // 💡 แสดงชื่อห้องจริงๆ เช่น "Floor 5 - Side B"
+            roomId: displayRoomName,
             title: item['title'] ?? item['purpose'] ?? 'ไม่มีหัวข้อ',
             date:
                 '${start.day.toString().padLeft(2, '0')}/${start.month.toString().padLeft(2, '0')}/${start.year}',
-            startTime: TimeOfDay(hour: start.hour, minute: start.minute),
-            endTime: TimeOfDay(hour: end.hour, minute: end.minute),
+            // 💡 [แก้ไข] นำตัวแปร start และ end ที่เป็น DateTime (toLocal) อยู่แล้วมาใช้ได้เลยทันที
+            startTime: start,
+            endTime: end,
             bookedBy: item['user']?['employee']?['firstName'] ?? 'ไม่ระบุชื่อ',
-            participantCount:
-                item['participantCount'] ?? 0, // ป้องกันค่า null ถ้ามี
+            participantCount: item['participantCount'] ?? 0,
           );
         }).toList();
 
         globalBookingHistory.value = fetchedList;
+      } else if (response.statusCode == 401) {
+        if (mounted) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'บัญชีนี้ถูกเข้าสู่ระบบจากอุปกรณ์อื่น กรุณาเข้าสู่ระบบใหม่',
+                style: TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/login',
+            (route) => false,
+          );
+        }
       }
     } catch (e) {
       debugPrint("Error fetching history: $e");
@@ -111,7 +143,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     }
   }
 
-  String _formatTime(TimeOfDay time) {
+  String _formatTime(DateTime time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
@@ -148,20 +180,18 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                 : ValueListenableBuilder<List<BookingHistory>>(
                     valueListenable: globalBookingHistory,
                     builder: (context, historyList, child) {
-                      // 🔥 [แก้ไขจุดนี้] หาเวลาเที่ยงคืนของวันนี้ เพื่อเช็กรายการที่เป็นวันเก่า
                       final now = DateTime.now();
                       final todayMidnight = DateTime(
                         now.year,
                         now.month,
                         now.day,
-                      ); // 💡 แก้จาก date.day เป็น now.day
+                      );
 
                       // 1. กรองรายการที่ 'เสร็จสิ้น' หรือ 'ยกเลิกแล้ว' ของวันเก่าออกไป (หลังผ่านเที่ยงคืน)
                       List<BookingHistory> validTimeList = historyList.where((
                         item,
                       ) {
                         try {
-                          // แยกสตริงวันที่ของการ์ด (เช่น "03/07/2026")
                           List<String> dateParts = item.date.split('/');
                           int day = int.parse(dateParts[0]);
                           int month = int.parse(dateParts[1]);
@@ -169,14 +199,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
                           final bookingDate = DateTime(year, month, day);
 
-                          // 💡 เงื่อนไข: ถ้าผ่านเที่ยงคืนไปแล้ว (เป็นวันเก่า) และสถานะคือเสร็จสิ้น/ยกเลิกแล้ว จะไม่นำมาแสดง
                           if ((item.currentStatus == 'เสร็จสิ้น' ||
                                   item.currentStatus == 'ยกเลิกแล้ว') &&
                               bookingDate.isBefore(todayMidnight)) {
                             return false;
                           }
                         } catch (_) {}
-                        return true; // แสดงรายการของวันนี้ หรือรายการที่สถานะยังไม่จบตามปกติ
+                        return true;
                       }).toList();
 
                       // 2. นำข้อมูลที่คัดเรื่องเที่ยงคืนออกแล้ว มาแยกตามแท็บคัดกรองต่อ
@@ -228,9 +257,18 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _buildTabButton('ทั้งหมด', Icons.all_inclusive),
-          _buildTabButton('ห้องประชุม', Icons.meeting_room_outlined),
-          _buildTabButton('จองรถ', Icons.directions_car_filled_outlined),
+          Expanded(child: _buildTabButton('ทั้งหมด', Icons.all_inclusive)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildTabButton('ห้องประชุม', Icons.meeting_room_outlined),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _buildTabButton(
+              'จองรถ',
+              Icons.directions_car_filled_outlined,
+            ),
+          ),
         ],
       ),
     );
@@ -241,26 +279,30 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     return GestureDetector(
       onTap: () => setState(() => selectedTab = label),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
               icon,
-              size: 16,
+              size: 14,
               color: isSelected ? Colors.white : Colors.blueGrey,
             ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.blueGrey,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Kanit',
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.blueGrey,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Kanit',
+                ),
               ),
             ),
           ],
@@ -305,33 +347,79 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF004AAD).withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.groups_outlined,
-                  color: Color(0xFF004AAD),
-                  size: 28,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 60,
+                  height: 60,
+                  color: Colors.grey[300],
+                  child: Icon(
+                    booking.type == 'ห้องประชุม'
+                        ? Icons.meeting_room
+                        : Icons.directions_car,
+                    color: Colors.grey[600],
+                  ),
                 ),
               ),
               const SizedBox(width: 14),
               Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      booking.type == 'ห้องประชุม'
+                          ? 'Meeting Room ${booking.roomId}'
+                          : booking.title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E293B),
+                        fontFamily: 'Kanit',
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today_outlined,
+                          size: 14,
+                          color: Colors.grey,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          booking.date,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                            fontFamily: 'Kanit',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Text(
-                  booking.type == 'ห้องประชุม'
-                      ? 'Meeting Room ${booking.roomId}'
-                      : booking.title,
-                  style: const TextStyle(
-                    fontSize: 18,
+                  statusText,
+                  style: TextStyle(
+                    color: statusTextColor,
+                    fontSize: 10,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black87,
                     fontFamily: 'Kanit',
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
@@ -347,6 +435,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               children: [
                 const Icon(Icons.access_time, size: 16, color: Colors.blueGrey),
                 const SizedBox(width: 8),
+
                 const Text(
                   'เวลาการจอง',
                   style: TextStyle(
@@ -355,7 +444,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     fontFamily: 'Kanit',
                   ),
                 ),
+
                 const SizedBox(width: 8),
+
                 Expanded(
                   child: Text(
                     '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
@@ -400,12 +491,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       ),
                     ),
                   ),
-                  // 💡 ปุ่มยกเลิกคิว
+
+                  // 💡 ปุ่มยกเลิกคิว (ยึดตามระบบ Backend ที่คุณทำเสร็จแล้ว)
                   if (statusText == 'จองแล้ว') ...[
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton(
-                        // 🔥 [สิ่งที่เปลี่ยนไป 1]: แก้ Method เป็น PATCH และแก้ URL ให้ตรงกับ Backend
                         onPressed: () async {
                           try {
                             final String baseUrl = kIsWeb
@@ -413,7 +504,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                 : 'http://10.0.2.2:3001';
                             String token = await getSavedToken();
 
-                            // แกะ userId ออกมาจาก Token (สมมติว่า JWT เก็บโครงสร้างแบบ { userId: 24, ... })
+                            // แกะ userId ออกมาจาก Token
                             int currentUserId = 0;
                             try {
                               final parts = token.split('.');
@@ -428,18 +519,17 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               }
                             } catch (_) {}
 
-                            // ยิง API ไปที่ Endpoint การยกเลิกของระบบที่มีอยู่แล้ว
+                            // ยิง API ไปที่ Endpoint การยกเลิก
                             final response = await http.patch(
                               Uri.parse(
                                 '$baseUrl/api/bookings/${booking.id}/cancel',
-                              ), // 💡 แก้ URL ให้ตรง
+                              ),
                               headers: {
                                 'Content-Type': 'application/json',
                                 'Authorization': 'Bearer ${token.trim()}',
                               },
                               body: jsonEncode({
-                                'userId':
-                                    currentUserId, // 💡 ส่ง userId ไปให้ Backend เก็บประวัติ
+                                'userId': currentUserId,
                                 'remark': 'ยกเลิกการจองผ่านแอปพลิเคชัน',
                               }),
                             );
@@ -462,6 +552,26 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                     ),
                                     backgroundColor: Colors.green,
                                   ),
+                                );
+                              }
+                            } else if (response.statusCode == 401) {
+                              if (context.mounted) {
+                                final prefs =
+                                    await SharedPreferences.getInstance();
+                                await prefs.clear();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'บัญชีนี้ถูกเข้าสู่ระบบจากอุปกรณ์อื่น กรุณาเข้าสู่ระบบใหม่',
+                                      style: TextStyle(fontFamily: 'Kanit'),
+                                    ),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                                Navigator.pushNamedAndRemoveUntil(
+                                  context,
+                                  '/login',
+                                  (route) => false,
                                 );
                               }
                             } else {
@@ -515,14 +625,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                 ],
               ),
 
-              // 💡 ปุ่ม "คืนห้องก่อนเวลา"
+              // 💡 ปุ่ม "คืนห้องก่อนเวลา" (ยึดตามระบบ Backend ที่คุณทำเสร็จแล้ว)
               if (statusText == 'กำลังใช้งาน') ...[
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   height: 44,
                   child: ElevatedButton(
-                    // 🔥 [สิ่งที่เปลี่ยนไป 2]: ใช้ระบบเดียวกันในการคืนห้อง
                     onPressed: () async {
                       try {
                         final String baseUrl = kIsWeb
@@ -543,7 +652,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                           }
                         } catch (_) {}
 
-                        // ยิง API ไปอัปเดตสถานะ (ยืมใช้ Endpoint Cancel ไปก่อน แล้วปรับแก้ Remark เอา)
+                        // ยิง API ไปอัปเดตสถานะให้เป็น "COMPLETED"
+                        // หมายเหตุ: ใช้ PATCH /cancel เหมือนเดิม แต่แก้ Backend ให้รองรับแล้ว
                         final response = await http.patch(
                           Uri.parse(
                             '$baseUrl/api/bookings/${booking.id}/cancel',
@@ -554,8 +664,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                           },
                           body: jsonEncode({
                             'userId': currentUserId,
-                            'remark':
-                                'ผู้ใช้งานทำการคืนห้องก่อนเวลา', // ใส่บันทึกเพื่อให้ Backend ทราบ
+                            'remark': 'ผู้ใช้งานทำการคืนห้องก่อนเวลา',
                           }),
                         );
 
@@ -577,6 +686,25 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                 ),
                                 backgroundColor: Colors.green,
                               ),
+                            );
+                          }
+                        } else if (response.statusCode == 401) {
+                          if (context.mounted) {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.clear();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'บัญชีนี้ถูกเข้าสู่ระบบจากอุปกรณ์อื่น กรุณาเข้าสู่ระบบใหม่',
+                                  style: TextStyle(fontFamily: 'Kanit'),
+                                ),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            Navigator.pushNamedAndRemoveUntil(
+                              context,
+                              '/login',
+                              (route) => false,
                             );
                           }
                         } else {
@@ -635,9 +763,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   // =========================================================
   // 💡 ฟังก์ชันสร้างป็อปอัพรายละเอียดการจอง
   // =========================================================
-  // =========================================================
-  // 💡 ฟังก์ชันสร้างป็อปอัพรายละเอียดการจอง
-  // =========================================================
   void _showDetailsDialog(BuildContext context, BookingHistory booking) {
     showDialog(
       context: context,
@@ -682,7 +807,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       ),
                     ),
                     const SizedBox(width: 14),
-                    // 🔥 [สิ่งที่เปลี่ยนไป]: นำ Expanded มาครอบ Text ไว้ เพื่อบังคับให้ข้อความชื่อห้องไม่ดันทะลุขอบ Pop-up
+                    // ป้องกัน Overflow ด้วย Expanded
                     Expanded(
                       child: Text(
                         booking.type == 'ห้องประชุม'
@@ -694,9 +819,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                           color: Colors.black87,
                           fontFamily: 'Kanit',
                         ),
-                        maxLines: 2, // 💡 อนุญาตให้ขึ้นบรรทัดใหม่ได้ 2 บรรทัด
-                        overflow: TextOverflow
-                            .ellipsis, // 💡 ตัดคำเป็น ... ถ้ายาวเกิน
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
@@ -725,8 +849,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)}',
                       ),
                       const SizedBox(height: 10),
-                      _buildPopupRow('ผู้ทำรายการ', booking.bookedBy),
-                      const SizedBox(height: 10),
+                      // ซ่อนชื่อผู้ทำรายการตามที่คุณต้องการให้เป็นหน้าส่วนตัว
+                      // _buildPopupRow('ผู้ทำรายการ', booking.bookedBy),
+                      // const SizedBox(height: 10),
                       _buildPopupRow(
                         'จำนวนคน',
                         '${booking.participantCount} คน',
@@ -821,8 +946,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             fontFamily: 'Kanit',
           ),
         ),
-        const SizedBox(width: 8), // เพิ่ม Space เล็กน้อยกันข้อความชนกัน
-        // 💡 แก้ไขโดยการครอบ Flexible หรือ Expanded เพื่อจำกัดพื้นที่ไม่ให้ Overflow
+        const SizedBox(width: 8),
+        // ป้องกันข้อความยาวจนล้นจอ
         Flexible(
           child: isStatus
               ? Container(
@@ -836,8 +961,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   ),
                   child: Text(
                     value,
-                    overflow: TextOverflow
-                        .ellipsis, // ดักเผื่อข้อความยาวเกินให้ขึ้น ...
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: textStatusColor,
                       fontSize: 10,
@@ -848,8 +972,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                 )
               : Text(
                   value,
-                  overflow: TextOverflow
-                      .ellipsis, // ดักเผื่อข้อความยาวเกินให้ขึ้น ...
+                  overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.end,
                   style: const TextStyle(
                     fontSize: 13,

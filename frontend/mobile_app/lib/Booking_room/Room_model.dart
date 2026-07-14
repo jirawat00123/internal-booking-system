@@ -1,8 +1,6 @@
 // Room_model.dart
 import 'package:flutter/material.dart';
 
-String globalToken = '';
-
 // 💡 1. คลาสโมเดลสำหรับเก็บข้อมูลห้องประชุม
 class MeetingRoom {
   final String id;
@@ -43,9 +41,11 @@ class MeetingRoom {
   factory MeetingRoom.fromJson(Map<String, dynamic> json) {
     return MeetingRoom(
       id: json['id'].toString(),
-      roomName: json['roomName'] ?? '',
+      roomName: json['roomName'] ?? json['room_name'] ?? '',
       location: json['location'] ?? '',
-      capacity: json['capacity'] ?? 0,
+      capacity: json['capacity'] is int
+          ? json['capacity']
+          : int.tryParse(json['capacity'].toString()) ?? 0,
       imagePath: json['uploadUrl'] ?? json['upload_url'] ?? '',
       status: json['status'] ?? 'AVAILABLE',
     );
@@ -67,8 +67,8 @@ class BookingHistory {
   final String roomId;
   final String title;
   final String date;
-  final TimeOfDay startTime;
-  final TimeOfDay endTime;
+  final DateTime startTime;
+  final DateTime endTime;
   final int participantCount;
   final String type;
   final String bookedBy;
@@ -110,12 +110,24 @@ class BookingHistory {
     }
 
     try {
-      // 2. แปลงสตริงวันที่จอง (เช่น "27/05/2026") แยกส่วน วัน/เดือน/ปี
-      List<String> dateParts = date.split('/');
-      int day = int.parse(dateParts[0]);
-      int month = int.parse(dateParts[1]);
-      int year = int.parse(dateParts[2]);
+      // 2. 🟢 (Safe Parsing - Rule 19) ป้องกันแอปเด้ง หาก format วันที่ผิดเพี้ยน
+      List<String> dateParts = date.split(
+        RegExp(r'[/|-]'),
+      ); // รองรับทั้ง / และ -
 
+      if (dateParts.length < 3) {
+        return status ?? 'รูปแบบวันที่ผิด'; // ดักจับกรณีข้อมูลไม่ครบ
+      }
+
+      int? day = int.tryParse(dateParts[0]);
+      int? month = int.tryParse(dateParts[1]);
+      int? year = int.tryParse(dateParts[2]);
+
+      if (day == null || month == null || year == null) {
+        return status ?? 'รูปแบบวันที่ผิด'; // ดักจับกรณีแปลงเป็นตัวเลขไม่สำเร็จ
+      }
+
+      // หากปีเป็น ค.ศ. (เช่น 2026) ก็ใช้งานได้เลย หากเป็น พ.ศ. (2569) อาจต้องปรับโลจิกเพิ่ม
       // 3. สร้าง DateTime ของจุดเริ่มต้นและจุดสิ้นสุดของการจองนั้น ๆ
       final now = DateTime.now();
       final startBooking = DateTime(
@@ -145,7 +157,7 @@ class BookingHistory {
       debugPrint("Error calculating currentStatus: $e");
     }
 
-    return 'จองแล้ว'; // คืนค่าเริ่มต้นหากเกิดข้อผิดพลาด
+    return 'จองแล้ว'; // คืนค่าเริ่มต้นหากเกิดข้อผิดพลาด // คืนค่าเริ่มต้นหากเกิดข้อผิดพลาด
   }
 }
 

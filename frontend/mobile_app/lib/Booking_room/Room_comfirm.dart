@@ -5,8 +5,9 @@ import 'Room_model.dart';
 import 'Room_Completed.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class RoomConfirmScreen extends StatelessWidget {
+class RoomConfirmScreen extends StatefulWidget {
   final MeetingRoom room;
   final String bookingTitle;
   final String formattedDate;
@@ -25,6 +26,14 @@ class RoomConfirmScreen extends StatelessWidget {
     required this.startTime,
     required this.endTime,
   }) : super(key: key);
+
+  @override
+  State<RoomConfirmScreen> createState() => _RoomConfirmScreenState();
+}
+
+class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
+  // 🟢 1. สร้างตัวแปรดักจับสถานะ Loading เพื่อล็อกปุ่ม
+  bool isSubmitting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -50,9 +59,7 @@ class RoomConfirmScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // ส่วนแสดงสถานะ Step ด้านบน (ขยับมาไฮไลต์เต็มที่ Step 3 ยืนยัน)
           _buildStepIndicator(),
-
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(
@@ -61,7 +68,6 @@ class RoomConfirmScreen extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  // ตัวตั๋ว/Receipt ยืนยันข้อมูลการจอง
                   _buildConfirmTicketCard(),
                   const SizedBox(height: 40),
 
@@ -72,146 +78,203 @@ class RoomConfirmScreen extends StatelessWidget {
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF00A8CC),
+                        disabledBackgroundColor: Colors.grey, // สีปุ่มตอนโหลด
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14.0),
                         ),
                         elevation: 4,
                         shadowColor: Colors.black26,
                       ),
-                      onPressed: () async {
-                        try {
-                          // จัดการ Base URL อัตโนมัติระหว่าง Web กับ Emulator
-                          final String baseUrl = kIsWeb
-                              ? 'http://localhost:3001'
-                              : 'http://10.0.2.2:3001';
-                          final String jwtToken =
-                              globalToken; // TODO: นำ Token ที่ได้จากการ Login มาใส่ที่นี่
+                      // 🟢 2. ปิดปุ่มถ้าระบบกำลังโหลดอยู่
+                      onPressed: isSubmitting
+                          ? null
+                          : () async {
+                              setState(() {
+                                isSubmitting = true; // เปิด Loading
+                              });
 
-                          // แปลงรูปแบบวันที่จาก DD/MM/YYYY เป็น YYYY-MM-DD สำหรับส่งให้ Database
-                          final dateParts = formattedDate.split('/');
-                          final formattedForApi = dateParts.length == 3
-                              ? '${dateParts[2]}-${dateParts[1]}-${dateParts[0]}'
-                              : formattedDate;
-
-                          final String startDateTimeStr =
-                              '$formattedForApi ${startTime.hour.toString().padLeft(2, '0')}:${startTime.minute.toString().padLeft(2, '0')}:00';
-                          final String endDateTimeStr =
-                              '$formattedForApi ${endTime.hour.toString().padLeft(2, '0')}:${endTime.minute.toString().padLeft(2, '0')}:00';
-
-                          final response = await http.post(
-                            Uri.parse('$baseUrl/api/bookings'),
-                            headers: {
-                              // 💡 ต้องบอก Backend ว่าข้อมูลใน body เป็น JSON
-                              'Content-Type': 'application/json',
-                              'Authorization': 'Bearer $jwtToken',
-                            },
-                            body: jsonEncode({
-                              "roomId": int.parse(room.id.toString()),
-                              "title": bookingTitle.trim().isEmpty
-                                  ? 'ประชุมงานทั่วไป'
-                                  : bookingTitle,
-                              "startDatetime": startDateTimeStr,
-                              "endDatetime": endDateTimeStr,
-                            }),
-                          );
-
-                          if (response.statusCode == 201) {
-                            if (context.mounted) {
-                              Navigator.pushAndRemoveUntil(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const RoomCompletedScreen(),
-                                ),
-                                (route) => route.isFirst,
-                              );
-                            }
-                          } else if (response.statusCode == 409) {
-                            // 🔥 [สิ่งที่เปลี่ยนไป]: เพิ่มบล็อกสำหรับจัดการ Error 409 (เวลาทับซ้อน) โดยเฉพาะ
-                            if (context.mounted) {
-                              String errorMessage =
-                                  'ไม่สามารถจองได้ เนื่องจากมีการจองในช่วงเวลานี้แล้ว';
                               try {
-                                // พยายามดึงข้อความแจ้งเตือนที่เจาะจงจาก Backend
-                                final errorData = jsonDecode(response.body);
-                                if (errorData['message'] != null) {
-                                  errorMessage = errorData['message'];
-                                }
-                              } catch (_) {}
+                                final String baseUrl = kIsWeb
+                                    ? 'http://localhost:3001'
+                                    : 'http://10.0.2.2:3001';
 
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.warning_amber_rounded,
-                                        color: Colors.white,
+                                final prefs =
+                                    await SharedPreferences.getInstance();
+                                final String jwtToken =
+                                    prefs.getString('token') ?? '';
+
+                                // 🟢 3. แปลงวันที่และเวลาให้เป็น DateTime เพื่อส่งให้ Prisma แบบ ISO-8601 (สำคัญมาก!)
+                                final dateParts = widget.formattedDate.split(
+                                  '/',
+                                );
+                                final int day = int.parse(dateParts[0]);
+                                final int month = int.parse(dateParts[1]);
+                                final int year = int.parse(dateParts[2]);
+
+                                final DateTime startDateTime = DateTime(
+                                  year,
+                                  month,
+                                  day,
+                                  widget.startTime.hour,
+                                  widget.startTime.minute,
+                                );
+                                final DateTime endDateTime = DateTime(
+                                  year,
+                                  month,
+                                  day,
+                                  widget.endTime.hour,
+                                  widget.endTime.minute,
+                                );
+
+                                // ใช้ .toIso8601String() เพื่อให้ Backend (Prisma) ยอมรับข้อมูล
+                                final String startDateTimeStr = startDateTime
+                                    .toIso8601String();
+                                final String endDateTimeStr = endDateTime
+                                    .toIso8601String();
+
+                                // ยิง API สร้างรายการจองใหม่
+                                // ยิง API สร้างรายการจองใหม่
+                                final response = await http
+                                    .post(
+                                      Uri.parse('$baseUrl/api/bookings'),
+                                      headers: {
+                                        'Content-Type': 'application/json',
+                                        'Authorization': 'Bearer $jwtToken',
+                                      },
+                                      body: jsonEncode({
+                                        "roomId": int.parse(
+                                          widget.room.id.toString(),
+                                        ),
+                                        "title":
+                                            widget.bookingTitle.trim().isEmpty
+                                            ? 'ประชุมงานทั่วไป'
+                                            : widget.bookingTitle.trim(),
+                                        "startDatetime": startDateTimeStr,
+                                        "endDatetime": endDateTimeStr,
+                                        "participantCount":
+                                            widget.participantCount,
+                                      }),
+                                    )
+                                    .timeout(
+                                      const Duration(seconds: 15),
+                                    ); // 💡 เพิ่ม Timeout ป้องกันแอปค้างหน้า Loading ถาวร
+
+                                if (response.statusCode == 201) {
+                                  if (context.mounted) {
+                                    Navigator.pushAndRemoveUntil(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const RoomCompletedScreen(),
                                       ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          errorMessage,
-                                          style: const TextStyle(
-                                            fontFamily: 'Kanit',
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.bold,
+                                      (route) => route.isFirst,
+                                    );
+                                  }
+                                } else if (response.statusCode == 409) {
+                                  if (context.mounted) {
+                                    String errorMessage =
+                                        'ไม่สามารถจองได้ เนื่องจากมีการจองในช่วงเวลานี้แล้ว';
+                                    try {
+                                      final errorData = jsonDecode(
+                                        response.body,
+                                      );
+                                      if (errorData['message'] != null) {
+                                        errorMessage = errorData['message'];
+                                      }
+                                    } catch (_) {}
+
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.warning_amber_rounded,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                errorMessage,
+                                                style: const TextStyle(
+                                                  fontFamily: 'Kanit',
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        backgroundColor: const Color(
+                                          0xFFD32F2F,
+                                        ),
+                                        behavior: SnackBarBehavior.floating,
+                                        margin: const EdgeInsets.all(20),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
                                           ),
                                         ),
+                                        duration: const Duration(seconds: 4),
                                       ),
-                                    ],
-                                  ),
-                                  backgroundColor: const Color(
-                                    0xFFD32F2F,
-                                  ), // สีแดงแจ้งเตือน
-                                  behavior: SnackBarBehavior
-                                      .floating, // ให้แสดงแบบลอย ไม่ติดขอบล่าง
-                                  margin: const EdgeInsets.all(20),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  duration: const Duration(
-                                    seconds: 4,
-                                  ), // ค้างไว้ 4 วินาทีให้อ่านทัน
-                                ),
-                              );
-                            }
-                          } else {
-                            // 💡 Error อื่นๆ ที่ไม่ใช่ 409 (เช่น 400, 500)
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'จองไม่สำเร็จ รหัส: ${response.statusCode}',
-                                    style: const TextStyle(fontFamily: 'Kanit'),
-                                  ),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'เกิดข้อผิดพลาด: $e',
-                                  style: const TextStyle(fontFamily: 'Kanit'),
-                                ),
-                                backgroundColor: Colors.red,
+                                    );
+                                  }
+                                } else {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'จองไม่สำเร็จ รหัส: ${response.statusCode}',
+                                          style: const TextStyle(
+                                            fontFamily: 'Kanit',
+                                          ),
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              } catch (e) {
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        'ข้อผิดพลาดการเชื่อมต่อ: $e',
+                                        style: const TextStyle(
+                                          fontFamily: 'Kanit',
+                                        ),
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                // 🟢 4. ปิดสถานะ Loading หากเกิด Error หรือประมวลผลเสร็จ
+                                if (mounted) {
+                                  setState(() {
+                                    isSubmitting = false;
+                                  });
+                                }
+                              }
+                            },
+                      // 🟢 5. สลับข้อความกับวงกลม Loading
+                      child: isSubmitting
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2.5,
                               ),
-                            );
-                          }
-                        }
-                      },
-                      child: const Text(
-                        'ยืนยันการจองห้อง',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Kanit',
-                        ),
-                      ),
+                            )
+                          : const Text(
+                              'ยืนยันการจองห้อง',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Kanit',
+                              ),
+                            ),
                     ),
                   ),
                 ],
@@ -342,7 +405,6 @@ class RoomConfirmScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ส่วนบน: รูปภาพห้องประชุมพร้อมข้อความ Overlay
           Stack(
             children: [
               ClipRRect(
@@ -353,34 +415,25 @@ class RoomConfirmScreen extends StatelessWidget {
                   height: 180,
                   width: double.infinity,
                   color: Colors.grey[300],
-                  child: room.imagePath != null
-                      ? (kIsWeb || room.imagePath!.startsWith('/')
-                            ? Image.network(
-                                room.imagePath!.startsWith('http')
-                                    ? room.imagePath!
-                                    : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${room.imagePath}',
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    const Icon(
-                                      Icons.broken_image,
-                                      size: 50,
-                                      color: Colors.grey,
-                                    ),
-                              )
-                            : Image.file(
-                                File(room.imagePath!),
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) =>
-                                    const Icon(
-                                      Icons.broken_image,
-                                      size: 50,
-                                      color: Colors.grey,
-                                    ),
-                              ))
+                  // 💡 ปรับลอจิกให้ตรงกับ Room_list.dart: บังคับใช้ Image.network เนื่องจากภาพอยู่บนเซิร์ฟเวอร์ทั้งหมด
+                  child:
+                      (widget.room.imagePath != null &&
+                          widget.room.imagePath!.isNotEmpty)
+                      ? Image.network(
+                          widget.room.imagePath!.startsWith('http')
+                              ? widget.room.imagePath!
+                              : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${widget.room.imagePath}',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(
+                                Icons.broken_image,
+                                size: 50,
+                                color: Colors.grey,
+                              ),
+                        )
                       : const Icon(Icons.image, size: 50, color: Colors.grey),
                 ),
               ),
-              // แผ่นฟิล์มสีมืดจาง ๆ บังรูปเพื่อให้ตัวหนังสือเด่นชัดขึ้นแบบดีไซน์
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -391,7 +444,6 @@ class RoomConfirmScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              // ข้อความระบุชั้น และชื่อห้อง บนรูปภาพ
               Positioned(
                 left: 20,
                 bottom: 20,
@@ -399,7 +451,7 @@ class RoomConfirmScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'ห้องประชุม ${room.location}',
+                      'ห้องประชุม ${widget.room.location}',
                       style: const TextStyle(
                         color: Color(0xFF00E5FF),
                         fontSize: 14,
@@ -409,7 +461,7 @@ class RoomConfirmScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      room.roomName,
+                      widget.room.roomName,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 22,
@@ -422,8 +474,6 @@ class RoomConfirmScreen extends StatelessWidget {
               ),
             ],
           ),
-
-          // เส้นประคั่นกลางตั๋วแบบดีไซน์ (Ticket Dash Divider)
           Padding(
             padding: const EdgeInsets.symmetric(
               vertical: 20.0,
@@ -443,8 +493,6 @@ class RoomConfirmScreen extends StatelessWidget {
               ),
             ),
           ),
-
-          // ส่วนล่าง: รายละเอียดข้อมูลที่ User กรอกเข้ามา
           Padding(
             padding: const EdgeInsets.only(
               left: 24.0,
@@ -465,10 +513,9 @@ class RoomConfirmScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  // 💡 ดึงค่าจากหน้าฟอร์มที่กรอกส่งมา: ถ้าค่าว่างให้แสดง 'ประชุมงานทั่วไป' แต่ถ้ากรอกมาจะแสดงตามที่พิมพ์เป๊ะๆ
-                  bookingTitle.trim().isEmpty
+                  widget.bookingTitle.trim().isEmpty
                       ? 'ประชุมงานทั่วไป'
-                      : bookingTitle,
+                      : widget.bookingTitle,
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -477,7 +524,6 @@ class RoomConfirmScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-
                 Row(
                   children: [
                     const Icon(
@@ -487,7 +533,7 @@ class RoomConfirmScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'ตำแหน่ง : ${room.location}',
+                      'ตำแหน่ง : ${widget.room.location}',
                       style: const TextStyle(
                         fontSize: 13,
                         color: Colors.blueGrey,
@@ -496,12 +542,10 @@ class RoomConfirmScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16.0),
                   child: Divider(color: Color(0xFFE2E8F0)),
                 ),
-
                 Row(
                   children: [
                     Expanded(
@@ -519,7 +563,7 @@ class RoomConfirmScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            formattedDate,
+                            widget.formattedDate,
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -545,7 +589,7 @@ class RoomConfirmScreen extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            formattedTime,
+                            widget.formattedTime,
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -558,7 +602,6 @@ class RoomConfirmScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 20),
                 const Text(
                   'ผู้เข้าร่วม',
@@ -571,7 +614,7 @@ class RoomConfirmScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '$participantCount ท่าน',
+                  '${widget.participantCount} ท่าน',
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,

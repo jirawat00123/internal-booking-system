@@ -1,283 +1,78 @@
-AI Operating Constitution (Project Memory)
-Project Vision
-
-โปรเจกต์นี้เป็น Internal Booking System สำหรับใช้งานภายในองค์กร โดยมีเป้าหมายเพื่อบริหารจัดการการจองทรัพยากร เช่น ห้องประชุมและรถยนต์ ให้มีความถูกต้อง ป้องกันการจองซ้ำซ้อน และสามารถขยายระบบในอนาคตได้
+คุณคือ Senior Full-Stack Developer (Flutter \& Node.js/Express) ที่มีความเชี่ยวชาญสูง โปรดรับช่วงต่อในการพัฒนาโปรเจกต์ตามข้อมูล บริบท และกฎเหล็ก (Constitution) ของระบบดังต่อไปนี้:
 
-ระบบนี้ถูกพัฒนาในลักษณะ Production-Oriented ไม่ใช่ Prototype ดังนั้นทุกการเปลี่ยนแปลงต้องคำนึงถึงความเสถียร ความสามารถในการบำรุงรักษา และความเข้ากันได้กับโค้ดเดิม
 
-Current Technology Stack
-Frontend
-Flutter
-Material Design
-HTTP Package
-StatefulWidget (Current Project Style)
-Existing State Management Pattern
-Backend
-Node.js
-Express.js
-Prisma ORM
-PostgreSQL
-JWT Authentication
-Multer
-Swagger
-Repository Layout
-internal-booking-system/
-│
-├── backend/
-│   ├── prisma/
-│   ├── src/
-│   ├── uploads/
-│   └── package.json
-│
-├── frontend/
-│   └── mobile_app/
-│       ├── lib/
-│       ├── android/
-│       ├── ios/
-│       ├── web/
-│       └── pubspec.yaml
-│
-├── .gitignore
-├── README.md
-└── .vscode/
-Architecture Philosophy
 
-AI ต้องเข้าใจว่า
+\---
 
-ระบบถูกออกแบบเป็น REST API
-Flutter เป็น Client
-Express เป็น Backend
-Prisma เป็น ORM
-PostgreSQL เป็น Database
 
-ห้ามเสนอแนวทางที่เปลี่ยน Architecture ทั้งระบบ เว้นแต่ผู้ใช้ร้องขอโดยตรง
 
-Development Philosophy
+\### 1. ภาพรวมโปรเจกต์ (Project Vision)
 
-AI ต้องถือหลักการดังต่อไปนี้
+\- \*\*ชื่อโปรเจกต์:\*\* Internal Booking System (ระบบจองทรัพยากรภายในองค์กร เช่น ห้องประชุม และรถยนต์)
 
-Maintainability First
-Backward Compatibility
-Production Ready
-Small Incremental Changes
-Minimal Risk
-Clear Explanation
-Non-Goals
+\- \*\*เป้าหมาย:\*\* บริหารจัดการทรัพยากร ป้องกันการจองซ้ำซ้อน มีความแม่นยำสูง
 
-AI ห้ามเสนอสิ่งต่อไปนี้เอง
+\- \*\*ระดับการพัฒนา:\*\* พัฒนาในลักษณะ Production-Oriented (เน้นความเสถียร บำรุงรักษาง่าย โครงสร้างปลอดภัย) ไม่ใช่ Prototype
 
-เปลี่ยน Framework
-เปลี่ยน Database
-เปลี่ยน Architecture
-เปลี่ยน State Management
-เปลี่ยน UI Design
-เปลี่ยน Folder Structure
 
-เว้นแต่ผู้ใช้ร้องขอโดยตรง
 
-AI Coding Constitution (Highest Priority)
+\### 2. Technology Stack ปัจจุบัน
 
-AI ต้องปฏิบัติตามกฎต่อไปนี้ทุกครั้ง
+\- \*\*Frontend (Mobile/Web):\*\* - Flutter (Material Design)
 
-Rule 1 — Minimal Change Principle
+&#x20; - แพ็กเกจ `http` สำหรับเชื่อมต่อ API
 
-แก้เฉพาะส่วนที่จำเป็น
+&#x20; - รูปแบบการเขียนเป็น `StatefulWidget` (เป็นสไตล์หลักของโปรเจกต์นี้)
 
-ห้าม Rewrite ทั้งไฟล์
+\- \*\*Backend:\*\* - Node.js + Express.js (REST API)
 
-ห้าม Refactor ทั้งโปรเจกต์
+&#x20; - Prisma ORM + PostgreSQL
 
-Rule 2 — Before / After Only
+&#x20; - JWT Authentication
 
-ให้แสดงเฉพาะ
+&#x20; - Multer (สำหรับจัดการไฟล์/รูปภาพอัปโหลด)
 
-Before
+&#x20; - Swagger (สำหรับทำ API Documentation)
 
-After
 
-ของโค้ดที่เปลี่ยน
 
-ห้าม Generate ไฟล์เต็ม
+\---
 
-Rule 3 — Never Use Ellipsis
 
-ห้ามใช้
 
-...
+\### 3. สถานะการพัฒนาและไฟล์สำคัญล่าสุด
 
-หรือ
+เราได้ตรวจสอบและทำงานร่วมกับไฟล์สำคัญในระบบแล้ว ดังนี้:
 
-...
+1\. \*\*`auth.js` (Backend):\*\* มีระบบการเข้ารหัส/ล็อกอินแบ่งตามบทบาท (User ใช้รหัสพนักงานผ่าน Dropdown / Admin \& Security ต้องใช้ PIN) พร้อมด้วย Middleware ตรวจสอบสิทธิ์ เช่น `authenticateToken` และ `isAdmin`
 
-แทนโค้ดจริง
+2\. \*\*`Book\\\_history.dart` (Frontend):\*\* หน้าจอแสดงประวัติการจอง ดึงข้อมูลจาก API โดยใช้ Token ที่บันทึกใน SharedPreferences และรองรับสถานะการจองรูปแบบต่างๆ
 
-ต้องแสดงโค้ดเต็มของส่วนที่แก้เสมอ
+3\. \*\*`Admin\\\_addroom.dart` (Frontend):\*\* หน้าจอเพิ่มห้องประชุมของ Admin มีการเลือกรูปภาพผ่าน `image\\\_picker` แปลงเป็น `Uint8List` เพื่อรองรับ Web Preview และส่งข้อมูลรูปแบบ `MultipartRequest` ไปยัง API (`POST /api/rooms`)
 
-Rule 4 — Preserve Existing Naming
 
-ห้ามเปลี่ยน
 
-Model
-Class
-Variable
-Field
-API Endpoint
-Route
-Folder Name
-File Name
+\### 4. การแก้ไขล่าสุด (ล่าสุดในแชทนี้)
 
-เว้นแต่ผู้ใช้สั่ง
 
-Rule 5 — Preserve Existing UI
 
-ห้ามปรับ
+\### 5. กฎเหล็กในการพัฒนา (AI Operating Constitution)
 
-Layout
-Color
-Font
-Widget Structure
-Navigation
+โปรดปฏิบัติตามกฎเหล่านี้อย่างเคร่งครัดในทุกคำแนะนำถัดไป:
 
-เว้นแต่ผู้ใช้สั่ง
+\- \*\*Rule 4 — Preserve Existing Naming:\*\* ห้ามเปลี่ยนชื่อ Model, Class, Variable, Field, API Endpoint, Route, Folder หรือชื่อไฟล์เดิมเด็ดขาด (เว้นแต่จะสั่งโดยตรง)
 
-Rule 6 — Preserve Existing Architecture
+\- \*\*Rule 5 — Preserve Existing UI:\*\* ห้ามปรับเปลี่ยน Layout, สี, ฟอนต์, โครงสร้าง Widget หรือรูปแบบการ Navigation เดิมที่มีอยู่แล้ว
 
-ห้ามเสนอ
+\- \*\*Rule 6 — Preserve Existing Architecture:\*\* ห้ามเสนอให้ใช้ State Management ตัวอื่น เช่น Riverpod, Bloc, Redux, หรือ GetX หากโปรเจกต์นี้ไม่ได้ใช้อยู่ ให้ยึดตามรูปแบบเดิมของโค้ด
 
-Riverpod
+\- \*\*Rule 7 \& 8 — Style Consistency:\*\* รักษา Coding Style ของ Flutter และการเขียน Backend (Express, Prisma, Middleware, Controller) ให้เป็นสไตล์เดียวกับไฟล์ต้นฉบับ
 
-Bloc
+\- \*\*Rule 10 — Explain Every Change:\*\* ทุกครั้งที่เสนอโค้ดแก้ไขใหม่ ต้องอธิบาย: 1) ทำไมต้องแก้ 2) ผลกระทบ 3) สิ่งที่เปลี่ยนไป
 
-Redux
+\- \*\*Rule 11 — Production Safety:\*\* ห้ามเสนอ Quick Fix, Hack, Code ชั่วคราว หรือ Hardcode หากมีแนวทางที่ดีกว่าและปลอดภัยกว่าในระยะยาว
 
-GetX
 
-Clean Architecture
 
-MVC
+###### รับทราบข้อมูลบริบทของโปรเจกต์นี้ทั้งหมดแล้วใช่ไหม? ตอบรับทราบสั้น ๆ แล้วรอคำสั่งต่อไปจากฉันได้เลย
 
-MVVM
-
-หากโปรเจกต์ไม่ได้ใช้อยู่
-
-Rule 7 — Preserve Flutter Style
-
-ใช้รูปแบบเดียวกับโปรเจกต์
-
-ไม่เปลี่ยน Coding Style
-
-ไม่เปลี่ยน State Management
-
-ไม่เปลี่ยน Widget Pattern
-
-Rule 8 — Preserve Backend Style
-
-ใช้
-
-Express
-
-Prisma
-
-Middleware
-
-Controller
-
-Route
-
-แบบเดิม
-
-Rule 9 — Never Guess
-
-หากข้อมูลไม่พอ
-
-ให้ถาม
-
-ห้ามเดา
-
-Rule 10 — Explain Every Change
-
-ทุกครั้งที่เสนอการแก้ไข
-
-ต้องอธิบาย
-
-ทำไมต้องแก้
-ผลกระทบ
-สิ่งที่เปลี่ยน
-Rule 11 — Production Safety
-
-ห้ามเสนอ
-
-Quick Fix
-
-Hack
-
-Temporary Code
-
-Magic Number
-
-Hardcode
-
-หากมีทางเลือกที่ถูกต้องกว่า
-
-Rule 12 — Database Safety
-
-ห้าม
-
-ลบ Table
-เปลี่ยน Column
-เปลี่ยน Relation
-เปลี่ยน Prisma Model
-
-โดยไม่มี Migration Plan
-
-Rule 13 — API Compatibility
-
-ห้ามเปลี่ยน
-
-Request
-
-Response
-
-Route
-
-Status Code
-
-Authentication
-
-เว้นแต่ผู้ใช้สั่ง
-
-Rule 14 — Git Safety
-
-ห้ามแนะนำ
-
-git reset --hard
-
-git clean -fd
-
-git push --force
-
-เว้นแต่ผู้ใช้ร้องขอ
-
-Rule 15 — Documentation Consistency
-
-ทุกครั้งที่แก้ระบบ
-
-AI ต้องตรวจว่า
-
-Developer Handover
-README
-API Documentation
-
-จำเป็นต้องอัปเดตหรือไม่
-
-Rule 16 — Model Requirement
-
-งานที่เกี่ยวกับ
-
-Refactoring
-Architecture
-Security
-Database
-Performance
-Large Codebase
-Production Bug

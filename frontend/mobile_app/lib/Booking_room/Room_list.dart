@@ -1,9 +1,9 @@
-import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-
 import 'Room_model.dart';
-import 'Admin_roompage.dart';
 import 'Room_booking.dart';
 
 class RoomListScreen extends StatefulWidget {
@@ -14,12 +14,110 @@ class RoomListScreen extends StatefulWidget {
 }
 
 class _RoomListScreenState extends State<RoomListScreen> {
+  bool isLoading =
+      true; // 💡 เพิ่ม State เพื่อโชว์ตัวโหลดระหว่างรอข้อมูลจาก Backend
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRoomsFromApi(); // 💡 ดึงข้อมูลทันทีที่ผู้ใช้เข้ามาหน้านี้
+  }
+
+  // 🔥 [สิ่งที่เปลี่ยนไป 1]: เพิ่มฟังก์ชันดึงห้องประชุมจาก Backend สำหรับ User
+  Future<void> _fetchRoomsFromApi() async {
+    try {
+      final String baseUrl = kIsWeb
+          ? 'http://localhost:3001'
+          : 'http://10.0.2.2:3001';
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? '';
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/rooms'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${token.trim()}',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final List roomsData = body is List ? body : (body['data'] ?? []);
+
+        final activeRooms = roomsData.where((e) {
+          return e['isDeleted'] == false || e['isDeleted'] == 'false';
+        }).toList();
+
+        globalMeetingRooms.value = activeRooms
+            .map((e) => MeetingRoom.fromJson(e))
+            .toList();
+      } else if (response.statusCode == 401) {
+        // 🔴 [เพิ่มใหม่] จัดการ Concurrent Login: เมื่อ Session ไม่ตรงหรือหมดอายุ
+        if (mounted) {
+          // 1. ล้าง Token ทิ้ง
+          await prefs.clear();
+
+          // 2. แจ้งเตือนผู้ใช้
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'เซสชันหมดอายุ หรือมีการเข้าสู่ระบบจากอุปกรณ์อื่น กรุณาเข้าสู่ระบบใหม่',
+                style: TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+
+          // 3. บังคับเด้งกลับหน้า Login (ตรวจสอบชื่อ Route ให้ตรงกับที่คุณตั้งไว้ใน main.dart)
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            '/login',
+            (route) => false,
+          );
+        }
+      } else {
+        // 🟢 2. แจ้งเตือนเมื่อ HTTP Status อื่นๆ ที่ไม่ใช่ 200 และ 401
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'ดึงข้อมูลไม่สำเร็จ (Code: ${response.statusCode})',
+                style: const TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching rooms: $e');
+      // 🟢 3. แจ้งเตือนเมื่อเน็ตหลุดหรือเซิร์ฟเวอร์มีปัญหา (Rule 19)
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้',
+              style: TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false; // ปิดตัวโหลดเมื่อดึงข้อมูลเสร็จ
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF004AAD), // สีน้ำเงินตามภาพดีไซน์
+        backgroundColor: const Color(0xFF004AAD),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -38,37 +136,63 @@ class _RoomListScreenState extends State<RoomListScreen> {
       ),
       body: Column(
         children: [
-          // ส่วนแสดงสถานะ Step ด้านบน (1 -> 2 -> 3)
           _buildStepIndicator(),
 
+          // 🔥 [สิ่งที่เปลี่ยนไป 2]: เพิ่ม isLoading เช็กก่อนแสดงการ์ดห้อง เพื่อความสมูท
           Expanded(
-            child: globalMeetingRooms.value.isEmpty
+            child: isLoading
                 ? const Center(
-                    child: Text(
-                      'ไม่มีห้องประชุมที่พร้อมใช้งาน',
-                      style: TextStyle(
-                        fontFamily: 'Kanit',
-                        color: Colors.grey,
-                        fontSize: 16,
-                      ),
-                    ),
+                    child: CircularProgressIndicator(color: Color(0xFF004AAD)),
                   )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
+                : RefreshIndicator(
+                    // 💡 1. เพิ่ม Widget นี้เข้ามาครอบ
+                    onRefresh:
+                        _fetchRoomsFromApi, // 💡 2. สั่งให้ดึง API ใหม่เมื่อใช้นิ้วดึงหน้าจอลง
+                    color: const Color(0xFF004AAD),
+                    child: ValueListenableBuilder<List<MeetingRoom>>(
+                      valueListenable: globalMeetingRooms,
+                      builder: (context, rooms, child) {
+                        if (rooms.isEmpty) {
+                          return ListView(
+                            // 💡 (บังคับให้เป็น ListView เพื่อให้สามารถดึงหน้าจอลงได้แม้ไม่มีข้อมูล)
+                            physics:
+                                const AlwaysScrollableScrollPhysics(), // 💡 การันตีให้สามารถดึงเพื่อ Refresh ได้เสมอ
+                            children: const [
+                              SizedBox(height: 200),
+                              Center(
+                                child: Text(
+                                  'ไม่มีห้องประชุมที่พร้อมใช้งาน',
+                                  style: TextStyle(
+                                    fontFamily: 'Kanit',
+                                    color: Colors.grey,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                        return ListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                          itemCount: rooms.length,
+                          itemBuilder: (context, index) {
+                            return _buildRoomCard(rooms[index]);
+                          },
+                        );
+                      },
                     ),
-                    itemCount: globalMeetingRooms.value.length,
-                    itemBuilder: (context, index) {
-                      // ดึงค่าโดยตรงผ่าน globalMeetingRooms ไม่ต้องมี admin. นำหน้า
-                      return _buildRoomCard(globalMeetingRooms.value[index]);
-                    },
                   ),
           ),
         ],
       ),
     );
   }
+
+  // ส่วนสร้าง Step Indicator (1 เลือกห้อง -> 2 กรอกข้อมูล -> 3 ยืนยัน)
+  // ... (โค้ดด้านล่างที่เหลือทั้งหมดคงเดิม ไม่ต้องแก้ครับ) ...
 
   // ส่วนสร้าง Step Indicator (1 เลือกห้อง -> 2 กรอกข้อมูล -> 3 ยืนยัน)
   Widget _buildStepIndicator() {
@@ -142,20 +266,20 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
-  // ฟังก์ชันแยกสำหรับจัดการโหลดรูปภาพ (Optimize พร้อม ErrorBuilder ป้องกันแอปพัง)
-  Widget _buildImage(String? imagePath) {
-    if (imagePath == null || imagePath.isEmpty) {
-      return Container(
-        height: 180,
-        color: Colors.grey[300],
-        child: const Icon(Icons.image, size: 50, color: Colors.grey),
-      );
-    }
+  Widget _buildRoomCard(MeetingRoom room) {
+    bool isAvailable = room.status == 'AVAILABLE';
+    Color statusColor;
+    // ฟังก์ชันแยกสำหรับจัดการโหลดรูปภาพ (Optimize พร้อม ErrorBuilder ป้องกันแอปพัง)
+    // 🟢 4. บังคับใช้ Image.network เสมอ และตัดลอจิก Image.file ทิ้ง เพราะภาพทุกใบของระบบนี้อยู่บนเซิร์ฟเวอร์
+    Widget _buildImage(String? imagePath) {
+      if (imagePath == null || imagePath.isEmpty) {
+        return Container(
+          height: 180,
+          color: Colors.grey[300],
+          child: const Icon(Icons.image, size: 50, color: Colors.grey),
+        );
+      }
 
-    if (kIsWeb ||
-        imagePath.startsWith('http://') ||
-        imagePath.startsWith('https://') ||
-        imagePath.startsWith('/')) {
       final String baseUrl = kIsWeb
           ? 'http://localhost:3001'
           : 'http://10.0.2.2:3001';
@@ -176,24 +300,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
       );
     }
 
-    return Image.file(
-      File(imagePath),
-      height: 180,
-      width: double.infinity,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => Container(
-        height: 180,
-        color: Colors.grey[300],
-        child: const Icon(Icons.broken_image, size: 50, color: Colors.grey),
-      ),
-    );
-  }
-
-  // ส่วนสร้าง Card ห้องประชุม
-  Widget _buildRoomCard(MeetingRoom room) {
-    bool isAvailable = room.status == 'AVAILABLE';
-    Color statusColor;
-
+    // ส่วนสร้าง Card ห้องประชุม
     switch (room.status) {
       case 'AVAILABLE':
         statusColor = const Color(0xFF2EC4B6);
@@ -325,27 +432,28 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   width: double.infinity,
                   height: 46,
                   child: ElevatedButton(
-                    onPressed: isAvailable
-                        ? () async {
-                            final result = await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => RoomBookingAScreen(room: room),
-                              ),
-                            );
+                    // 💡 ปลดล็อก! เอาเงื่อนไข isAvailable ออกไปเลย ให้กดเข้าได้ 100% เสมอ
+                    onPressed: () async {
+                      final result = await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => RoomBookingAScreen(room: room),
+                        ),
+                      );
 
-                            // เมื่อกลับมาหน้านี้ ถ้า result เป็น true ให้ดึงข้อมูลใหม่
-                            if (result == true) {
-                              // หมายเหตุ: ตรวจสอบให้แน่ใจว่าได้ import ฟังก์ชัน fetchRooms() เข้ามาในไฟล์นี้แล้ว
-                              // หรือดึงผ่าน class/provider ที่จัดการ state ตามโครงสร้างเดิมของโปรเจกต์
-                            }
-                          }
-                        : null,
+                      // เมื่อกลับมาหน้านี้ ถ้า result เป็น true ให้ดึงข้อมูลใหม่
+                      if (result == true) {
+                        if (!mounted) return;
+                        setState(() {
+                          isLoading = true;
+                        });
+                        _fetchRoomsFromApi();
+                      }
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(
                         0xFF00A8CC,
-                      ), // สีฟ้าตามดีไซน์
-                      disabledBackgroundColor: Colors.grey.shade300,
+                      ), // สีฟ้าพร้อมกดเสมอ
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),

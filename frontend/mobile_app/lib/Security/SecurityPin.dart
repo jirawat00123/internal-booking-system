@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
-import 'package:shared_preferences/shared_preferences.dart'; // 💡 เพิ่มแพ็กเกจนี้เพื่อใช้เซฟ Token
-import 'PinError.dart';
-import 'AdminGroupPage.dart';
-import 'Booking_room/Room_model.dart';
+import '../PinError.dart';
+import 'SecurityGroupPage.dart'; // 👈 เปลี่ยนเป็นหน้าของ รปภ.
 
-class Admin_pinPage extends StatefulWidget {
-  const Admin_pinPage({super.key});
+class Security_Pinpage extends StatefulWidget {
+  const Security_Pinpage({super.key});
 
   @override
-  State<Admin_pinPage> createState() => _Admin_pinPageState();
+  State<Security_Pinpage> createState() => _Security_PinpageState();
 }
 
-class _Admin_pinPageState extends State<Admin_pinPage> {
+class _Security_PinpageState extends State<Security_Pinpage> {
   String pin = "";
   bool isObscured = true;
-  bool isLoading = false; // 💡 เพิ่มตัวแปรเช็กสถานะกำลังโหลด
+  bool isLoading = false;
 
   void _addPin(String number) {
     if (pin.length < 6) {
@@ -35,15 +33,17 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
   }
 
   // ฟังก์ชันเรียก Popup แจ้งเตือนเมื่อรหัสผิด
+  // ฟังก์ชันเรียก Popup (แก้ชื่อตัวแปรกันมันสับสน)
   void _showErrorDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
+      builder: (BuildContext dialogContext) {
+        // 👈 เปลี่ยนเป็น dialogContext
         return PinError(
           onRetry: () {
             setState(() {
-              pin = ""; // เคลียร์ PIN ให้ว่างเพื่อกดใหม่
+              pin = ""; // เคลียร์ PIN ให้ว่าง
             });
           },
         );
@@ -51,102 +51,75 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
     );
   }
 
-  // 🚀 ฟังก์ชันยิง API สำหรับแอดมิน
-  // 🚀 ฟังก์ชันยิง API สำหรับแอดมิน (ฉบับ Production Ready)
+  // 🚀 ฟังก์ชันยิง API พร้อมเครื่องดักฟัง
+  // 🚀 ฟังก์ชันยิง API พร้อมเครื่องดักฟัง (พิมพ์ Log)
   Future<void> _verifyPin() async {
     setState(() {
       isLoading = true;
     });
 
     try {
-      // 💡 ข้อแนะนำ: ควรดึง URL จาก Config File แทนการ Hardcode
+      // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น 10.0.2.2 สำหรับมือถือจำลอง (Android Emulator)
+      // (ถ้าคุณปิ่นรันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
       final url = Uri.parse('http://localhost:3001/api/login-pin');
+
+      print(
+        '📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...',
+      ); // 👈 ดักฟังว่าแอปเริ่มทำงานไหม
 
       final response = await http
           .post(
             url,
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'pin': pin, 'expectedRole': 'ADMIN'}),
+            body: jsonEncode({
+              'pin': pin,
+              'expectedRole':
+                  'SECURITY', // 👈 กระซิบบอกหลังบ้านว่า นี่คือหน้าจอของ รปภ. นะ!
+            }),
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 5)); // ให้เวลารอแค่ 5 วิ
+
+      print(
+        '📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}',
+      ); // 👈 ดักฟังว่าหลังบ้านตอบไหม
+      print('📱 [Flutter] ข้อมูลจากหลังบ้าน: ${response.body}');
 
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        try {
-          final responseData = jsonDecode(response.body);
+        final responseData = jsonDecode(response.body);
 
-          if (responseData['role'] == 'ADMIN') {
-            final token = responseData['token'] ?? '';
-
-            // [EVIDENCE_FLUTTER] 1. ตรวจสอบโครงสร้างดิบที่ Backend ตอบกลับมาจริง ๆ
-            debugPrint(
-              '[EVIDENCE_FLUTTER] 1. Raw Response Body from Login API: ${response.body}',
-            );
-            // [EVIDENCE_FLUTTER] 2. ตรวจสอบว่าแกะตัวแปรออกมาได้ค่าอะไร และมีความยาวเท่าไหร่
-            debugPrint(
-              '[EVIDENCE_FLUTTER] 2. Extracted Token Value: "$token" (Length: ${token.length})',
-            );
-
-            // 💡 1. เซฟ Token อย่างปลอดภัย (ควรใช้ flutter_secure_storage ในอนาคต)
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('token', token);
-
-            // [EVIDENCE_FLUTTER] 3. ตรวจสอบเพื่อรีเช็คว่า SharedPreferences บันทึกข้อมูลเข้าดิสก์สำเร็จจริงหรือไม่
-            final doubleCheckToken = prefs.getString('token');
-            debugPrint(
-              '[EVIDENCE_FLUTTER] 3. Double Check Token from SharedPreferences right after save: "$doubleCheckToken"',
-            );
-
-            // 💡 2. เช็ค mounted อีกครั้งหลังมี await
-            if (!mounted) return;
-            // 🟢 รหัสถูก สิทธิ์ถูกต้อง พาเข้าหน้า AdminGroupPage
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const AdminGroupPage()),
-            );
-          } else {
-            _handleErrorState(); // เรียกใช้ฟังก์ชันที่ยุบรวมแล้ว
-          }
-        } catch (e) {
-          debugPrint("JSON Parse Error: $e");
-          _handleErrorState();
-        }
-      } else if (response.statusCode == 401) {
-        if (mounted) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.clear();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'บัญชีนี้ถูกเข้าสู่ระบบจากอุปกรณ์อื่น กรุณาเข้าสู่ระบบใหม่',
-                style: TextStyle(fontFamily: 'Kanit'),
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
-          Navigator.pushNamedAndRemoveUntil(
+        if (responseData['role'] == 'SECURITY') {
+          // 🟢 รหัสถูก สิทธิ์ถูกต้อง
+          Navigator.pushReplacement(
             context,
-            '/login',
-            (route) => false,
+            MaterialPageRoute(builder: (context) => const SecurityGroupPage()),
           );
+        } else {
+          // 🛑 รหัสถูก แต่สิทธิ์ไม่ใช่ รปภ.
+          setState(() {
+            isLoading = false;
+          });
+          _showErrorDialog();
         }
       } else {
-        _handleErrorState();
+        // 🛑 รหัสผิด (เช่น 401)
+        setState(() {
+          isLoading = false;
+        });
+        _showErrorDialog();
       }
     } catch (error) {
-      debugPrint("API Error: $error");
-      _handleErrorState();
-    }
-  }
-
-  // 🔥 ฟังก์ชันยุบรวมสำหรับจัดการ Error State เพื่อลด Duplicate Code
-  void _handleErrorState() {
-    if (mounted) {
-      setState(() {
-        isLoading = false;
-      });
-      _showErrorDialog();
+      // 🔌 กรณีที่ติดต่อเซิร์ฟเวอร์ไม่ได้เลย
+      print(
+        '📱 [Flutter] ❌ เชื่อมต่อเซิร์ฟเวอร์ไม่ได้! สาเหตุ: $error',
+      ); // 👈 ดักฟัง Error ทะลุจอ
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+        _showErrorDialog();
+      }
     }
   }
 
@@ -229,7 +202,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                             ), // 👈 ไอคอนโล่ รปภ.
                             SizedBox(width: 8),
                             Text(
-                              'ผู้ดูแลระบบ', // 👈 เปลี่ยนข้อความ
+                              'รปภ. (Security Guard)', // 👈 เปลี่ยนข้อความ
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -421,9 +394,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: numbers.map<Widget>((digit) {
-          return _buildNumButton(digit);
-        }).toList(),
+        children: numbers.map((num) => _buildNumButton(num)).toList(),
       ),
     );
   }
@@ -433,12 +404,8 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       width: 60,
       height: 60,
       child: TextButton(
-        onPressed: () {
-          _addPin(number);
-        },
-        style: ButtonStyle(
-          shape: MaterialStateProperty.all(const CircleBorder()),
-        ),
+        onPressed: () => _addPin(number),
+        style: TextButton.styleFrom(shape: const CircleBorder()),
         child: Text(
           number,
           style: const TextStyle(

@@ -32,6 +32,7 @@ const swaggerUi = require('swagger-ui-express');
 const app = express();
 const prisma = new PrismaClient(); 
 
+
 // ==========================================
 // 🛡️ ดักจับ Error ระดับ Process (ป้องกันเซิร์ฟเวอร์ดับเงียบ)
 // ==========================================
@@ -390,51 +391,29 @@ app.delete('/api/rooms/:id', async (req, res) => {
   const roomIdInt = parseInt(id, 10);
 
   try {
-    // 💡 1. ดึง ID ของการจอง (Booking) ทั้งหมดที่ผูกกับห้องนี้มาก่อน
-    const relatedBookings = await prisma.roomBooking.findMany({
-      where: { roomId: roomIdInt },
-      select: { id: true }
-    });
-    const bookingIds = relatedBookings.map(b => b.id);
+    // 💡 ฝัง Log ไว้ตรงนี้เพื่อตรวจสอบใน Terminal หลังบ้าน
+    console.log(`\n🚨กำลังทำ SOFT DELETE ห้องหมายเลข: ${roomIdInt}🚨\n`);
 
-    // 💡 2. เตรียมคำสั่งลบข้อมูลที่เกี่ยวข้องกันทั้งหมด (ต้องลบลูกก่อนลบแม่)
-    // ลบประวัติการเปลี่ยนสถานะของการจอง (History)
-    const deleteHistories = prisma.roomBookingHistory.deleteMany({
-      where: { roomBookingId: { in: bookingIds } }
+    // เปลี่ยนจากคำสั่งลบถาวร เป็นการอัปเดตฟิลด์ isDeleted ให้เป็น true
+    const updatedRoom = await prisma.room.update({
+      where: { 
+        id: roomIdInt 
+      },
+      data: { 
+        isDeleted: true 
+      }
     });
-
-    // ลบไฟล์แนบของการจอง (Attachment)
-    const deleteAttachments = prisma.attachment.deleteMany({
-      where: { roomBookingId: { in: bookingIds } }
-    });
-
-    // ลบประวัติการจองห้อง (Booking)
-    const deleteBookings = prisma.roomBooking.deleteMany({
-      where: { roomId: roomIdInt }
-    });
-
-    // ลบตัวห้องประชุม (Room)
-    const deleteRoom = prisma.room.delete({
-      where: { id: roomIdInt }
-    });
-
-    // 💡 3. รันคำสั่งทั้งหมดพร้อมกันใน Transaction (ถ้ามีจังหวะใดพัง จะ Rollback อัตโนมัติทั้งหมด)
-    await prisma.$transaction([
-      deleteHistories,
-      deleteAttachments,
-      deleteBookings,
-      deleteRoom
-    ]);
 
     return res.status(200).json({ 
       success: true, 
-      message: 'ลบห้องประชุมและประวัติที่เกี่ยวข้องออกจากฐานข้อมูลสำเร็จ'
+      message: 'ลบห้องประชุมออกจากฐานข้อมูลสำเร็จ (Soft Delete)',
+      data: updatedRoom
     });
     
   } catch (error) {
     console.error('Error deleting room:', error);
     
-    // ดักจับกรณีที่ Prisma หา ID นี้ไม่เจอในระบบ (อาจจะถูกลบไปแล้ว)
+    // ดักจับกรณีที่ Prisma หา ID นี้ไม่เจอในระบบ (อาจจะถูกลบไปก่อนแล้ว)
     if (error.code === 'P2025') {
       return res.status(404).json({ message: 'ไม่พบข้อมูลห้องประชุมที่ต้องการลบในระบบ' });
     }

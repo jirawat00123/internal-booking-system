@@ -1,12 +1,15 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data'; // 💡 เพิ่มแพ็กเกจนี้สำหรับจัดการรูปภาพแบบ Bytes (Uint8List)
 import 'package:http/http.dart'
     as http; // 💡 เพิ่มเตรียมไว้สำหรับการยิง MultipartRequest ไปหลังบ้าน
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'Admin_addsuccess.dart';
 import 'Admin_roompage.dart';
-import 'Room_model.dart';
+import '../../Booking_room/Room_model.dart';
+import 'package:flutter/foundation.dart';
 
 class MobileFrameAddRoomContainer extends StatelessWidget {
   const MobileFrameAddRoomContainer({super.key});
@@ -74,182 +77,273 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
   }
 
   void _showAddRoomConfirmDialog() {
+    // 🟢 1. สร้าง State จำลองไว้ดักสถานะการโหลด
+    bool isSubmitting = false;
+
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: false, // ป้องกันการกดยกเลิกโดยแตะพื้นที่ว่าง
       builder: (BuildContext dialogContext) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-            width: 320,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.note_add_outlined,
-                  size: 64,
-                  color: Color(0xFF0D47A1),
+        // 🟢 2. ครอบด้วย StatefulBuilder เพื่อให้ Dialog สามารถอัปเดต UI (โชว์ Loading) ตัวเองได้
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 28,
                 ),
-                const SizedBox(height: 16),
-                const Text(
-                  'ยืนยันการเพิ่มห้อง',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0D47A1),
-                    fontFamily: 'Kanit',
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'คุณต้องการเพิ่มห้องใช่หรือไม่?',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF0D47A1),
-                    fontFamily: 'Kanit',
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 28),
-                Row(
+                width: 320,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            try {
-                              // 💡 1. กำหนด URL ของ API
-                              var uri = Uri.parse(
-                                'http://127.0.0.1:3001/api/rooms',
-                              );
-                              var request = http.MultipartRequest('POST', uri);
-
-                              request.headers.addAll({
-                                'Accept': 'application/json',
-                              });
-
-                              request.fields['roomName'] =
-                                  'Floor $floorNumber - Side $selectedSide';
-                              request.fields['location'] =
-                                  'Floor $floorNumber - Side $selectedSide';
-                              request.fields['capacity'] = capacity.toString();
-                              request.fields['status'] = 'AVAILABLE';
-
-                              if (_imageBytes != null && _imageFile != null) {
-                                var multipartFile =
-                                    http.MultipartFile.fromBytes(
-                                      'image',
-                                      _imageBytes!,
-                                      filename: _imageFile!.name,
-                                    );
-                                request.files.add(multipartFile);
-                              }
-
-                              var response = await request.send();
-
-                              if (response.statusCode == 201 ||
-                                  response.statusCode == 200) {
-                                debugPrint(
-                                  '📱 [Flutter] บันทึกข้อมูลลงฐานข้อมูลสำเร็จ!',
-                                );
-
-                                // เมื่อสำเร็จ จึงจะปิด Dialog และไปหน้า Success (ทำงานครั้งเดียว)
-                                if (mounted) {
-                                  Navigator.pop(dialogContext);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          const MobileFrameSuccessContainer(),
-                                    ),
-                                  );
-                                }
-                              } else {
-                                debugPrint(
-                                  '❌ [Flutter] ข้อผิดพลาดจากเซิร์ฟเวอร์ Code: ${response.statusCode}',
-                                );
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ (Code: ${response.statusCode})',
-                                      ),
-                                      backgroundColor: const Color(0xFFB70000),
-                                    ),
-                                  );
-                                }
-                              }
-                            } catch (e) {
-                              debugPrint(
-                                '❌ [Flutter] เกิดข้อผิดพลาดในการเชื่อมต่อ: $e',
-                              );
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้ กรุณาลองใหม่อีกครั้ง',
-                                    ),
-                                    backgroundColor: Color(0xFFB70000),
-                                  ),
-                                );
-                              }
-                            }
-
-                            // 🗑️ ลบ Navigator.push บรรทัดสุดท้ายที่เคยวางไว้ตรงนี้ออกเรียบร้อยแล้ว เพื่อความปลอดภัยของข้อมูล
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0096C7),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'ตกลง',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Kanit',
-                            ),
-                          ),
-                        ),
+                    const Icon(
+                      Icons.note_add_outlined,
+                      size: 64,
+                      color: Color(0xFF0D47A1),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'ยืนยันการเพิ่มห้อง',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0D47A1),
+                        fontFamily: 'Kanit',
                       ),
                     ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: SizedBox(
-                        height: 44,
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFB70000),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'ยกเลิก',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Kanit',
+                    const SizedBox(height: 6),
+                    const Text(
+                      'คุณต้องการเพิ่มห้องใช่หรือไม่?',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF0D47A1),
+                        fontFamily: 'Kanit',
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 44,
+                            child: ElevatedButton(
+                              // 🟢 3. ล็อกปุ่มไว้ถ้ากำลังโหลดอยู่ (ป้องกันคนกดเบิ้ล)
+                              onPressed: isSubmitting
+                                  ? null
+                                  : () async {
+                                      setStateDialog(() {
+                                        isSubmitting = true; // เปิด Loading
+                                      });
+
+                                      try {
+                                        final String baseUrl = kIsWeb
+                                            ? 'http://localhost:3001'
+                                            : 'http://10.0.2.2:3001';
+                                        var uri = Uri.parse(
+                                          '$baseUrl/api/rooms',
+                                        );
+
+                                        var request = http.MultipartRequest(
+                                          'POST',
+                                          uri,
+                                        );
+
+                                        final prefs =
+                                            await SharedPreferences.getInstance();
+                                        final token =
+                                            prefs.getString('token') ?? '';
+
+                                        request.headers.addAll({
+                                          'Accept': 'application/json',
+                                          'Authorization': 'Bearer $token',
+                                        });
+
+                                        request.fields['roomName'] =
+                                            'Floor $floorNumber - Side $selectedSide';
+                                        request.fields['location'] =
+                                            'Floor $floorNumber - Side $selectedSide';
+                                        request.fields['capacity'] = capacity
+                                            .toString();
+                                        request.fields['status'] = 'AVAILABLE';
+
+                                        if (_imageBytes != null &&
+                                            _imageFile != null) {
+                                          var multipartFile =
+                                              http.MultipartFile.fromBytes(
+                                                'image',
+                                                _imageBytes!,
+                                                filename: _imageFile!.name,
+                                              );
+                                          request.files.add(multipartFile);
+                                        }
+
+                                        var response = await request.send();
+
+                                        if (response.statusCode == 201 ||
+                                            response.statusCode == 200) {
+                                          debugPrint(
+                                            '📱 [Flutter] บันทึกข้อมูลลงฐานข้อมูลสำเร็จ!',
+                                          );
+
+                                          if (mounted) {
+                                            Navigator.pop(
+                                              dialogContext,
+                                            ); // ปิด Dialog
+                                            Navigator.pushReplacement(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) =>
+                                                    const MobileFrameSuccessContainer(),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          String errorMessage =
+                                              'เกิดข้อผิดพลาดจากเซิร์ฟเวอร์ (Code: ${response.statusCode})';
+                                          try {
+                                            final responseBody = await response
+                                                .stream
+                                                .bytesToString();
+                                            final errorData = jsonDecode(
+                                              responseBody,
+                                            );
+                                            errorMessage =
+                                                errorData['message'] ??
+                                                errorMessage;
+                                          } catch (parseError) {
+                                            debugPrint(
+                                              '⚠️ [Flutter] Parse Error: $parseError',
+                                            );
+                                          }
+
+                                          debugPrint(
+                                            '❌ [Flutter] ข้อผิดพลาดจากเซิร์ฟเวอร์: $errorMessage',
+                                          );
+
+                                          if (mounted) {
+                                            Navigator.pop(
+                                              dialogContext,
+                                            ); // ปิด Dialog
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  errorMessage,
+                                                  style: const TextStyle(
+                                                    fontFamily: 'Kanit',
+                                                  ),
+                                                ),
+                                                backgroundColor: const Color(
+                                                  0xFFB70000,
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      } catch (e) {
+                                        debugPrint(
+                                          '❌ [Flutter] Catch Network Error: $e',
+                                        );
+                                        if (mounted) {
+                                          Navigator.pop(
+                                            dialogContext,
+                                          ); // ปิด Dialog
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ โปรดตรวจสอบอินเทอร์เน็ต',
+                                                style: TextStyle(
+                                                  fontFamily: 'Kanit',
+                                                ),
+                                              ),
+                                              backgroundColor: Colors.orange,
+                                            ),
+                                          );
+                                        }
+                                      } finally {
+                                        // 🟢 4. ปิดการ Loading ในกรณีที่เกิด Error และ Dialog ยังคงเปิดอยู่
+                                        if (mounted) {
+                                          setStateDialog(() {
+                                            isSubmitting = false;
+                                          });
+                                        }
+                                      }
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0096C7),
+                                disabledBackgroundColor:
+                                    Colors.grey, // สีตอนที่ปุ่มโดนล็อก
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              // 🟢 5. สลับข้อความกับวงกลม Loading
+                              child: isSubmitting
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.5,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'ตกลง',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Kanit',
+                                      ),
+                                    ),
                             ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: SizedBox(
+                            height: 44,
+                            child: ElevatedButton(
+                              // 🟢 6. ล็อกปุ่มยกเลิกด้วย ห้ามกดทิ้งตอนกำลังอัปโหลด
+                              onPressed: isSubmitting
+                                  ? null
+                                  : () => Navigator.pop(dialogContext),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFB70000),
+                                disabledBackgroundColor: Colors.grey,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: const Text(
+                                'ยกเลิก',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'Kanit',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );

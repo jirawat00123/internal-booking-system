@@ -8,10 +8,13 @@ exports.getAllRooms = async (req, res, next) => {
   try {
     // ใช้ Prisma ดึงข้อมูลจากตาราง rooms ทั้งหมด
     const rooms = await prisma.room.findMany({
-      orderBy: {
-        id: 'asc', // เรียงตาม ID จากน้อยไปมาก
-      },
-    });
+  where: {
+    isDeleted: false,
+  },
+  orderBy: {
+    id: 'asc',
+  },
+});
 
     // ส่งข้อมูลกลับไปให้ Frontend ในรูปแบบ JSON
     return res.status(200).json({
@@ -125,22 +128,27 @@ exports.deleteRoom = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    // สั่ง Prisma ลบข้อมูลในตาราง PostgreSQL ตาม ID ที่ส่งมาจากหน้าบ้าน
-    const deletedRoom = await prisma.room.delete({
+    // 💡 ฝัง Log ไว้ดูตอนลบ
+    console.log(`\n🚨กำลังทำ SOFT DELETE ห้องหมายเลข: ${id}🚨\n`);
+
+    // 🔥 บรรทัดนี้ต้องเป็น .update เท่านั้น ห้ามเป็น .delete
+    const deletedRoom = await prisma.room.update({
       where: {
-        id: parseInt(id, 10), 
+        id: parseInt(id, 10),
+      },
+      data: {
+        isDeleted: true, // ซ่อนข้อมูลเฉยๆ
       },
     });
 
     return res.status(200).json({
       success: true,
-      message: 'ลบห้องประชุมออกจากฐานข้อมูลสำเร็จ',
+      message: 'ลบห้องประชุมออกจากฐานข้อมูลสำเร็จ (Soft Delete)',
       data: deletedRoom,
     });
   } catch (error) {
     console.error('❌ Error deleting room:', error);
 
-    // ดักจับกรณีส่ง ID มาลบ แต่ไม่มี ID นี้อยู่ในฐานข้อมูลแล้ว (Prisma Error Code P2025)
     if (error.code === 'P2025') {
       return res.status(404).json({
         success: false,
@@ -150,7 +158,7 @@ exports.deleteRoom = async (req, res, next) => {
 
     return res.status(500).json({
       success: false,
-      message: 'เกิดข้อผิดพลาดในการลบข้อมูลห้องประชุม',
+      message: 'เกิดข้อผิดพลาดในการอัปเดตสถานะห้องประชุม',
       error: error.message,
     });
   }

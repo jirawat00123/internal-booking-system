@@ -84,15 +84,16 @@ exports.createVehicle = async (req, res) => {
         const uploadUrl = req.file ? `/uploads/vehicles/${req.file.filename}` : null;
 
         const newVehicle = await prisma.vehicle.create({
-            data: {
-                plateNumber,
-                brand,
-                model,
-                seats: seatNumber,
-                status: status || 'AVAILABLE',
-                uploadUrl: uploadUrl
-            }
-        });
+    data: {
+        vehicleName: req.body.vehicleName || `${req.body.brand} ${req.body.model}`,
+        plateNumber: req.body.plate || req.body.plateNumber,
+        brand: req.body.brand || "ไม่ระบุ",
+        model: req.body.model || "ไม่ระบุ",
+        seats: parseInt(req.body.seats || req.body.capacity || 4, 10),
+        status: req.body.status || 'AVAILABLE',
+        uploadUrl: uploadUrl,
+    }
+});
 
         return res.status(201).json({ success: true, data: newVehicle, message: 'เพิ่มรถยนต์สำเร็จ' });
     } catch (error) {
@@ -123,57 +124,77 @@ exports.getVehicleById = async (req, res) => {
     }
 };
 
-// 4. แก้ไขข้อมูลรถยนต์
+// 4. แก้ไขข้อมูลรถยนต์ (เวอร์ชันสมบูรณ์: เพิ่ม Validation ป้ายทะเบียนซ้ำ และดักจับไฟล์ขยะ)
 exports.updateVehicle = async (req, res) => {
     try {
         const vehicleId = parseInt(req.params.id, 10);
-        const { plateNumber, brand, model, seats, status } = req.body;
-
+        
+        // 💡 [จุดเช็ก 1] ดักจับกรณีส่ง ID ที่ไม่ใช่ตัวเลขเข้ามา
         if (isNaN(vehicleId)) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            if (req.file) await safeDeleteFile(req.file.path); // ลบไฟล์ที่ส่งมาทิ้งทันทีหาก ID ผิดพลาด
             return res.status(400).json({ success: false, error: "ID ของรถยนต์ไม่ถูกต้อง" });
         }
 
-        const existingVehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
-        if (!existingVehicle || existingVehicle.isDeleted) {
-            if (req.file) await safeDeleteFile(req.file.path);
+        // เช็กรถเดิมก่อนว่ามีไหม
+        const existingVehicle = await prisma.vehicle.findUnique({
+            where: { id: vehicleId }
+        });
+
+        if (!existingVehicle) {
+            if (req.file) await safeDeleteFile(req.file.path); // ลบไฟล์ที่ส่งมาทิ้งทันทีหากไม่พบรถ
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ที่ต้องการแก้ไข" });
         }
 
-        if (plateNumber && plateNumber !== existingVehicle.plateNumber) {
-            const duplicatePlate = await prisma.vehicle.findUnique({ where: { plateNumber: plateNumber } });
-            if (duplicatePlate) {
+        // 💡 [จุดเช็ก 2] ดักจับกรณีเปลี่ยนป้ายทะเบียนใหม่แล้วไปซ้ำกับรถคันอื่นในระบบ
+        const targetPlate = req.body.plate || req.body.plateNumber;
+        
+        if (targetPlate && targetPlate !== existingVehicle.plateNumber) {
+            const plateUsedByOther = await prisma.vehicle.findFirst({
+                where: {
+                    plateNumber: targetPlate,
+                    id: { not: vehicleId }, // เงื่อนไข: ต้องไม่ใช่รถคันปัจจุบันที่กำลังแก้ไข
+                    isDeleted: false        // ตรวจสอบเฉพาะรถที่ยังเปิดใช้งานอยู่
+                }
+            });
+
+            if (plateUsedByOther) {
+                // ลบไฟล์รูปภาพใหม่ที่หน้าบ้านเพิ่งอัปโหลดขึ้นมา (ถ้ามี) เพื่อป้องกัน Storage ล้น
                 if (req.file) await safeDeleteFile(req.file.path);
-                return res.status(400).json({ success: false, error: `ป้ายทะเบียน ${plateNumber} มีในระบบแล้ว` });
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `ป้ายทะเบียน ${targetPlate} ถูกใช้งานโดยรถยนต์คันอื่นแล้ว` 
+                });
             }
         }
 
-        let newUploadUrl = existingVehicle.uploadUrl;
-        if (req.file) {
-            newUploadUrl = `/uploads/vehicles/${req.file.filename}`;
-            if (existingVehicle.uploadUrl) {
-                const oldFilePath = path.join(process.cwd(), existingVehicle.uploadUrl);
-                await safeDeleteFile(oldFilePath);
-            }
-        }
+        // จัดการรูปภาพ (ถ้ามีไฟล์ใหม่ส่งมา ให้ใช้อันใหม่, ถ้าไม่มี ใช้อันเดิม)
+        const uploadUrl = req.file ? `/uploads/vehicles/${req.file.filename}` : existingVehicle.uploadUrl;
 
+        // 🟢 อัปเดตข้อมูลลงฐานข้อมูลผ่าน Prisma
         const updatedVehicle = await prisma.vehicle.update({
             where: { id: vehicleId },
             data: {
-                plateNumber: plateNumber || existingVehicle.plateNumber,
-                brand: brand || existingVehicle.brand,
-                model: model || existingVehicle.model,
-                seats: seats ? parseInt(seats, 10) : existingVehicle.seats,
-                status: status || existingVehicle.status,
-                uploadUrl: newUploadUrl
+                vehicleName: req.body.vehicleName || existingVehicle.vehicleName,
+                plateNumber: targetPlate || existingVehicle.plateNumber,
+                brand: req.body.brand || existingVehicle.brand,
+                model: req.body.model || existingVehicle.model,
+                seats: req.body.seats ? parseInt(req.body.seats, 10) : existingVehicle.seats,
+                status: req.body.status || existingVehicle.status,
+                uploadUrl: uploadUrl,
             }
         });
 
-        return res.status(200).json({ success: true, data: updatedVehicle, message: "แก้ไขข้อมูลรถสำเร็จ" });
+        return res.status(200).json({ 
+            success: true, 
+            message: "แก้ไขข้อมูลรถยนต์สำเร็จ", 
+            data: updatedVehicle 
+        });
+
     } catch (error) {
+        // หากเกิด Error กลางคันแต่หน้าบ้านส่งรูปมาแล้ว ให้ทำการลบทิ้งเพื่อความปลอดภัย
         if (req.file) await safeDeleteFile(req.file.path);
         console.error("Update Vehicle Error:", error);
-        return res.status(500).json({ success: false, error: "ไม่สามารถแก้ไขข้อมูลรถได้" });
+        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการแก้ไขข้อมูลรถยนต์" });
     }
 };
 
@@ -207,10 +228,13 @@ exports.deleteVehicle = async (req, res) => {
         }
 
         await prisma.vehicle.update({
-            where: { id: vehicleId },
-            data: { isDeleted: true, status: 'INACTIVE' } 
-        });
-
+    where: {
+        id: parseInt(req.params.id) // (อิงตามตัวแปรเดิมที่คุณมี)
+    },
+    data: {
+        isDeleted: true // 🟢 เก็บไว้แค่นี้พอครับ
+    }
+})
         return res.status(200).json({ success: true, message: "ลบข้อมูลรถออกจากระบบสำเร็จ (Soft Delete)" });
     } catch (error) {
         console.error("Delete Vehicle Error:", error);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'Admin_roompage.dart';
+import 'Admin/room/Admin_roompage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 import 'Select.dart';
+import 'Admin/vehicle/vehicle_page.dart'; // บรรทัดนี้ถูกต้องแล้ว (ถอยออกไปนอกสุดเพื่อหา Select.dart)
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ
 
 class AdminGroupPage extends StatelessWidget {
@@ -135,7 +136,14 @@ class AdminGroupPage extends StatelessWidget {
                         AdminMenuCard(
                           icon: Icons.directions_car_filled_outlined,
                           title: 'ยานพาหนะ',
-                          onTap: () {},
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const VehiclePage(),
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 16),
 

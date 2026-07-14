@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // เพิ่มบรรทัดนี้ เพื่อใช้ตอน Migrate
 }
 
 model Department {
@@ -43,7 +44,6 @@ model Employee {
   department     Department       @relation(fields: [departmentId], references: [id])
   position       Position         @relation(fields: [positionId], references: [id])
   users          User[]
-  driverBookings VehicleBooking[] @relation("DriverEmployee")
 
   @@index([positionId])
   @@map("employees")
@@ -63,6 +63,7 @@ model User {
   roleId                  Int                     @map("role_id")
   pin                     String?
   active                  Boolean                 @default(true)
+  currentSessionId        String?                 @map("current_session_id") // เพิ่มฟิลด์นี้
   createdAt               DateTime                @default(now()) @map("created_at")
   attachments             Attachment[]
   auditLogs               AuditLog[]
@@ -93,15 +94,18 @@ model AuditLog {
 }
 
 model Room {
-  id        Int           @id @default(autoincrement())
-  roomName  String        @map("room_name")
-  location  String
-  capacity  Int
-  status    RoomStatus    @default(AVAILABLE)
-  uploadUrl String?       @map("upload_url")
-  createdAt DateTime      @default(now()) @map("created_at")
-  updatedAt DateTime      @updatedAt @map("updated_at")
-  bookings  RoomBooking[]
+  id         Int           @id @default(autoincrement())
+  roomName   String        @map("room_name")
+  location   String
+  capacity   Int
+  status     RoomStatus    @default(AVAILABLE)
+  uploadUrl  String?       @map("upload_url")
+
+  isDeleted  Boolean       @default(false) @map("is_deleted")
+
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+  bookings   RoomBooking[]
 
   @@map("rooms")
 }
@@ -129,6 +133,7 @@ model RoomBooking {
 model Vehicle {
   id          Int              @id @default(autoincrement())
   plateNumber String           @unique @map("license_plate")
+  province    String?          @map("province")
   brand       String
   model       String
   seats       Int              @default(4)
@@ -147,7 +152,6 @@ model VehicleBooking {
   id               Int                     @id @default(autoincrement())
   vehicleId        Int                     @map("vehicle_id")
   userId           Int                     @map("user_id")
-  driverEmployeeId Int?                    @map("driver_employee_id")
   destination      String
   startDatetime    DateTime                @map("start_datetime")
   endDatetime      DateTime                @map("end_datetime")
@@ -158,14 +162,12 @@ model VehicleBooking {
   passengers       Int                     @default(1) @map("passengers")
   attachments      Attachment[]
   histories        VehicleBookingHistory[]
-  driver           Employee?               @relation("DriverEmployee", fields: [driverEmployeeId], references: [id])
   user             User                    @relation(fields: [userId], references: [id])
   vehicle          Vehicle                 @relation(fields: [vehicleId], references: [id])
   vehicleLogs      VehicleLog[]
 
   @@index([vehicleId])
   @@index([userId])
-  @@index([driverEmployeeId])
   @@map("vehicle_bookings")
 }
 

@@ -31,11 +31,15 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
+    
+    // 🟢 เพิ่มการอนุญาต 'application/octet-stream' เพราะ Flutter Web จะส่ง MimeType นี้มาเป็นค่าเริ่มต้น
+    const mimetype = allowedTypes.test(file.mimetype) || file.mimetype === 'application/octet-stream';
     
     if (extname && mimetype) {
         return cb(null, true);
     } else {
+        // แอบปริ้นท์ Log เอาไว้ดูเวลาไฟล์มีปัญหา
+        console.log(`[Multer Error] ปฏิเสธไฟล์: ${file.originalname}, MimeType: ${file.mimetype}`);
         return cb(new Error('รองรับเฉพาะไฟล์รูปภาพ (png, jpg, jpeg) เท่านั้น'));
     }
 };
