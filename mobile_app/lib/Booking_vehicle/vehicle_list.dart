@@ -29,20 +29,20 @@ Future<void> _fetchVehicles() async {
       final prefs = await SharedPreferences.getInstance();
       final String? token = prefs.getString('token'); 
 
-      // 💡 เอาบล็อก if (token == null) ออกไปแล้ว ทำให้แอปยอมยิง API แม้ไม่มี Token
+      final headers = {
+        'Content-Type': 'application/json',
+        if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      };
 
-      final response = await http.get(
-        Uri.parse('http://localhost:3001/api/vehicles'), 
-        headers: {
-          'Content-Type': 'application/json',
-          // ถ้ามี Token ก็แนบไป ถ้าไม่มีก็ไม่ต้องแนบ (หลังบ้านเราเปิดให้ GET ได้ฟรีแล้ว)
-          if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
-        },
-      );
+      // 💡 1. ยิง API 2 เส้นพร้อมกัน (ดึงรถ & ดึงการจอง)
+      final vehicleFuture = http.get(Uri.parse('http://localhost:3001/api/vehicles'), headers: headers);
+      // เช็กให้ชัวร์ว่า endpoint การจองรถของคุณคือเส้นนี้
+      final bookingFuture = http.get(Uri.parse('http://localhost:3001/api/vehicle-bookings'), headers: headers); 
 
-      if (response.statusCode == 200) {
-        final decodedData = jsonDecode(response.body);
-        
+      final responses = await Future.wait([vehicleFuture, bookingFuture]);
+
+      if (responses[0].statusCode == 200) {
+        final decodedData = jsonDecode(responses[0].body);
         List<dynamic> vehiclesData = [];
         if (decodedData is List) {
           vehiclesData = decodedData;
@@ -51,9 +51,48 @@ Future<void> _fetchVehicles() async {
         }
 
         List<VehicleModel> fetchedList = vehiclesData.map((json) => VehicleModel.fromJson(json)).toList();
+
+        // 💡 2. ตรวจสอบข้อมูลการจองว่าคันไหนติดคิว "วันนี้" บ้าง
+        if (responses[1].statusCode == 200) {
+          final bData = jsonDecode(responses[1].body);
+          List<dynamic> bookingsData = bData['data'] ?? bData['bookings'] ?? [];
+
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day); // รีเซ็ตเวลาเป็นเที่ยงคืนของวันนี้
+
+          for (var booking in bookingsData) {
+            String bStatus = booking['status'] ?? 'Pending';
+            
+            // กรองเอาเฉพาะคิวที่ยังมีผล (ตัดพวกที่ยกเลิกหรือเสร็จสิ้นออกไป)
+            if (bStatus != 'Cancelled' && bStatus != 'Completed' && bStatus != 'ยกเลิกแล้ว' && bStatus != 'เสร็จสิ้น') {
+              
+              DateTime start = DateTime.parse(booking['startDatetime']).toLocal();
+              DateTime end = DateTime.parse(booking['endDatetime']).toLocal();
+              
+              DateTime startDate = DateTime(start.year, start.month, start.day);
+              DateTime endDate = DateTime(end.year, end.month, end.day);
+
+              // 💡 เช็กว่า "วันนี้" อยู่ในช่วงเวลาที่มีการจองหรือไม่
+              if ((today.isAtSameMomentAs(startDate) || today.isAfter(startDate)) &&
+                  (today.isAtSameMomentAs(endDate) || today.isBefore(endDate))) {
+                
+                int bookedVehicleId = booking['vehicleId'];
+                
+                // ค้นหาว่ารถคันที่ถูกจอง อยู่ index ไหนในลิสต์หน้าแอป
+                int index = fetchedList.indexWhere((v) => v.id == bookedVehicleId);
+                if (index != -1) {
+                  // 🚨 เปลี่ยนสถานะรถคันนี้เป็น IN_USE ทันที (จะทำให้ UI กลายเป็นสีแดงอัตโนมัติ)
+                  fetchedList[index] = fetchedList[index].copyWith(status: 'IN_USE');
+                }
+              }
+            }
+          }
+        }
+
+        // อัปเดตข้อมูลขึ้นหน้าจอ
         globalVehicles.value = fetchedList;
       } else {
-        print('ดึงข้อมูลล้มเหลว Code: ${response.statusCode}');
+        print('ดึงข้อมูลล้มเหลว Code: ${responses[0].statusCode}');
       }
     } catch (e) {
       print('เกิดข้อผิดพลาดในการดึงข้อมูล: $e');
@@ -324,17 +363,14 @@ Future<void> _fetchVehicles() async {
                     width: double.infinity, height: 48,
                     child: ElevatedButton(
                       onPressed: () {
-                        if (isAvailable) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => VehicleBookingStep2Page(vehicle: vehicle)), 
-                          );
-                        } else {
-                          _showInUseErrorDialog(context);
-                        }
+                        // 💡 เอาเงื่อนไข if (isAvailable) ออก เพื่อให้กดเข้าไปจองล่วงหน้าได้เสมอ
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => VehicleBookingStep2Page(vehicle: vehicle)), 
+                        );
                       }, 
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isAvailable ? const Color(0xFF009CB4) : Colors.grey.shade300, 
+                        backgroundColor: const Color(0xFF009CB4), // 💡 บังคับให้ปุ่มเป็นสีฟ้าเสมอ
                         elevation: 0, 
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),

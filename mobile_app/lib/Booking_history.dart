@@ -179,7 +179,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     }
   }
 
-  // =========================================================
+// =========================================================
   // 🚀 อัปเดตสถานะไปยังฐานข้อมูล (API)
   // =========================================================
   Future<void> _updateStatus(BookingHistoryModel booking, String newStatus) async {
@@ -187,15 +187,37 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     
     try {
       String token = await getSavedToken();
-      String endpoint = booking.type == 'จองรถ' 
-          ? 'http://localhost:3001/api/vehicle-bookings/${booking.id}' 
-          : 'http://localhost:3001/api/bookings/${booking.id}';
+      http.Response response;
 
-      final response = await http.put(
-        Uri.parse(endpoint),
-        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
-        body: jsonEncode({"status": newStatus}), 
-      );
+      // 💡 เงื่อนไขที่ 1: ถ้าเป็นการ "ยกเลิกรถ"
+      if (booking.type == 'จองรถ' && (newStatus == 'Cancelled' || newStatus == 'ยกเลิกแล้ว')) {
+        // 🚀 ต้องใช้ API เส้น PATCH และห้อยท้ายด้วย /cancel (ตามโค้ด Node.js ของคุณ)
+        String endpoint = 'http://localhost:3001/api/vehicle-bookings/${booking.id}/cancel';
+        response = await http.patch(
+          Uri.parse(endpoint),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+          // ไม่ต้องส่ง body แล้ว เพราะ Node.js จัดการเปลี่ยนสถานะให้เองเลย
+        );
+        newStatus = 'ยกเลิกแล้ว'; // บังคับเซ็ตค่ากลับเป็นภาษาไทยเพื่อโชว์บนหน้าจอ
+      } 
+      // 💡 เงื่อนไขที่ 2: ถ้าเป็นการอัปเดตสถานะอื่นๆ ของรถ (เช่น คืนรถ)
+      else if (booking.type == 'จองรถ') {
+        String endpoint = 'http://localhost:3001/api/vehicle-bookings/${booking.id}';
+        response = await http.put(
+          Uri.parse(endpoint),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+          body: jsonEncode({"status": newStatus}), 
+        );
+      } 
+      // 💡 เงื่อนไขที่ 3: สำหรับระบบจองห้องประชุม
+      else {
+        String endpoint = 'http://localhost:3001/api/bookings/${booking.id}';
+        response = await http.put(
+          Uri.parse(endpoint),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+          body: jsonEncode({"status": newStatus}), 
+        );
+      }
 
       Navigator.pop(context); 
 
@@ -393,7 +415,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => _updateStatus(booking, 'ยกเลิกแล้ว'), 
+                      onPressed: () => _updateStatus(booking, 'Cancelled'), 
                       style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.redAccent), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: const EdgeInsets.symmetric(vertical: 12)),
                       child: const Text('ยกเลิกคิว', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Kanit')),
                     ),

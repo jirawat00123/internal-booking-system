@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../Booking_vehicle/Vehicle_model.dart'; 
 import 'vehicle_bookingstep_b.dart'; 
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class VehicleBookingStep2Page extends StatefulWidget {
   final VehicleModel? vehicle; 
@@ -25,12 +28,97 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
 
   late VehicleModel selectedVehicle;
 
+  // 💡 ตัวแปรเก็บช่วงวันที่โดนจองไปแล้ว
+  List<DateTimeRange> bookedDateRanges = [];
+
   @override
   void initState() {
     super.initState();
     selectedVehicle = widget.vehicle ?? VehicleModel(
       id: 0, vehicleName: 'ไม่ระบุรุ่น', plateNumber: '-', brand: '-', model: '-', seats: 0, status: 'AVAILABLE', uploadUrl: ''
     );
+    
+    // 💡 โหลดวันที่มีคนจองแล้วทันทีที่เปิดหน้านี้
+    _fetchBookedDates(); 
+  }
+
+  // ==========================================
+  // 📥 ฟังก์ชันดึงประวัติการจองเฉพาะคันนี้ เพื่อเอามาล็อควัน
+  // ==========================================
+  Future<void> _fetchBookedDates() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? token = prefs.getString('token'); 
+      
+      final response = await http.get(
+        Uri.parse('http://localhost:3001/api/vehicle-bookings'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        }
+      );
+
+      if (response.statusCode == 200) {
+        final bData = jsonDecode(response.body);
+        List<dynamic> bookingsData = bData['data'] ?? bData['bookings'] ?? [];
+        
+        List<DateTimeRange> ranges = [];
+        for (var booking in bookingsData) {
+          String bStatus = booking['status'] ?? 'Pending';
+          
+          // กรองเอาเฉพาะ "รถคันนี้" และ สถานะที่ "ยังมีผล"
+          if (booking['vehicleId'] == selectedVehicle.id && 
+              bStatus != 'Cancelled' && bStatus != 'Completed' && 
+              bStatus != 'ยกเลิกแล้ว' && bStatus != 'เสร็จสิ้น') {
+            
+            DateTime start = DateTime.parse(booking['startDatetime']).toLocal();
+            DateTime end = DateTime.parse(booking['endDatetime']).toLocal();
+            ranges.add(DateTimeRange(start: start, end: end));
+          }
+        }
+        
+        if (mounted) {
+          setState(() {
+            bookedDateRanges = ranges;
+            // ถ้าระบบเปิดมาเจอกลางวันที่โดนจอง ให้ขยับวันเริ่มต้นไปหาวันที่ว่างอัตโนมัติ
+            startDate = _getFirstAvailableDate(DateTime.now());
+            if (endDate.isBefore(startDate) || !_isSelectable(endDate)) {
+              endDate = _getFirstAvailableDate(startDate);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการดึงคิวจอง: $e');
+    }
+  }
+
+  // ==========================================
+  // 🔒 ฟังก์ชันเช็กว่า วันนี้ว่างไหม? (ถ้าไม่ว่างคืนค่า false)
+  // ==========================================
+  bool _isSelectable(DateTime day) {
+    DateTime target = DateTime(day.year, day.month, day.day); // รีเซ็ตเวลาเป็นเที่ยงคืนเพื่อเทียบแค่วัน
+    
+    for (var range in bookedDateRanges) {
+      DateTime start = DateTime(range.start.year, range.start.month, range.start.day);
+      DateTime end = DateTime(range.end.year, range.end.month, range.end.day);
+      
+      // ถ้าเป้าหมายอยู่ในช่วงที่โดนจอง (รวมวันหัวท้าย)
+      if ((target.isAtSameMomentAs(start) || target.isAfter(start)) &&
+          (target.isAtSameMomentAs(end) || target.isBefore(end))) {
+        return false; // โดนจองแล้ว ห้ามกด!
+      }
+    }
+    return true; // ว่างจ้า กดได้
+  }
+
+  // ฟังก์ชันเลื่อนหาวันว่างวันแรก (กรณีวันที่ปัจจุบันโดนจอง)
+  DateTime _getFirstAvailableDate(DateTime startFrom) {
+    DateTime check = DateTime(startFrom.year, startFrom.month, startFrom.day);
+    while (!_isSelectable(check)) {
+      check = check.add(const Duration(days: 1)); // เลื่อนไปทีละวันจนกว่าจะเจอวันว่าง
+    }
+    return check;
   }
 
   String _formatDateThai(DateTime date) {
@@ -56,19 +144,27 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
             timeRange: "${_formatTime(startTime)} น.", 
             passengerCount: passengerCount,
             driverType: 'ขับขี่เอง', 
-            // 💡 ส่งค่า "ขับขี่เอง" ไปหน้าต่อไปแบบเงียบๆ ไม่ต้องมีปุ่มให้กดแล้ว
           ), 
         ),
       );
     }
   }
 
+  // 💡 พระเอกอยู่ตรงนี้: ปฏิทินที่ล็อควันที่ไม่ว่างได้
   Future<void> _selectDate(BuildContext context, bool isStart) async {
+    DateTime initial = isStart ? startDate : endDate;
+    
+    // ป้องกันบัคของ Flutter กรณี initialDate ตรงกับวันที่โดนล็อค
+    if (!_isSelectable(initial)) {
+      initial = _getFirstAvailableDate(DateTime.now());
+    }
+
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: isStart ? startDate : endDate,
+      initialDate: initial,
       firstDate: DateTime.now(),
-      lastDate: DateTime(2101),
+      lastDate: DateTime.now().add(const Duration(days: 365)), // ให้จองล่วงหน้าได้ 1 ปี
+      selectableDayPredicate: _isSelectable, // 👈 ล็อควันสีเทาตรงนี้เลย!
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -78,6 +174,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
         );
       },
     );
+    
     if (picked != null) {
       setState(() {
         if (isStart) {
@@ -178,7 +275,6 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                           _buildClickableField(text: "${_formatTime(startTime)} น.", rightIcon: Icons.access_time, onTap: () => _selectTime(context)),
                           const SizedBox(height: 30),
                           
-                          // ลบส่วน "รูปแบบการขับ" ออก เหลือแค่จำนวนผู้โดยสารเป็นอันจบฟอร์ม
                           Center(
                             child: Column(
                               children: [
