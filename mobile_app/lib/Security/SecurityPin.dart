@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
-import 'package:shared_preferences/shared_preferences.dart'; // 🔥 1. เพิ่ม Import SharedPreferences
+import '../PinError.dart'; 
+import 'SecurityGroupPage.dart'; // 👈 เปลี่ยนเป็นหน้าของ รปภ.
 
-import 'PinError.dart'; 
-import 'AdminGroupPage.dart'; 
-
-class Admin_pinPage extends StatefulWidget {
-  const Admin_pinPage({super.key});
+class Security_Pinpage extends StatefulWidget {
+  const Security_Pinpage({super.key});
 
   @override
-  State<Admin_pinPage> createState() => _Admin_pinPageState();
+  State<Security_Pinpage> createState() => _Security_PinpageState();
 }
 
-class _Admin_pinPageState extends State<Admin_pinPage> {
+class _Security_PinpageState extends State<Security_Pinpage> {
   String pin = ""; 
   bool isObscured = true; 
-  bool isLoading = false; // 💡 เพิ่มตัวแปรเช็กสถานะกำลังโหลด
+  bool isLoading = false; 
 
   void _addPin(String number) {
     if (pin.length < 6) {
@@ -35,15 +33,16 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
   }
 
   // ฟังก์ชันเรียก Popup แจ้งเตือนเมื่อรหัสผิด
+  // ฟังก์ชันเรียก Popup (แก้ชื่อตัวแปรกันมันสับสน)
   void _showErrorDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) {
+      builder: (BuildContext dialogContext) { // 👈 เปลี่ยนเป็น dialogContext
         return PinError(
           onRetry: () {
             setState(() {
-              pin = ""; // เคลียร์ PIN ให้ว่างเพื่อกดใหม่
+              pin = ""; // เคลียร์ PIN ให้ว่าง
             });
           },
         );
@@ -51,29 +50,30 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
     );
   }
 
-  // 🚀 ฟังก์ชันยิง API สำหรับแอดมิน
+  // 🚀 ฟังก์ชันยิง API พร้อมเครื่องดักฟัง
+  // 🚀 ฟังก์ชันยิง API พร้อมเครื่องดักฟัง (พิมพ์ Log)
   Future<void> _verifyPin() async {
     setState(() {
       isLoading = true; 
     });
 
     try {
-      // 🚨 เปลี่ยนจาก localhost เป็น 10.0.2.2 สำหรับมือถือจำลอง (Android Emulator)
-      // (ถ้ารันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
+      // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น 10.0.2.2 สำหรับมือถือจำลอง (Android Emulator)
+      // (ถ้าคุณปิ่นรันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
       final url = Uri.parse('http://localhost:3001/api/login-pin'); 
       
-      print('📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...'); 
+      print('📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...'); // 👈 ดักฟังว่าแอปเริ่มทำงานไหม
 
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'pin': pin,
-          'expectedRole': 'ADMIN' // 👈 กระซิบบอกหลังบ้านว่า นี่คือหน้าจอของแอดมิน!
+          'expectedRole': 'SECURITY' // 👈 กระซิบบอกหลังบ้านว่า นี่คือหน้าจอของ รปภ. นะ!
         }), 
       ).timeout(const Duration(seconds: 5)); // ให้เวลารอแค่ 5 วิ
 
-      print('📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}'); 
+      print('📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}'); // 👈 ดักฟังว่าหลังบ้านตอบไหม
       print('📱 [Flutter] ข้อมูลจากหลังบ้าน: ${response.body}'); 
 
       if (!mounted) return;
@@ -81,34 +81,25 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
         
-        // 🛑 ด่านตรวจสิทธิ์: เช็กว่าใช่ ADMIN จริงไหม?
-        if (responseData['role'] == 'ADMIN') {
-          
-          // 🔥 2. เก็บ Token ลงใน SharedPreferences
-          if (responseData['token'] != null) {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('token', responseData['token']);
-            print('📱 [Flutter] บันทึก Token ลงเครื่องเรียบร้อยแล้ว!');
-          }
-
-          // 🟢 รหัสถูก สิทธิ์ถูกต้อง พาเข้าหน้า AdminGroupPage เลย
+        if (responseData['role'] == 'SECURITY') {
+          // 🟢 รหัสถูก สิทธิ์ถูกต้อง
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (context) => const AdminGroupPage()), // 👈 เปลี่ยนเป็นหน้าของแอดมิน
+            MaterialPageRoute(builder: (context) => const SecurityGroupPage()), 
           );
         } else {
-          // 🛑 รหัสถูก แต่สิทธิ์ไม่ใช่แอดมิน (เช่น เอารหัส รปภ. มาใส่) เด้ง Popup!
+          // 🛑 รหัสถูก แต่สิทธิ์ไม่ใช่ รปภ.
           setState(() { isLoading = false; });
           _showErrorDialog(); 
         }
       } else {
-        // 🛑 รหัสผิด (เช่น 401 หรือ 403) เด้ง Popup ตัวเก่ง!
+        // 🛑 รหัสผิด (เช่น 401)
         setState(() { isLoading = false; });
         _showErrorDialog(); 
       }
     } catch (error) {
       // 🔌 กรณีที่ติดต่อเซิร์ฟเวอร์ไม่ได้เลย
-      print('📱 [Flutter] ❌ เชื่อมต่อเซิร์ฟเวอร์ไม่ได้! สาเหตุ: $error'); 
+      print('📱 [Flutter] ❌ เชื่อมต่อเซิร์ฟเวอร์ไม่ได้! สาเหตุ: $error'); // 👈 ดักฟัง Error ทะลุจอ
       if (mounted) {
         setState(() { isLoading = false; });
         _showErrorDialog(); 
@@ -126,7 +117,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/images/bgmmk.png'),
+                image: AssetImage('assets/bg.png'),
                 fit: BoxFit.cover,
               ),
             ),
@@ -172,10 +163,10 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                         const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.person_outline, size: 30, color: Color(0xFF00529B)),
+                            Icon(Icons.shield_outlined, size: 30, color: Color(0xFF00529B)), // 👈 ไอคอนโล่ รปภ.
                             SizedBox(width: 8),
                             Text(
-                              'ผู้ดูแลระบบ',
+                              'เจ้าหน้าที่ รปภ', // 👈 เปลี่ยนข้อความ
                               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF00529B), fontFamily: 'Kanit'),
                             ),
                           ],

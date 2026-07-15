@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'Room_model.dart';
-import 'Admin_roompage.dart';
+import '../Admin/room/Admin_roompage.dart';
 import 'Room_bookingA.dart'; // เรียกใช้ globalMeetingRooms ตัวเดียวกันที่เป็น ValueNotifier
 
 class RoomListScreen extends StatefulWidget {

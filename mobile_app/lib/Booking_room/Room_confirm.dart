@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'Room_model.dart';
 import 'Room_completed.dart';
-import 'Room_model.dart'; // อย่าลืมนำเข้าไฟล์หน้ายืนยันของคุณ
 
 class RoomConfirmScreen extends StatelessWidget {
   final MeetingRoom room;

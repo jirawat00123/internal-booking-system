@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'Admin_roompage.dart'; 
-import 'AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
+import '../../AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 class MobileFrameSuccessContainer extends StatelessWidget {
   const MobileFrameSuccessContainer({super.key});
 

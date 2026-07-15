@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart'; 
 import 'Admin_roompage.dart'; 
 import 'Admin_editsuccess.dart'; 
-import 'Room_model.dart'; 
+import '../../Booking_room/Room_model.dart'; 
 
 class MobileFrameEditRoomContainer extends StatelessWidget {
   final MeetingRoom room;

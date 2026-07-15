@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart'; // 💡 นำเข้า SharedPreferences
+
 import 'digitel.dart';
-import 'Room_model.dart'; // 👈 เพิ่มการ Import หน้า RoomListScreen เข้ามา
+import '/Booking_room/Room_model.dart'; 
+import 'Booking_vehicle/Vehicle_model.dart' as v_model; // 💡 นำเข้าตัวแปรของระบบจองรถ
 
 class ManagePage extends StatefulWidget {
   const ManagePage({super.key});
@@ -12,7 +15,7 @@ class ManagePage extends StatefulWidget {
 }
 
 class _ManagePageState extends State<ManagePage> {
-  // ✅ เปลี่ยนมาเก็บข้อมูล แผนก และ พนักงาน เป็นข้อความ String ป้องกัน Dropdown ค้าง
+  // ✅ เก็บข้อมูล แผนก และ พนักงาน เป็นข้อความ String ป้องกัน Dropdown ค้าง
   String? _selectedDepartmentText;
   String? _selectedEmployeeText;
 
@@ -33,16 +36,14 @@ class _ManagePageState extends State<ManagePage> {
     _fetchDepartments();
   }
 
-  // 🔄 เปลี่ยนเป็นฟังก์ชันดึงข้อมูลแผนกทั้งหมด
+  // 🔄 ดึงข้อมูลแผนกทั้งหมด
   Future<void> _fetchDepartments() async {
     try {
       final response = await http.get(Uri.parse('$baseUrl/departments'));
       if (response.statusCode == 200) {
-        // 1. แปลงข้อมูลเป็น Map ก่อนเนื่องจากข้อมูลห่อหุ้มมาเป็น Object
         final Map<String, dynamic> responseData = json.decode(response.body);
 
         setState(() {
-          // 2. ดึง List ออกมาจากภายในคีย์ 'data'
           _departments = responseData['data'] ?? [];
           _isLoadingDepartments = false;
         });
@@ -53,7 +54,7 @@ class _ManagePageState extends State<ManagePage> {
     }
   }
 
-  // 🔄 ฟังก์ชันดึงข้อมูลพนักงานตามแผนก
+  // 🔄 ดึงข้อมูลพนักงานตามแผนก
   Future<void> _fetchEmployees(String departmentId) async {
     setState(() {
       _isLoadingEmployees = true;
@@ -67,11 +68,9 @@ class _ManagePageState extends State<ManagePage> {
         Uri.parse('$baseUrl/employees?departmentId=$departmentId'),
       );
       if (response.statusCode == 200) {
-        // 1. แปลงข้อมูลเป็น Map ก่อนเช่นเดียวกัน
         final Map<String, dynamic> responseData = json.decode(response.body);
 
         setState(() {
-          // 2. เจาะเข้าไปนำ List ข้อมูลพนักงานมาจากคีย์ 'data'
           _names = responseData['data'] ?? [];
           _isLoadingEmployees = false;
         });
@@ -199,7 +198,6 @@ class _ManagePageState extends State<ManagePage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // 🔍 ให้หาบล็อก Container ดีไซน์ตารางสีขาวใน _showConfirmDialog แล้วแก้เป็นแบบนี้ครับ:
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -211,18 +209,11 @@ class _ManagePageState extends State<ManagePage> {
                   child: Column(
                     children: [
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment
-                            .start, // 👈 เพิ่มชิ้นนี้เพื่อให้จุดกลมอยู่กึ่งกลางบรรทัดแรกกรณีตัวหนังสือขึ้นบรรทัดใหม่
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Padding(
-                            padding: EdgeInsets.only(
-                              top: 6.0,
-                            ), // ดันจุดกลมลงมาเล็กน้อยให้บาลานซ์
-                            child: Icon(
-                              Icons.circle,
-                              size: 6,
-                              color: Color(0xFF00529B),
-                            ),
+                            padding: EdgeInsets.only(top: 6.0),
+                            child: Icon(Icons.circle, size: 6, color: Color(0xFF00529B)),
                           ),
                           const SizedBox(width: 8),
                           const Text(
@@ -234,14 +225,11 @@ class _ManagePageState extends State<ManagePage> {
                               fontFamily: 'Kanit',
                             ),
                           ),
-                          const SizedBox(
-                            width: 16,
-                          ), // เปลี่ยนจาก Spacer() มาใช้ระยะห่างตายตัว
-                          // ✅ 1. ใช้ Expanded ครอบ Text ของแผนก เพื่อจำกัดวงให้ขยายไม่เกินขอบขวา และขึ้นบรรทัดใหม่เอง
+                          const SizedBox(width: 16),
                           Expanded(
                             child: Text(
                               _selectedDepartmentText ?? '',
-                              textAlign: TextAlign.end, // สั่งชิดขวาเหมือนเดิม
+                              textAlign: TextAlign.end,
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
@@ -257,16 +245,11 @@ class _ManagePageState extends State<ManagePage> {
                         child: Divider(height: 1, color: Color(0xFFE2EFF2)),
                       ),
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment
-                            .start, // 👈 เพิ่มชิ้นนี้เพื่อให้จุดกลมอยู่กึ่งกลางบรรทัดแรก
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Padding(
                             padding: EdgeInsets.only(top: 6.0),
-                            child: Icon(
-                              Icons.circle,
-                              size: 6,
-                              color: Color(0xFF00529B),
-                            ),
+                            child: Icon(Icons.circle, size: 6, color: Color(0xFF00529B)),
                           ),
                           const SizedBox(width: 8),
                           const Text(
@@ -278,14 +261,11 @@ class _ManagePageState extends State<ManagePage> {
                               fontFamily: 'Kanit',
                             ),
                           ),
-                          const SizedBox(
-                            width: 16,
-                          ), // เปลี่ยนจาก Spacer() มาใช้ระยะห่างตายตัว
-                          // ✅ 2. ใช้ Expanded ครอบ Text ของชื่อพนักงาน
+                          const SizedBox(width: 16),
                           Expanded(
                             child: Text(
                               _selectedEmployeeText ?? '',
-                              textAlign: TextAlign.end, // สั่งชิดขวาเหมือนเดิม
+                              textAlign: TextAlign.end,
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w500,
@@ -305,43 +285,71 @@ class _ManagePageState extends State<ManagePage> {
                     SizedBox(
                       width: double.infinity,
                       height: 46,
-                      child: // 🔍 ไปที่ปุ่มยืนยันในฟังก์ชัน _showConfirmDialog ของหน้า ManagePage.dart
-                          // 🔍 มองหา ElevatedButton ปุ่ม 'ยืนยัน' (ประมาณบรรทัดที่ 111-120 ในรูปของคุณ)
-                          ElevatedButton(
-                            onPressed: () {
-                              if (_selectedEmployeeText != null &&
-                                  _selectedEmployeeText!.isNotEmpty) {
-                                globalCurrentUserName =
-                                    _selectedEmployeeText!; // บันทึกชื่อผู้ใช้งานปัจจุบันเข้าสู่ไฟล์กลาง
+                      child: ElevatedButton(
+                        // 🚀 เปลี่ยนเป็น async เพื่อให้บันทึกข้อมูล SharedPreferences ได้
+                        // 🚀 เปลี่ยนเป็น async เพื่อให้บันทึกข้อมูล SharedPreferences ได้
+                        onPressed: () async {
+                          if (_selectedEmployeeText != null && _selectedEmployeeText!.isNotEmpty) {
+                            
+                            // 💡 0. โค้ดใหม่: พยายามขุดหา User ID ตัวจริงจากข้อมูล Employee
+                            int selectedId = 0;
+                            if (_selectedEmployeeObj != null) {
+                              if (_selectedEmployeeObj!['userId'] != null) {
+                                // กรณีมีฟิลด์ userId คืนค่ามาตรงๆ
+                                selectedId = _selectedEmployeeObj!['userId'];
+                              } else if (_selectedEmployeeObj!['user'] != null && _selectedEmployeeObj!['user']['id'] != null) {
+                                // กรณีข้อมูล user ซ้อนอยู่ข้างใน
+                                selectedId = _selectedEmployeeObj!['user']['id'];
+                              } else {
+                                // ถ้าไม่มีเลยจริงๆ ค่อยใช้ id ของพนักงาน (ซึ่งเสี่ยงพังถ้าไม่ตรงตาราง User)
+                                selectedId = _selectedEmployeeObj!['id'] ?? 0;
                               }
-                              Navigator.pop(context);
-                              Navigator.pushNamed(
-                                context,
-                                '/digitel',
-                                arguments: _selectedEmployeeObj,
-                              );
+                            }
 
-                              print(
-                                "เปลี่ยนเส้นทางไปหน้าดิจิทัลสำเร็จ: $_selectedEmployeeText",
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0096C7),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              elevation: 2,
-                            ),
-                            child: const Text(
-                              'ยืนยัน',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'Kanit',
-                              ),
-                            ),
+                            // พิมพ์เช็กดูใน Console ว่าได้ ID อะไรมา
+                            print("👉 ข้อมูลพนักงานก้อนเต็ม: $_selectedEmployeeObj");
+                            print("👉 ได้ User ID เพื่อส่งไปจองรถ: $selectedId");
+
+                            // 💡 1. อัปเดตชื่อ และ ID ให้ระบบ
+                            globalCurrentUserName = _selectedEmployeeText!; 
+                            
+                            
+                            // 💡 2. อัปเดตชื่อ และ ID ให้ระบบจองรถ
+                            v_model.globalCurrentUserName = _selectedEmployeeText!; 
+                            v_model.globalCurrentUserId = selectedId;
+                            
+                            // 💡 3. บันทึกชื่อและ ID ลง SharedPreferences
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setString('name', _selectedEmployeeText!);
+                            await prefs.setInt('userId', selectedId); 
+                          }
+                          
+                          if (!mounted) return;
+                          
+                          Navigator.pop(context);
+                          Navigator.pushNamed(
+                            context,
+                            '/digitel',
+                            arguments: _selectedEmployeeObj,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0096C7),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
                           ),
+                          elevation: 2,
+                        ),
+                        child: const Text(
+                          'ยืนยัน',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Kanit',
+                          ),
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     SizedBox(
@@ -452,7 +460,6 @@ class _ManagePageState extends State<ManagePage> {
                                 ),
                                 const SizedBox(height: 32),
 
-                                // ✅ เปลี่ยนจาก ตำแหน่ง เป็น "แผนก"
                                 _buildLabel('แผนก'),
                                 _buildDropdownField(
                                   hint: 'เลือกแผนก',
@@ -606,8 +613,7 @@ class _ManagePageState extends State<ManagePage> {
     required String? selectedValue,
     required List<dynamic> items,
     required String labelKey,
-    required ValueChanged<String?>
-    onChanged, // ✅ 1. เพิ่มตัวแปรเพื่อรับค่าฟังก์ชันจากภายนอกเข้ามา
+    required ValueChanged<String?> onChanged,
   }) {
     final List<String> dropdownStrings = items
         .map((item) => item[labelKey].toString())
@@ -654,8 +660,7 @@ class _ManagePageState extends State<ManagePage> {
               ),
             );
           }).toList(),
-          onChanged:
-              onChanged, // ✅ 2. นำค่าพารามิเตอร์ส่งกลับไปให้ DropdownButton จริงใช้งาน
+          onChanged: onChanged,
         ),
       ),
     );

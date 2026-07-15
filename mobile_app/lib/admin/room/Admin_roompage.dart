@@ -3,8 +3,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'Admin_addroom.dart';
 import 'Admin_editroom.dart'; 
-import 'Room_model.dart'; 
-import 'AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
+import '../../Booking_room/Room_model.dart'; 
+import '../../AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 
 // 💡 รายการข้อมูลส่วนกลาง ValueNotifier
 final ValueNotifier<List<MeetingRoom>> globalMeetingRooms = ValueNotifier<List<MeetingRoom>>([

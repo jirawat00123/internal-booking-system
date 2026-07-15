@@ -20,7 +20,6 @@ const checkHandler = (handler, name) => {
     if (typeof handler !== 'function') {
         console.error(`❌ ERROR: ตัวแปรหรือฟังก์ชัน "${name}" มีค่าเป็น undefined หรือไม่ใช่ฟังก์ชัน!`);
         console.error(`👉 กรุณาเช็กในไฟล์ Controller หรือ Middleware ว่าสะกดชื่อถูกต้อง หรือได้ทำการ module.exports ออกมาแล้วหรือยัง`);
-        // ส่งฟังก์ชันหลอกกลับไปเพื่อไม่ให้ Express แครชตอนรัน และแสดงข้อความเตือนเมื่อมีคนเรียกใช้แทน
         return (req, res) => res.status(500).json({ 
             error: `ฟังก์ชัน ${name} ยังไม่ได้ถูกติดตั้งหรือเขียนไม่ถูกต้องในระบบ Backend` 
         });
@@ -67,11 +66,12 @@ const upload = multer({
 // 🚗 แมปปิ้งเส้นทาง API ไปยัง Controller (ผ่านตัวกรองตรวจสอบบั๊ก)
 // ==========================================
 
+// 💡 1. ปลดล็อก GET (ดึงข้อมูลรถทั้งหมด) เพื่อให้ User ทั่วไปเข้าดูได้โดยไม่ต้องมี Token
 router.get('/', 
-    checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
 );
 
+// 🔒 เพิ่มข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
 router.post('/', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
@@ -79,11 +79,12 @@ router.post('/',
     checkHandler(vehicleController.createVehicle, 'vehicleController.createVehicle')
 );
 
+// 💡 2. ปลดล็อก GET by ID (ดึงข้อมูลรถแต่ละคัน) ให้ User เข้าดูได้
 router.get('/:id', 
-    checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(vehicleController.getVehicleById, 'vehicleController.getVehicleById')
 );
 
+// 🔒 แก้ไขข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
 router.put('/:id', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
@@ -91,6 +92,7 @@ router.put('/:id',
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
 );
 
+// 🔒 ลบข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
 router.delete('/:id', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 

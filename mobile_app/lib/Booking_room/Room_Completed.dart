@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'booking_history.dart';
+import '../booking_history.dart';
 
 class RoomCompletedScreen extends StatelessWidget {
   const RoomCompletedScreen({Key? key}) : super(key: key);

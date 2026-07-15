@@ -1,5 +1,7 @@
+import 'package:mobile_app/Admin/users/users_page.dart';
+import 'package:mobile_app/Admin/vehicle/vehicle_page.dart';
 import 'package:flutter/material.dart';
-import 'Admin_roompage.dart';
+import '/Admin/room/Admin_roompage.dart';
 import 'Select.dart';
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ
 
@@ -125,7 +127,10 @@ class AdminGroupPage extends StatelessWidget {
                           icon: Icons.directions_car_filled_outlined,
                           title: 'ยานพาหนะ',
                           onTap: () {
-                            
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const VehiclePage()),
+                            );
                           },
                         ),
                         const SizedBox(height: 16),
@@ -143,6 +148,10 @@ class AdminGroupPage extends StatelessWidget {
                           icon: Icons.people_alt_outlined,
                           title: 'ระบบจัดการผู้ใช้',
                           onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const UsersPage()),
+                            );
                             
                           },
                         ),
