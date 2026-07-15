@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
 import '../PinError.dart';
 import 'SecurityGroupPage.dart'; // 👈 เปลี่ยนเป็นหน้าของ รปภ.
+import 'package:shared_preferences/shared_preferences.dart';
 
 class Security_Pinpage extends StatefulWidget {
   const Security_Pinpage({super.key});
@@ -74,7 +75,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
             body: jsonEncode({
               'pin': pin,
               'expectedRole':
-                  'SECURITY', // 👈 กระซิบบอกหลังบ้านว่า นี่คือหน้าจอของ รปภ. นะ!
+                  'GUARD', // 👈 กระซิบบอกหลังบ้านว่า นี่คือหน้าจอของ รปภ. นะ!
             }),
           )
           .timeout(const Duration(seconds: 5)); // ให้เวลารอแค่ 5 วิ
@@ -89,8 +90,23 @@ class _Security_PinpageState extends State<Security_Pinpage> {
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
 
-        if (responseData['role'] == 'SECURITY') {
-          // 🟢 รหัสถูก สิทธิ์ถูกต้อง
+        if (responseData['role'] == 'GUARD') {
+          // 🟢 1. บันทึก JWT Token ลง Storage เพื่อให้หน้าถัดไปนำไปใช้เรียก API ต่อได้
+          final prefs = await SharedPreferences.getInstance();
+
+          // ดึง Token จาก Response (ตรวจสอบ Key ของ Token กับฝั่ง Backend ให้ดี เช่น 'token' หรือ 'accessToken')
+          final token = responseData['token'] ?? responseData['accessToken'];
+          if (token != null) {
+            await prefs.setString('jwt_token', token);
+            await prefs.setString('user_role', responseData['role']);
+            if (responseData['userId'] != null) {
+              await prefs.setInt('user_id', responseData['userId']);
+            }
+          }
+
+          if (!mounted) return;
+
+          // 🟢 2. รหัสถูก สิทธิ์ถูกต้อง จึงค่อยเปลี่ยนหน้า
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (context) => const SecurityGroupPage()),
@@ -133,7 +149,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/images/bgmmk.png'),
+                image: AssetImage('assets/bg.png'),
                 fit: BoxFit.cover,
               ),
             ),
@@ -202,7 +218,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
                             ), // 👈 ไอคอนโล่ รปภ.
                             SizedBox(width: 8),
                             Text(
-                              'รปภ. (Security Guard)', // 👈 เปลี่ยนข้อความ
+                              'เจ้าหน้าที่ รปภ', // 👈 เปลี่ยนข้อความ
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,

@@ -4,7 +4,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs'); 
 const roomController = require('../controllers/roomController'); 
-const { authenticateToken } = require('../middlewares/auth');
+const {
+  authenticateToken,
+  requireRole
+} = require('../middlewares/auth');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
@@ -30,8 +33,11 @@ const upload = multer({ storage: storage });
 // 🚨 จุดสำคัญ: โยง Route ไปหา Controller เท่านั้น ห้ามมี Logic ลบข้อมูลในหน้านี้
 // ==========================================
 router.get('/', authenticateToken, roomController.getAllRooms);
-router.post('/', authenticateToken, upload.single('image'), roomController.createRoom);
-router.put('/:id', authenticateToken, upload.single('image'), roomController.updateRoom);
+// ✅ เพิ่ม requireRole(['ADMIN']) เข้าไปต่อจาก authenticateToken 
+// เพื่อบังคับให้ระบบเช็ค Role ก่อนเข้าไปถึง Controller
+router.post('/', authenticateToken, requireRole(['ADMIN']), upload.single('image'), roomController.createRoom);
+router.put('/:id', authenticateToken, requireRole(['ADMIN']), upload.single('image'), roomController.updateRoom);
+router.delete('/:id', authenticateToken, requireRole(['ADMIN']), roomController.deleteRoom);
 
 // 💡 บรรทัดนี้คือหัวใจ: ชี้ไปที่ฟังก์ชัน deleteRoom เท่านั้น
 router.delete('/:id', authenticateToken, roomController.deleteRoom);

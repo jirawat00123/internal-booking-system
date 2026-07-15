@@ -19,10 +19,15 @@ router.post('/login', async (req, res) => {
     }
 
     // 1. ค้นหาพนักงานและข้อมูลบัญชีผู้ใช้
+    // 1. ค้นหาพนักงานและข้อมูลบัญชีผู้ใช้ (แก้ไขการ Include ตารางสิทธิ์)
     const employee = await prisma.employee.findUnique({
       where: { employeeCode: String(employeeCode).trim() },
       include: {
-        users: true,
+        users: {
+          include: {
+            role: true // ✅ แก้ไข: ดึงข้อมูลแบบ Nested Relation โยงตาราง Role ออกมาด้วยตรงตาม Schema
+          }
+        },
         position: true
       }
     });
@@ -40,7 +45,9 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ success: false, error: "บัญชีผู้ใช้งานนี้ถูกระงับการใช้งาน" });
     }
 
-    const role = userAccount.roles;
+    // ✅ แก้ไข: เปลี่ยนจากการเรียกใช้ตัวแปรที่ไม่มีจริง (.roles) เป็นการดึงค่าจาก Relation Object (.role.name) 
+    // หากไม่พบข้อมูลให้ Default เป็นสิทธิ์พนักงานทั่วไป ('USER') เพื่อป้องกัน Breaking Change
+    const role = userAccount.role ? userAccount.role.name : 'USER';
 
     // 2. 🛡️ เช็ก PIN ตาม Role ที่กำหนด
     // 💡 สิทธิ์ 'USER' จะข้ามบล็อก if นี้ไปเลย ทำให้ล็อกอินผ่านได้ทันทีแค่มี employeeCode

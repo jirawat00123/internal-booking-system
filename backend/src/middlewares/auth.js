@@ -35,17 +35,23 @@ const authenticateToken = async (req, res, next) => {
     });
 
     if (!user) {
-      // 🚨 [Requirement 7] LOG สาเหตุ 401: ไม่พบข้อมูลผู้ใช้นี้ในฐานข้อมูล
       console.log(`[EVIDENCE] 7. 401 Failure Cause: [USER_NOT_FOUND] User with ID "${decoded.userId}" was not found in Database.`);
       return res.status(401).json({ success: false, error: "ไม่พบข้อมูลผู้ใช้งาน" });
     }
 
+    //  แก้ไขเพิ่มเติม: ตรวจสอบสถานะการเปิดใช้งานบัญชี (Account Status Validation)
+    // อ้างอิงจาก Source of Truth ตาราง user ฟิลด์เก็บสถานะคือ "active" (Boolean)
+    if (!user.active) {
+      console.log(`[EVIDENCE] 7. 403 Failure Cause: [USER_INACTIVE] User ID "${decoded.userId}" account is deactivated.`);
+      return res.status(403).json({ success: false, error: "บัญชีผู้ใช้งานของคุณถูกระงับสิทธิ์การใช้งานชั่วคราว" });
+    }
+
     // 🚨 [Requirement 5] LOG: ค่า currentSessionId ที่ได้จากฐานข้อมูล ณ ขนาดนี้
     console.log(`[EVIDENCE] 5. Database currentSessionId (user.currentSessionId): "${user.currentSessionId}"`);
-
-    // 🚨 [Requirement 6] LOG: ทำการเปรียบเทียบ Session ID ระหว่างใน Token กับ Database และแสดงค่าที่ใช้เทียบ
+    
+    // ✅ แก้ไข: ประกาศตัวแปรคำนวณผลลัพธ์การเปรียบเทียบ Session ID ก่อนนำไปใช้งานด้านล่าง
     const isSessionValid = decoded.sessionId === user.currentSessionId;
-    console.log('[EVIDENCE] 6. Session IDs Comparison:');
+
     console.log(`   -> decoded.sessionId (From Token):        "${decoded.sessionId}"`);
     console.log(`   -> user.currentSessionId (From Database): "${user.currentSessionId}"`);
     console.log(`   -> Comparison Result (decoded.sessionId === user.currentSessionId): "${isSessionValid}"`);

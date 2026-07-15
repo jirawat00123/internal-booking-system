@@ -23,9 +23,84 @@ class _ManagePageState extends State<ManagePage> {
   List<dynamic> _names = [];
   bool _isLoadingDepartments = true;
   bool _isLoadingEmployees = false;
+  bool _isLoggingIn = false;
 
   // 🌐 Base URL สำหรับเชื่อมต่อ Backend
   final String baseUrl = 'http://localhost:3001/api';
+
+  Future<void> _loginUser(BuildContext dialogContext) async {
+    final empCode = _selectedEmployeeObj?['employeeCode'];
+    if (empCode == null) return;
+
+    setState(() => _isLoggingIn = true);
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'employeeCode': empCode}),
+          )
+          .timeout(
+            const Duration(seconds: 10),
+          ); // 🟢 ดักไม่ให้แอปค้างถ้าเซิร์ฟเวอร์ไม่มีการตอบรับ
+
+      // 🟢 ป้องกันแครชจาก Non-JSON Response (เช่น Server return 502 HTML)
+      dynamic responseData;
+      try {
+        responseData = json.decode(response.body);
+      } catch (_) {
+        responseData = {
+          'success': false,
+          'error': 'รูปแบบข้อมูลเซิร์ฟเวอร์ไม่ถูกต้อง',
+        };
+      }
+
+      if (response.statusCode == 200 && responseData['success'] == true) {
+        final token = responseData['token'] ?? '';
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('token', token);
+
+        if (!dialogContext.mounted) return;
+        Navigator.pop(dialogContext); // ปิด Dialog ทันทีเมื่อทำงานสำเร็จ
+
+        if (!mounted) return; // 🟢 ตรวจสอบความปลอดภัยของ Context หลักก่อนนำทาง
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const UserMenuPage()),
+        );
+      } else {
+        if (dialogContext.mounted) {
+          Navigator.pop(
+            dialogContext,
+          ); // 🟢 สั่งปิด Dialog ทันทีเพื่อให้ไปแก้ไขข้อมูลใหม่
+        }
+        if (!mounted)
+          return; // 🟢 ตรวจสอบความปลอดภัยของ Context หลักก่อนใช้ ScaffoldMessenger
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(responseData['error'] ?? 'เข้าสู่ระบบไม่สำเร็จ'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (dialogContext.mounted) {
+        Navigator.pop(
+          dialogContext,
+        ); // 🟢 สั่งปิด Dialog ทันทีเมื่อ API ค้าง/ล่ม
+      }
+      if (!mounted)
+        return; // 🟢 ตรวจสอบความปลอดภัยของ Context หลักก่อนแจ้งเตือน
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoggingIn = false);
+    }
+  }
 
   @override
   void initState() {
@@ -39,6 +114,8 @@ class _ManagePageState extends State<ManagePage> {
 
       if (response.statusCode == 200) {
         final decodedData = json.decode(response.body);
+
+        if (!mounted) return; // 🟢 เพิ่มเช็ค mounted หลัง await
 
         // 🟢 ตรวจสอบประเภทข้อมูลว่าเป็น List (Array) หรือไม่
         if (decodedData is List) {
@@ -240,7 +317,7 @@ class _ManagePageState extends State<ManagePage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return Dialog(
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(24),
@@ -370,21 +447,19 @@ class _ManagePageState extends State<ManagePage> {
                       width: double.infinity,
                       height: 46,
                       child: ElevatedButton(
-                        onPressed: () {
-                          // 🚨 ตรวจสอบให้แน่ใจว่าตัวแปร globalCurrentUserName ถูกประกาศไว้ในหน้าอื่นแล้ว (เช่น main.dart หรือ digital.dart)
-                          // ถ้าแอปพังตรงนี้ แสดงว่ายังไม่ได้ประกาศตัวแปร global ครับ
+                        // เอาการปิด null ออก เพราะ Dialog ไม่ได้ rebuild ตามหน้าหลัก
+                        onPressed: () async {
+                          // 🟢 เพิ่มการดักจับสถานะด้านในฟังก์ชันแทน หากกำลังล็อกอินอยู่ให้ข้ามการทำงานไปเลย (ป้องกันกดรัว)
+                          if (_isLoggingIn) return;
+
+                          // กำหนดค่าตัวแปร global (ถ้ามี)
                           if (_selectedEmployeeText != null &&
                               _selectedEmployeeText!.isNotEmpty) {
-                            // globalCurrentUserName = _selectedEmployeeText!; // เปิดคอมเมนต์นี้เมื่อแน่ใจว่ามีตัวแปร
+                            // globalCurrentUserName = _selectedEmployeeText!;
                           }
 
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const UserMenuPage(),
-                            ),
-                          );
+                          // เรียกฟังก์ชัน _loginUser เพื่อทำ API Login และสลับหน้าจออย่างสมบูรณ์
+                          await _loginUser(dialogContext);
 
                           debugPrint(
                             "เปลี่ยนเส้นทางไปหน้าดิจิทัลสำเร็จ: $_selectedEmployeeText",

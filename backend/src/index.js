@@ -12,6 +12,8 @@ const roomRoutes = require('./routes/rooms');
 const employeeRoutes = require('./routes/employees');
 const vehicleRoutes = require('./routes/vehicles');
 const vehicleBookingsRouter = require('./routes/vehicleBookings');
+const securityRoutes = require('./routes/security');
+const attachmentRoutes = require('./routes/attachments');
 
 const multer = require('multer');
 const storage = multer.diskStorage({
@@ -355,17 +357,15 @@ app.get('/api/rooms', async (req, res) => {
 // [POST] สร้างห้องประชุม
 app.post('/api/rooms', upload.single('image'), async (req, res) => {
   try {
-    // เมื่อผ่าน Multer แล้ว req.body จะสามารถดึงข้อมูลฟิลด์ตัวหนังสืออกมาได้ครบถ้วน
     const { roomName, capacity, location, status } = req.body;
 
     if (!roomName) {
       return res.status(400).json({ message: 'กรุณากรอกชื่อห้องประชุม' });
     }
 
-    // ตรวจสอบและบันทึกข้อมูลตำแหน่งไฟล์ภาพที่ถูกส่งขึ้นมาจริง
     let uploadUrl = null;
     if (req.file) {
-      uploadUrl = `/uploads/${req.file.filename}`; // บันทึก Path สำหรับนำไปแสดงผลรูปภาพ
+      uploadUrl = `/uploads/${req.file.filename}`;
     }
 
     const newRoom = await prisma.room.create({
@@ -373,8 +373,8 @@ app.post('/api/rooms', upload.single('image'), async (req, res) => {
         roomName: roomName.trim(),
         capacity: parseInt(capacity, 10) || 0,
         location: location ? location.trim() : '',
-        status: status || 'AVAILABLE', // บันทึกสถานะห้องเริ่มต้นเป็น AVAILABLE
-        uploadUrl: uploadUrl,          // บันทึกที่อยู่รูปภาพลงตาราง Room ใน Database
+        status: status || 'AVAILABLE', 
+        uploadUrl: uploadUrl,          
       }
     });
 
@@ -385,16 +385,14 @@ app.post('/api/rooms', upload.single('image'), async (req, res) => {
   }
 });
 
-// ✨ [DELETE] ลบห้องประชุม (เพิ่มใหม่)
+// ✨ [DELETE] ลบห้องประชุม
 app.delete('/api/rooms/:id', async (req, res) => {
-  const { id } = req.params; // รับ ID ของห้องประชุมจาก URL
+  const { id } = req.params;
   const roomIdInt = parseInt(id, 10);
 
   try {
-    // 💡 ฝัง Log ไว้ตรงนี้เพื่อตรวจสอบใน Terminal หลังบ้าน
     console.log(`\n🚨กำลังทำ SOFT DELETE ห้องหมายเลข: ${roomIdInt}🚨\n`);
 
-    // เปลี่ยนจากคำสั่งลบถาวร เป็นการอัปเดตฟิลด์ isDeleted ให้เป็น true
     const updatedRoom = await prisma.room.update({
       where: { 
         id: roomIdInt 
@@ -413,7 +411,6 @@ app.delete('/api/rooms/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting room:', error);
     
-    // ดักจับกรณีที่ Prisma หา ID นี้ไม่เจอในระบบ (อาจจะถูกลบไปก่อนแล้ว)
     if (error.code === 'P2025') {
       return res.status(404).json({ message: 'ไม่พบข้อมูลห้องประชุมที่ต้องการลบในระบบ' });
     }
@@ -451,7 +448,6 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
     const parsedVehicleId = parseInt(vehicleId, 10);
     const parsedUserId = parseInt(userId, 10);
 
-    // ✨ เพิ่มด่านสกัด: ตรวจสอบว่า Vehicle มีอยู่จริงไหม (แก้บั๊ก P2003 Foreign Key Constraint)
     const vehicleExists = await prisma.vehicle.findUnique({
       where: { id: parsedVehicleId }
     });
@@ -459,7 +455,6 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
       return res.status(404).json({ message: `ไม่พบรถยนต์รหัส ${parsedVehicleId} ในระบบ (คุณอาจใส่ vehicleId ผิด)` });
     }
 
-    // ✨ เพิ่มด่านสกัด: ตรวจสอบว่า User มีอยู่จริงไหม 
     const userExists = await prisma.user.findUnique({
       where: { id: parsedUserId }
     });
@@ -470,7 +465,6 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    // 🛡️ ตรวจสอบการทับซ้อนของเวลา (Collision Check)
     const overlappingBooking = await prisma.vehicleBooking.findFirst({
       where: {
         vehicleId: parsedVehicleId,
@@ -489,7 +483,6 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
       });
     }
 
-    // 💾 บันทึกการจองลงฐานข้อมูล
     const newBooking = await prisma.vehicleBooking.create({
       data: {
         vehicleId: parsedVehicleId,
@@ -534,6 +527,8 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api', employeeRoutes); 
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/vehicle-bookings', vehicleBookingsRouter);
+app.use('/api/security', securityRoutes);
+app.use('/api/attachments', attachmentRoutes);
 
 // ==========================================
 // 🚨 Error Handlers
@@ -562,7 +557,6 @@ const server = app.listen(PORT, () => {
   console.log(`📖 เปิดดูคู่มือ API ได้ที่ http://localhost:${PORT}/api-docs`);
 });
 
-// ตรวจจับกรณีที่รันเซิร์ฟเวอร์ไม่ได้ (เช่น พอร์ต 3001 มีโปรแกรมอื่นใช้อยู่)
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`🔴 เกิดข้อผิดพลาด: พอร์ต ${PORT} กำลังถูกใช้งานโดยโปรแกรมอื่น!`);
@@ -570,5 +564,5 @@ server.on('error', (err) => {
   } else {
     console.error('🔴 เซิร์ฟเวอร์ดับเนื่องจาก:', err.message);
   }
-  process.exit(1); // บังคับปิดเพื่อแสดงผลให้ชัดเจน
+  process.exit(1);
 });
