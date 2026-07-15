@@ -287,7 +287,6 @@ class _ManagePageState extends State<ManagePage> {
                       height: 46,
                       child: ElevatedButton(
                         // 🚀 เปลี่ยนเป็น async เพื่อให้บันทึกข้อมูล SharedPreferences ได้
-                        // 🚀 เปลี่ยนเป็น async เพื่อให้บันทึกข้อมูล SharedPreferences ได้
                         onPressed: () async {
                           if (_selectedEmployeeText != null && _selectedEmployeeText!.isNotEmpty) {
                             

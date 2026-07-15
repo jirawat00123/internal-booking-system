@@ -98,8 +98,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           DateTime start = DateTime.parse(item['startDatetime']).toLocal();
           DateTime end = DateTime.parse(item['endDatetime']).toLocal();
           
-          String rawStatus = item['status'] ?? 'รออนุมัติ';
-          if (rawStatus.toLowerCase() == 'pending') rawStatus = 'รออนุมัติ';
+          String rawStatus = item['status'] ?? 'ถูกจองไว้อยู่';
+          if (rawStatus.toLowerCase() == 'pending') rawStatus = 'ถูกจองไว้อยู่';
 
           // ค้นหาชื่อ User ของห้องประชุม
           String userName = 'ไม่ระบุชื่อ';
@@ -131,8 +131,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           DateTime start = DateTime.parse(item['startDatetime'] ?? item['startDate'] ?? DateTime.now().toString()).toLocal();
           DateTime end = DateTime.parse(item['endDatetime'] ?? item['endDate'] ?? DateTime.now().toString()).toLocal();
           
-          String rawStatus = item['status'] ?? 'รออนุมัติ';
-          if (rawStatus.toLowerCase() == 'pending') rawStatus = 'รออนุมัติ';
+          String rawStatus = item['status'] ?? 'ถูกจองไว้อยู่';
+          if (rawStatus.toLowerCase() == 'pending') rawStatus = 'ถูกจองไว้อยู่';
           if (rawStatus.toLowerCase() == 'approved' || rawStatus.toLowerCase() == 'in_use') rawStatus = 'กำลังใช้งาน';
           if (rawStatus.toLowerCase() == 'completed') rawStatus = 'เสร็จสิ้น';
           if (rawStatus.toLowerCase() == 'cancelled') rawStatus = 'ยกเลิกแล้ว';
@@ -402,7 +402,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             const SizedBox(height: 16),
             
             // ปุ่มต่างๆ 
-            if (status == 'รออนุมัติ') ...[
+            if (status == 'ถูกจองไว้อยู่') ...[
               Row(
                 children: [
                   Expanded(

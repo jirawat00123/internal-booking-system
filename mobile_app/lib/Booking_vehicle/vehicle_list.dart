@@ -288,7 +288,7 @@ Future<void> _fetchVehicles() async {
       statusColor = const Color(0xFF2EC4B6); 
       statusBgColor = const Color(0xFFE6F8F5); 
     } else {
-      displayStatus = 'In Use';
+      displayStatus = 'Reserve';
       statusColor = const Color(0xFFF05252); 
       statusBgColor = const Color(0xFFFDE8E8); 
     }
