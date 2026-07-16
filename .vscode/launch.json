@@ -5,14 +5,14 @@
             "name": "Flutter Web",
             "type": "dart",
             "request": "launch",
-            "cwd": "${workspaceFolder}/frontend/mobile_app",
+            "cwd": "${workspaceFolder}/mobile_app",
             "program": "lib/main.dart"
         },
         {
             "name": "Flutter Profile",
             "type": "dart",
             "request": "launch",
-            "cwd": "${workspaceFolder}/frontend/mobile_app",
+            "cwd": "${workspaceFolder}/mobile_app",
             "program": "lib/main.dart",
             "flutterMode": "profile"
         },
@@ -20,7 +20,7 @@
             "name": "Flutter Release",
             "type": "dart",
             "request": "launch",
-            "cwd": "${workspaceFolder}/frontend/mobile_app",
+            "cwd": "${workspaceFolder}/mobile_app",
             "program": "lib/main.dart",
             "flutterMode": "release"
         }

@@ -85,7 +85,58 @@ const downloadFile = async (req, res) => {
   }
 };
 
+/**
+ * Handle Get Attachments By Entity (Room/Vehicle)
+ */
+const getAttachmentsByEntity = async (req, res) => {
+  try {
+    const { entityType, entityId } = req.params;
+    
+    // ไม่มี Business Logic เรียกใช้ Service ทันที
+    const attachments = await attachmentService.getAttachmentsByEntity(entityType, entityId);
+    
+    return res.status(200).json({
+      success: true,
+      data: attachments
+    });
+  } catch (error) {
+    console.error('[AttachmentController] Get By Entity Error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Handle Delete Attachment (Hard Delete: DB + Physical)
+ */
+const deleteFile = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId; // ใช้ userId ตามที่แก้ไว้
+    const roleId = req.user.roleId;
+
+    await attachmentService.deleteAttachmentById(id, userId, roleId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Attachment deleted successfully'
+    });
+  } catch (error) {
+    console.error('[AttachmentController] Delete Error:', error);
+    
+    if (error.message === 'ATTACHMENT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+    if (error.message === 'FORBIDDEN_ACCESS') {
+      return res.status(403).json({ error: 'You do not have permission to delete this file' });
+    }
+    
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 module.exports = {
   uploadFile,
-  downloadFile
+  downloadFile,
+  getAttachmentsByEntity, // ➕ Export เพิ่ม
+  deleteFile              // ➕ Export เพิ่ม
 };

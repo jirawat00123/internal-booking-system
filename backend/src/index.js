@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fs = require('fs');
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -17,14 +18,18 @@ const attachmentRoutes = require('./routes/attachments');
 
 const multer = require('multer');
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/'); // ระบุให้นำไฟล์รูปภาพไปเก็บไว้ที่โฟลเดอร์ uploads ของหลังบ้าน
+  destination: function (req, file, cb) {
+    const dir = path.join(process.cwd(), 'uploads', 'vehicles');
+    // 👈 เพิ่มบรรทัดนี้ เพื่อบอกให้ Multer นำไฟล์ไปบันทึกในโฟลเดอร์ที่ระบุจริง
+    cb(null, dir); 
   },
-  filename: (req, file, cb) => {
+  filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname)); // ตั้งชื่อไฟล์แบบสุ่มป้องกันชื่อซ้ำ
+    // 👈 ใส่คำว่า 'vehicle_' นำหน้า เพื่อให้ชื่อไฟล์ตรงกับรูปแบบในฐานข้อมูล
+    cb(null, 'vehicle_' + uniqueSuffix + path.extname(file.originalname)); 
   }
 });
+
 
 const upload = multer({ storage: storage });
 
@@ -56,8 +61,44 @@ app.use(express.urlencoded({ extended: true }));
 // ==========================================
 // 📁 เปิดสิทธิ์การอ่านไฟล์ภาพ (Serve Static Files)
 // ==========================================
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// ==========================================
+// 📁 เปิดสิทธิ์การอ่านไฟล์ภาพ (Serve Static Files)
+// ==========================================
+// 💡 แก้เป็น __dirname เพื่อบังคับให้ Path อ้างอิงจากไฟล์ index.js เสมอ (backend/src/../uploads = backend/uploads)
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
+// 💡 อัปเกรด Middleware เพื่อดักจับรายละเอียดเชิงลึกเมื่อหาไฟล์ไม่พบ
+app.use('/uploads', async (req, res) => {
+  // req.path จะได้ค่าเช่น /vehicles/vehicle_xxxxx.jpg
+  const expectedAbsolutePath = path.join(__dirname, '../uploads', req.path);
+  const fileExists = fs.existsSync(expectedAbsolutePath);
+  
+  let vehicleId = 'N/A';
+  let dbUploadUrl = req.originalUrl;
+
+  try {
+    // 💡 ค้นหาข้อมูลจาก Database เพื่อแมพว่ารูปนี้เป็นของรถคันไหน
+    const vehicle = await prisma.vehicle.findFirst({
+      where: { uploadUrl: req.originalUrl }
+    });
+    
+    if (vehicle) {
+      vehicleId = vehicle.id;
+      dbUploadUrl = vehicle.uploadUrl;
+    }
+  } catch (error) {
+    // ดักไว้เผื่อ schema ใช้ชื่อคอลัมน์ต่างออกไป
+  }
+
+  // 💡 พิมพ์ Log ตาม Requirement 100%
+  console.error(`🔴 Image file missing details:`);
+  console.error(`   - Vehicle ID: ${vehicleId}`);
+  console.error(`   - Database upload_url: ${dbUploadUrl}`);
+  console.error(`   - Expected absolute path: ${expectedAbsolutePath}`);
+  console.error(`   - Exists on disk: ${fileExists}`);
+
+  res.status(404).json({ success: false, error: 'Image file not found' });
+});
 // ==========================================
 // 📑 ตั้งค่าหน้าปกคู่มือ API (Swagger)
 // ==========================================

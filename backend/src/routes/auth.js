@@ -146,10 +146,16 @@ router.post('/login-pin', async (req, res) => {
     let actualUserId = null;
     let actualUserName = "ไม่ทราบชื่อ";
     
-    const matchedUser = await prisma.user.findFirst({
-      where: { role: { name: assignedRole } }, 
-      include: { employee: true }
-    });
+    // ✅ AFTER: ตรวจสอบหา User ที่มีค่าสิทธิ์ตรงกับ assignedRole ตรงๆ และไม่มีสถานะถูกลบ (isDeleted)
+const matchedUser = await prisma.user.findFirst({
+  where: { 
+    role: assignedRole, // ค้นหาโดยเทียบ String ตรงๆ กับฟิลด์ role ในโมเดล User
+    isDeleted: false    // ตรวจสอบว่าผู้ใช้งานนี้ยังมีตัวตนอยู่จริงและไม่ได้ถูกลบ
+  }, 
+  include: { 
+    employee: true 
+  }
+});
     
     if (matchedUser) {
       actualUserId = matchedUser.id;

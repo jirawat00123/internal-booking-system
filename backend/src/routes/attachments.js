@@ -37,4 +37,26 @@ router.get(
   attachmentController.downloadFile 
 );
 
+/**
+ * @route   GET /api/attachments/entity/:entityType/:entityId
+ * @desc    Get list of attachments by booking entity
+ * @access  Private
+ */
+router.get(
+  '/entity/:entityType/:entityId',
+  authenticateToken,                            // 1. ตรวจสอบ JWT
+  attachmentController.getAttachmentsByEntity   // 2. เรียก Controller
+);
+
+/**
+ * @route   DELETE /api/attachments/:id
+ * @desc    Delete attachment (DB + Physical File) with ownership validation
+ * @access  Private
+ */
+router.delete(
+  '/:id',
+  authenticateToken,                            // 1. ตรวจสอบ JWT
+  attachmentController.deleteFile               // 2. เรียก Controller 
+);
+
 module.exports = router;

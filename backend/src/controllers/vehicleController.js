@@ -18,37 +18,11 @@ const safeDeleteFile = async (filePath) => {
 // 1. ดึงข้อมูลรถยนต์ทั้งหมด
 exports.getVehicles = async (req, res) => {
     try {
-        const page = parseInt(req.query.page, 10) || 1;
-        const limit = parseInt(req.query.limit, 10) || 10;
-        const skip = (page - 1) * limit;
-
-        const whereCondition = { isDeleted: false };
-
-        const [totalItems, vehicles] = await prisma.$transaction([
-            prisma.vehicle.count({ where: whereCondition }),
-            prisma.vehicle.findMany({
-                where: whereCondition,
-                skip: skip,
-                take: limit,
-                orderBy: { createdAt: 'desc' }
-            })
-        ]);
-
-        const totalPages = Math.ceil(totalItems / limit);
-
-        return res.status(200).json({ 
-            success: true, 
-            message: "ดึงข้อมูลรายการรถยนต์ส่วนกลางสำเร็จ",
-            pagination: {
-                totalItems,
-                totalPages,
-                currentPage: page,
-                limit,
-                hasNextPage: page < totalPages,
-                hasPreviousPage: page > 1
-            },
-            data: vehicles 
+        const vehicles = await prisma.vehicle.findMany({
+            where: { isDeleted: false },
+            orderBy: { createdAt: 'desc' }
         });
+        return res.status(200).json({ success: true, data: vehicles });
     } catch (error) {
         console.error("Get Vehicles Error:", error);
         return res.status(500).json({ success: false, error: "ระบบขัดข้องในการดึงข้อมูลรถ" });
@@ -58,7 +32,8 @@ exports.getVehicles = async (req, res) => {
 // 2. เพิ่มข้อมูลรถยนต์ใหม่
 exports.createVehicle = async (req, res) => {
     try {
-        const { plateNumber, brand, model, seats, status } = req.body;
+        // 💡 รับค่า vehicleName มาจากหน้าบ้านด้วย
+        const { vehicleName, plateNumber, brand, model, seats, status } = req.body;
         
         if (!plateNumber || !brand || !model) {
             if (req.file) await safeDeleteFile(req.file.path);
@@ -80,17 +55,19 @@ exports.createVehicle = async (req, res) => {
             return res.status(400).json({ success: false, error: `ป้ายทะเบียน ${plateNumber} มีในระบบแล้ว` });
         }
         
-        const uploadUrl = req.file ? `/uploads/vehicles/${req.file.filename}` : null;
+        // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่งเป็น Base64/URL ผ่าน req.body
+        const uploadUrl = req.file ? `/uploads/vehicles/${req.file.filename}` : req.body.uploadUrl || null;
 
         const newVehicle = await prisma.vehicle.create({
             data: {
-                vehicleName: req.body.vehicleName || `${req.body.brand} ${req.body.model}`,
-                plateNumber: req.body.plate || req.body.plateNumber,
-                brand: req.body.brand || "ไม่ระบุ",
-                model: req.body.model || "ไม่ระบุ",
-                seats: parseInt(req.body.seats || req.body.capacity || 4, 10),
-                status: req.body.status || 'AVAILABLE',
-                uploadUrl: uploadUrl,
+                // 💡 ถ้ามี vehicleName ส่งมาให้ใช้เลย ถ้าไม่มีให้เอา brand + model ต่อกัน
+                vehicleName: vehicleName || `${brand} ${model}`,
+                plateNumber,
+                brand,
+                model,
+                seats: seatNumber,
+                status: status || 'AVAILABLE',
+                uploadUrl: uploadUrl
             }
         });
 
@@ -122,77 +99,61 @@ exports.getVehicleById = async (req, res) => {
         return res.status(500).json({ success: false, error: "ระบบขัดข้องในการดึงข้อมูลรถ" });
     }
 };
-
 // 4. แก้ไขข้อมูลรถยนต์
 exports.updateVehicle = async (req, res) => {
     try {
         const vehicleId = parseInt(req.params.id, 10);
-        
+        // 💡 เพิ่ม vehicleName ให้สามารถแก้ไขชื่อรถได้ด้วย
+        const { vehicleName, plateNumber, brand, model, seats, status } = req.body;
+
         if (isNaN(vehicleId)) {
             if (req.file) await safeDeleteFile(req.file.path);
             return res.status(400).json({ success: false, error: "ID ของรถยนต์ไม่ถูกต้อง" });
         }
 
-        const existingVehicle = await prisma.vehicle.findUnique({
-            where: { id: vehicleId }
-        });
-
-        if (!existingVehicle) {
+        const existingVehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+        if (!existingVehicle || existingVehicle.isDeleted) {
             if (req.file) await safeDeleteFile(req.file.path);
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ที่ต้องการแก้ไข" });
         }
 
-        const targetPlate = req.body.plate || req.body.plateNumber;
-        
-        if (targetPlate && targetPlate !== existingVehicle.plateNumber) {
-            const plateUsedByOther = await prisma.vehicle.findFirst({
-                where: {
-                    plateNumber: targetPlate,
-                    id: { not: vehicleId }, 
-                    isDeleted: false        
-                }
-            });
-
-            if (plateUsedByOther) {
+        if (plateNumber && plateNumber !== existingVehicle.plateNumber) {
+            const duplicatePlate = await prisma.vehicle.findUnique({ where: { plateNumber: plateNumber } });
+            if (duplicatePlate) {
                 if (req.file) await safeDeleteFile(req.file.path);
-                return res.status(400).json({ 
-                    success: false, 
-                    error: `ป้ายทะเบียน ${targetPlate} ถูกใช้งานโดยรถยนต์คันอื่นแล้ว` 
-                });
+                return res.status(400).json({ success: false, error: `ป้ายทะเบียน ${plateNumber} มีในระบบแล้ว` });
             }
         }
 
-        const uploadUrl = req.file ? `/uploads/vehicles/${req.file.filename}` : existingVehicle.uploadUrl;
+        let newUploadUrl = existingVehicle.uploadUrl;
+        if (req.file) {
+            newUploadUrl = `/uploads/vehicles/${req.file.filename}`;
+            if (existingVehicle.uploadUrl) {
+                const oldFilePath = path.join(process.cwd(), existingVehicle.uploadUrl);
+                await safeDeleteFile(oldFilePath);
+            }
+        } else if (req.body.uploadUrl) {
+            newUploadUrl = req.body.uploadUrl; // รองรับกรณีส่ง path มาตรงๆ
+        }
 
         const updatedVehicle = await prisma.vehicle.update({
             where: { id: vehicleId },
             data: {
-                vehicleName: req.body.vehicleName || existingVehicle.vehicleName,
-                plateNumber: targetPlate || existingVehicle.plateNumber,
-                brand: req.body.brand || existingVehicle.brand,
-                model: req.body.model || existingVehicle.model,
-                seats: req.body.seats ? parseInt(req.body.seats, 10) : existingVehicle.seats,
-                status: req.body.status || existingVehicle.status,
-                uploadUrl: uploadUrl,
+                vehicleName: vehicleName || existingVehicle.vehicleName, // 💡 อัปเดตชื่อรถ
+                plateNumber: plateNumber || existingVehicle.plateNumber,
+                brand: brand || existingVehicle.brand,
+                model: model || existingVehicle.model,
+                seats: seats ? parseInt(seats, 10) : existingVehicle.seats,
+                status: status || existingVehicle.status,
+                uploadUrl: newUploadUrl
             }
         });
 
-        // ✅ [FIX STORAGE LEAK] ลบรูปภาพเก่าทิ้ง หากมีการอัปโหลดรูปภาพใหม่เข้ามาสำเร็จ
-        if (req.file && existingVehicle.uploadUrl) {
-            const oldFilePath = path.join(process.cwd(), existingVehicle.uploadUrl);
-            await safeDeleteFile(oldFilePath);
-        }
-
-        return res.status(200).json({ 
-            success: true, 
-            message: "แก้ไขข้อมูลรถยนต์สำเร็จ", 
-            data: updatedVehicle 
-        });
-
+        return res.status(200).json({ success: true, data: updatedVehicle, message: "แก้ไขข้อมูลรถสำเร็จ" });
     } catch (error) {
         if (req.file) await safeDeleteFile(req.file.path);
         console.error("Update Vehicle Error:", error);
-        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการแก้ไขข้อมูลรถยนต์" });
+        return res.status(500).json({ success: false, error: "ไม่สามารถแก้ไขข้อมูลรถได้" });
     }
 };
 
@@ -213,8 +174,7 @@ exports.deleteVehicle = async (req, res) => {
             where: {
                 vehicleId: vehicleId,
                 endDatetime: { gt: new Date() },
-                // ✅ [FIX STATUS ARRAY] ใช้ Array เต็มเหมือนระบบตรวจคิวซ้อน เพื่อป้องกัน False Positive
-                status: { notIn: ['Cancelled', 'CANCELLED', 'COMPLETED', 'Completed', 'Rejected', 'REJECTED'] }
+                status: { notIn: ['Cancelled', 'Rejected'] }
             }
         });
 
@@ -227,89 +187,13 @@ exports.deleteVehicle = async (req, res) => {
         }
 
         await prisma.vehicle.update({
-            where: {
-                id: parseInt(req.params.id)
-            },
-            data: {
-                isDeleted: true 
-            }
-        });
-        
+        where: {id: parseInt(req.params.id)},
+        data: {isDeleted: true}
+    });
+
         return res.status(200).json({ success: true, message: "ลบข้อมูลรถออกจากระบบสำเร็จ (Soft Delete)" });
     } catch (error) {
         console.error("Delete Vehicle Error:", error);
         return res.status(500).json({ success: false, error: "ไม่สามารถลบข้อมูลรถได้" });
-    }
-};
-
-// 6. ตรวจสอบและดึงรายการรถยนต์ที่ว่างตามวันเวลา (Available Vehicles)
-exports.getAvailableVehicles = async (req, res) => {
-    try {
-        const { start, end } = req.query;
-        const page = parseInt(req.query.page, 10) || 1;
-        const limit = parseInt(req.query.limit, 10) || 10;
-        const skip = (page - 1) * limit;
-
-        if (!start || !end) {
-            return res.status(400).json({ success: false, error: "กรุณาระบุวันเวลาเริ่มต้น (start) และสิ้นสุด (end) เพื่อตรวจสอบรถว่าง" });
-        }
-
-        const startQueryDate = new Date(start);
-        const endQueryDate = new Date(end);
-
-        if (isNaN(startQueryDate.getTime()) || isNaN(endQueryDate.getTime())) {
-            return res.status(400).json({ success: false, error: "รูปแบบวันเวลาไม่ถูกต้อง ตัวอย่างที่ถูก: 2026-07-03T14:00:00.000Z" });
-        }
-
-        if (startQueryDate >= endQueryDate) {
-            return res.status(400).json({ success: false, error: "วันเวลาเริ่มต้นต้องน้อยกว่าวันเวลาสิ้นสุด" });
-        }
-
-        const conflictingBookings = await prisma.vehicleBooking.findMany({
-            where: {
-                // ✅ [FIX STATUS ARRAY] อัปเดตให้เหมือนระบบตรวจสอบการชนกัน
-                status: { notIn: ['Cancelled', 'CANCELLED', 'COMPLETED', 'Completed', 'Rejected', 'REJECTED'] },
-                startDatetime: { lt: endQueryDate },
-                endDatetime: { gt: startQueryDate }
-            },
-            select: { vehicleId: true }
-        });
-
-        const conflictingVehicleIds = conflictingBookings.map(booking => booking.vehicleId);
-
-        const whereCondition = {
-            isDeleted: false,
-            id: { notIn: conflictingVehicleIds }
-        };
-
-        const [totalItems, availableVehicles] = await prisma.$transaction([
-            prisma.vehicle.count({ where: whereCondition }),
-            prisma.vehicle.findMany({
-                where: whereCondition,
-                skip: skip,
-                take: limit,
-                orderBy: { createdAt: 'desc' }
-            })
-        ]);
-
-        const totalPages = Math.ceil(totalItems / limit);
-
-        return res.status(200).json({
-            success: true,
-            message: "ตรวจสอบและดึงข้อมูลรายการรถยนต์ที่ว่างสำเร็จ",
-            pagination: {
-                totalItems,
-                totalPages,
-                currentPage: page,
-                limit,
-                hasNextPage: page < totalPages,
-                hasPreviousPage: page > 1
-            },
-            data: availableVehicles
-        });
-
-    } catch (error) {
-        console.error("Get Available Vehicles Error:", error);
-        return res.status(500).json({ success: false, error: "ระบบขัดข้องในการตรวจสอบสถานะรถว่าง" });
     }
 };

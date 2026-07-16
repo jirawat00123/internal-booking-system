@@ -19,31 +19,31 @@ model Department {
 }
 
 model Position {
-  id           Int        @id @default(autoincrement())
-  positionName String     @map("position_name")
+  id           Int    @id @default(autoincrement())
+  positionName String @map("position_name")
 
   // 1. ช่องเก็บเลข ID ของแผนก (จัดเก็บลงฐานข้อมูลจริง)
-  departmentId Int        @map("department_id")   
+  departmentId Int @map("department_id")
 
   // 2. ตัวเชื่อมความสัมพันธ์เสมือน เพื่อให้ Prisma ทำงานร่วมกับตาราง Department ได้
-  department   Department @relation(fields: [departmentId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
 
-  employees    Employee[]
+  employees Employee[]
 
   @@index([departmentId]) // ทำหน้าที่ช่วยให้ค้นหาตำแหน่งตามแผนกได้เร็วขึ้น
   @@map("positions")
 }
 
 model Employee {
-  id             Int              @id @default(autoincrement())
-  employeeCode   String           @unique @map("employee_code")
-  fullName       String           @map("full_name")
-  positionId     Int              @map("position_id")
-  departmentId   Int              @map("departments_id")
-  isActive       Boolean          @default(true) @map("is_active") // 👈 เพิ่มบรรทัดนี้เข้าไปครับ
-  department     Department       @relation(fields: [departmentId], references: [id])
-  position       Position         @relation(fields: [positionId], references: [id])
-  users          User[]
+  id           Int        @id @default(autoincrement())
+  employeeCode String     @unique @map("employee_code")
+  fullName     String     @map("full_name")
+  positionId   Int        @map("position_id")
+  departmentId Int        @map("departments_id")
+  isActive     Boolean    @default(true) @map("is_active") // 👈 เพิ่มบรรทัดนี้เข้าไปครับ
+  department   Department @relation(fields: [departmentId], references: [id])
+  position     Position   @relation(fields: [positionId], references: [id])
+  users        User[]
 
   @@index([positionId])
   @@map("employees")
@@ -72,7 +72,8 @@ model User {
   employee                Employee                @relation(fields: [employeeId], references: [id])
   role                    Role                    @relation(fields: [roleId], references: [id])
   vehicleBookingHistories VehicleBookingHistory[] @relation("VehicleHistoryByUser")
-  vehicleBookings         VehicleBooking[]
+  vehicleBookings         VehicleBooking[]        @relation("BookingUser")
+  drivedVehicleBookings   VehicleBooking[]        @relation("BookingDriver")
   vehicleLogsCheckOut     VehicleLog[]            @relation("CheckoutByUser")
   vehicleLogsReturn       VehicleLog[]            @relation("ReturnByUser")
 
@@ -94,18 +95,18 @@ model AuditLog {
 }
 
 model Room {
-  id         Int           @id @default(autoincrement())
-  roomName   String        @map("room_name")
-  location   String
-  capacity   Int
-  status     RoomStatus    @default(AVAILABLE)
-  uploadUrl  String?       @map("upload_url")
+  id        Int        @id @default(autoincrement())
+  roomName  String     @map("room_name")
+  location  String
+  capacity  Int
+  status    RoomStatus @default(AVAILABLE)
+  uploadUrl String?    @map("upload_url")
 
-  isDeleted  Boolean       @default(false) @map("is_deleted")
+  isDeleted Boolean @default(false) @map("is_deleted")
 
-  createdAt  DateTime      @default(now()) @map("created_at")
-  updatedAt  DateTime      @updatedAt @map("updated_at")
-  bookings   RoomBooking[]
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  bookings  RoomBooking[]
 
   @@map("rooms")
 }
@@ -149,26 +150,30 @@ model Vehicle {
 }
 
 model VehicleBooking {
-  id               Int                     @id @default(autoincrement())
-  vehicleId        Int                     @map("vehicle_id")
-  userId           Int                     @map("user_id")
-  destination      String
-  startDatetime    DateTime                @map("start_datetime")
-  endDatetime      DateTime                @map("end_datetime")
-  purpose          String
-  status           String                  @default("Pending")
-  createdAt        DateTime                @default(now()) @map("created_at")
-  updatedAt        DateTime                @updatedAt @map("updated_at")
-  passengers       Int                     @default(1) @map("passengers")
-  attachments      Attachment[]
-  histories        VehicleBookingHistory[]
-  user             User                    @relation(fields: [userId], references: [id])
-  vehicle          Vehicle                 @relation(fields: [vehicleId], references: [id])
-  vehicleLogs      VehicleLog[]
+  id            Int                     @id @default(autoincrement())
+  vehicleId     Int                     @map("vehicle_id")
+  userId        Int                     @map("user_id")
+  destination   String
+  startDatetime DateTime                @map("start_datetime")
+  endDatetime   DateTime                @map("end_datetime")
+  purpose       String
+  status        String                  @default("Pending")
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+  passengers    Int                     @default(1) @map("passengers")
+  driverId      Int?                    @map("driver_id") // 💡 1. เพิ่ม Foreign Key เก็บ ID คนขับ (เป็น Nullable เพราะอาจจะเลือกขับเอง)
+  attachments   Attachment[]
+  histories     VehicleBookingHistory[]
+  // 💡 2. เพิ่มชื่อ Relation (เช่น "BookingUser") เพื่อป้องกัน Prisma สับสน กรณีที่มี FK ชี้ไปที่ตาราง User 2 ตัว
+  user          User                    @relation("BookingUser", fields: [userId], references: [id])
+  vehicle       Vehicle                 @relation(fields: [vehicleId], references: [id])
+  vehicleLogs   VehicleLog[]
+  // 💡 3. เพิ่ม Relation 'driver' ตามที่ Route ต้องการ include 
+  driver        User?                   @relation("BookingDriver", fields: [driverId], references: [id])
 
   @@index([vehicleId])
   @@index([userId])
-  @@map("vehicle_bookings")
+  @@index([driverId]) // 💡 4. ควรทำ Index เพื่อให้ Query ไวขึ้น
 }
 
 model VehicleLog {
@@ -200,19 +205,26 @@ model Attachment {
   entityType       String          @map("entity_type")
   entityId         Int             @map("entity_id")
   fileName         String          @map("file_name")
-  filePath         String          @map("file_path")
+  // ✅ 1. เพิ่ม @unique เพื่อป้องกันไฟล์ผี/การบันทึก UUID ซ้ำซ้อนลงฐานข้อมูล
+  filePath         String          @unique @map("file_path")
   fileType         String          @map("file_type")
   uploadedById     Int             @map("uploaded_by")
   createdAt        DateTime        @default(now()) @map("created_at")
+  // ✅ 2. (Optional แนะนำให้มี) เพิ่มเวลาอัปเดต เพื่อให้รู้ว่าไฟล์ถูกกดลบ (isDeleted) ไปเมื่อไหร่
+  updatedAt        DateTime        @updatedAt @map("updated_at")
   vehicleBookingId Int?            @map("vehicle_booking_id")
   roomBookingId    Int?            @map("room_booking_id")
-  bookingRoom      RoomBooking?    @relation(fields: [roomBookingId], references: [id])
-  uploadedBy       User            @relation(fields: [uploadedById], references: [id])
-  bookingVehicle   VehicleBooking? @relation(fields: [vehicleBookingId], references: [id])
+  // ✅ 3. เพิ่ม onDelete: Cascade เพื่อให้ระบบเคลียร์ประวัติรูปรถยนต์ทิ้งอัตโนมัติ เมื่อใบจองรถถูกลบออกจากฐานข้อมูล
+  bookingRoom      RoomBooking?    @relation(fields: [roomBookingId], references: [id], onDelete: Cascade)
+  uploadedBy       User            @relation(fields: [uploadedById], references: [id]) // User ไม่ควรลบง่ายๆ จึงไม่ต้อง Cascade
+  bookingVehicle   VehicleBooking? @relation(fields: [vehicleBookingId], references: [id], onDelete: Cascade)
+  isDeleted        Boolean         @default(false) @map("is_deleted")
 
   @@index([vehicleBookingId])
   @@index([roomBookingId])
   @@index([uploadedById])
+  // ✅ 4. เพิ่ม Compound Index เพื่อบูสต์ความเร็วการดึงรูปรถ/รูปห้อง ให้มีความเร็วระดับ O(1) (ค้นหาเจอทันทีไม่ต้องสแกนทั้งตาราง)
+  @@index([entityType, entityId])
   @@map("attachments")
 }
 

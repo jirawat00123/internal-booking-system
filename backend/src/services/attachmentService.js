@@ -61,6 +61,10 @@ const getAttachmentById = async (attachmentId, userId, roleId) => {
     where: { id: parseInt(attachmentId, 10) }
   });
 
+  if (!attachment || attachment.isDeleted) {
+    throw new Error('ATTACHMENT_NOT_FOUND');
+  }
+
   if (!attachment) {
     throw new Error('ATTACHMENT_NOT_FOUND');
   }
@@ -74,7 +78,67 @@ const getAttachmentById = async (attachmentId, userId, roleId) => {
   return attachment;
 };
 
+/**
+ * Get Attachments By Entity Type and ID
+ * (คืนค่าเฉพาะ Metadata ไม่ได้โหลดไฟล์จริงเพื่อประหยัด Memory)
+ */
+const getAttachmentsByEntity = async (entityType, entityId) => {
+  const parsedEntityId = parseInt(entityId, 10);
+  
+  const attachments = await prisma.attachment.findMany({
+    where: {
+      entityType: entityType,
+      entityId: parsedEntityId,
+      isDeleted: false // ➕ เพิ่มเงื่อนไขนี้
+    },
+    select: {
+      id: true,
+      entityType: true,
+      entityId: true,
+      fileName: true,
+      fileType: true,
+      uploadedById: true,
+      createdAt: true
+    }
+  });
+
+  return attachments;
+};
+
+/**
+ * Delete Attachment (Database + Physical File)
+ * พร้อม IDOR Protection
+ */
+const deleteAttachmentById = async (attachmentId, userId, roleId) => {
+  const id = parseInt(attachmentId, 10);
+
+  // 1. ค้นหาไฟล์เพื่อตรวจสอบสิทธิ์และเอา filePath
+  const attachment = await prisma.attachment.findUnique({
+    where: { id: id }
+  });
+
+  if (!attachment) {
+    throw new Error('ATTACHMENT_NOT_FOUND');
+  }
+
+  // 2. IDOR Protection (Admin หรือ เจ้าของไฟล์เท่านั้นถึงลบได้)
+  if (attachment.uploadedById !== parseInt(userId, 10) && parseInt(roleId, 10) !== 1) {
+    throw new Error('FORBIDDEN_ACCESS');
+  }
+
+  // 3. ลบข้อมูลออกจาก Database
+  await prisma.attachment.update({
+    where: { id: id },
+    data: { isDeleted: true }
+  });
+    // ไม่ throw error ให้ระบบพัง เพราะ DB ลบสำเร็จแล้ว
+
+  return true;
+};
+
 module.exports = {
   createAttachmentRecord,
-  getAttachmentById
+  getAttachmentById,
+  getAttachmentsByEntity, // ➕ ส่งออกฟังก์ชันใหม่
+  deleteAttachmentById    // ➕ ส่งออกฟังก์ชันใหม่
 };

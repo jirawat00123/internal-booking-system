@@ -340,7 +340,8 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                                       const SizedBox(width: 24),
                                       _buildStepperBtn(Icons.add, () {
                                         if (passengerCount <
-                                            selectedVehicle.capacity) {
+                                            selectedVehicle.seats) {
+                                          // 💡 เปลี่ยน capacity เป็น seats ให้ตรงกับ Model
                                           setState(() {
                                             passengerCount++;
                                           });
@@ -486,7 +487,11 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
   }
 
   // การ์ดแสดงรถที่เลือก
+  // การ์ดแสดงรถที่เลือก
   Widget _buildSelectedVehicleCard() {
+    // 💡 สร้างตัวแปร imageUrl มารับค่า uploadUrl เพื่อป้องกันค่า Null (เนื่องจากใน Model เป็น String?)
+    final String imageUrl = selectedVehicle.uploadUrl ?? '';
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -504,23 +509,35 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: selectedVehicle.imagePath.isNotEmpty
-                ? (selectedVehicle.imagePath.startsWith('assets/')
+            child: imageUrl.isNotEmpty
+                ? (imageUrl.startsWith('assets/')
                       ? Image.asset(
-                          selectedVehicle.imagePath,
+                          imageUrl,
                           width: 100,
                           height: 70,
                           fit: BoxFit.cover,
                         )
                       : (kIsWeb
                             ? Image.network(
-                                selectedVehicle.imagePath,
+                                imageUrl,
                                 width: 100,
                                 height: 70,
                                 fit: BoxFit.cover,
+                                // 💡 ดักจับ Error 404 เพื่อให้แสดง Placeholder สีเทา แทนที่แอปจะล่ม
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    width: 100,
+                                    height: 70,
+                                    color: Colors.grey.shade200,
+                                    child: const Icon(
+                                      Icons.broken_image,
+                                      color: Colors.grey,
+                                    ),
+                                  );
+                                },
                               )
                             : Image.file(
-                                File(selectedVehicle.imagePath),
+                                File(imageUrl),
                                 width: 100,
                                 height: 70,
                                 fit: BoxFit.cover,
@@ -537,8 +554,10 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 💡 เปลี่ยน name, type เป็น vehicleName, brand, model
                 Text(
-                  '${selectedVehicle.name} ${selectedVehicle.type}',
+                  '${selectedVehicle.vehicleName} ${selectedVehicle.brand} ${selectedVehicle.model}'
+                      .trim(),
                   style: const TextStyle(
                     fontFamily: 'Kanit',
                     fontSize: 16,
@@ -549,8 +568,9 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
+                // 💡 เปลี่ยน plate เป็น plateNumber
                 Text(
-                  selectedVehicle.plate,
+                  selectedVehicle.plateNumber,
                   style: const TextStyle(
                     fontFamily: 'Kanit',
                     fontSize: 14,

@@ -46,9 +46,6 @@ const fileFilter = (req, file, cb) => {
 const uploadMiddleware = multer({
   storage: storage,
   fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // File Size Validation: 5MB Limit
-  }
 });
 
 module.exports = uploadMiddleware;

@@ -80,8 +80,9 @@ exports.getInUseVehicles = async (req, res, next) => {
 // =========================================================================
 exports.checkOut = async (req, res, next) => {
   try {
-    const { vehicleBookingId, checkoutMileage, checkoutFuelLevel, images } = req.body;
-    const guardId = req.user ? req.user.id : null;
+    // ✅ นำตัวแปร images ออกจากการรับค่า เพราะ frontend จะแยกไปยิงที่ /api/attachments/upload แล้ว
+    const { vehicleBookingId, checkoutMileage, checkoutFuelLevel } = req.body;
+    const guardId = req.user ? req.user.userId : null;
 
     if (!vehicleBookingId || checkoutMileage === undefined || checkoutFuelLevel === undefined) {
       return res.status(400).json({
@@ -158,22 +159,7 @@ exports.checkOut = async (req, res, next) => {
         }
       });
 
-      // 5. บันทึกหลักฐานรูปถ่ายผ่านโมเดล Attachment (ถ้ามีการส่งมา)
-      if (images && Array.isArray(images)) {
-        for (const img of images) {
-          await tx.attachment.create({
-            data: {
-              entityType: 'VEHICLE_CHECK_OUT',
-              entityId: log.id,
-              fileName: img.fileName || 'checkout.jpg',
-              filePath: img.filePath || '',
-              fileType: img.fileType || 'image/jpeg',
-              uploadedById: guardId,
-              vehicleBookingId: bookingId
-            }
-          });
-        }
-      }
+      // ✅ ลบบล็อก tx.attachment.create(images) ออกเรียบร้อยแล้ว
     });
 
     return res.status(200).json({
@@ -197,8 +183,10 @@ exports.checkOut = async (req, res, next) => {
 // =========================================================================
 exports.checkIn = async (req, res, next) => {
   try {
-    const { vehicleBookingId, returnMileage, returnFuelLevel, images } = req.body;
-    const guardId = req.user ? req.user.id : null;
+    // ✅ 1. นำตัวแปร images ออกจากการรับค่า
+    const { vehicleBookingId, returnMileage, returnFuelLevel } = req.body;
+    // ✅ 2. เปลี่ยนมาใช้ req.user.userId ให้ตรงกับ JWT Payload
+    const guardId = req.user ? req.user.userId : null;
 
     if (!vehicleBookingId || returnMileage === undefined || returnFuelLevel === undefined) {
       return res.status(400).json({
@@ -283,22 +271,7 @@ exports.checkIn = async (req, res, next) => {
         }
       });
 
-      // บันทึกหลักฐานรูปถ่ายสภาพรถยนต์ตอนขากลับเข้าสู่ Attachment
-      if (images && Array.isArray(images)) {
-        for (const img of images) {
-          await tx.attachment.create({
-            data: {
-              entityType: 'VEHICLE_CHECK_IN',
-              entityId: existingLog.id,
-              fileName: img.fileName || 'checkin.jpg',
-              filePath: img.filePath || '',
-              fileType: img.fileType || 'image/jpeg',
-              uploadedById: guardId,
-              vehicleBookingId: bookingId
-            }
-          });
-        }
-      }
+      // ✅ 3. ลบบล็อกที่ทำหน้าที่บันทึก Attachment ซ้ำซ้อนออกเรียบร้อยแล้ว
     });
 
     return res.status(200).json({
