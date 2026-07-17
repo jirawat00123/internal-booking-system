@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
-import '../PinError.dart'; 
-import 'SecurityGroupPage.dart'; // 👈 เปลี่ยนเป็นหน้าของ รปภ.
+import 'PinError.dart'; 
+import 'Security/SecurityGroupPage.dart'; // 👈 เปลี่ยนเป็นหน้าของ รปภ.
 
 class Security_Pinpage extends StatefulWidget {
   const Security_Pinpage({super.key});
@@ -117,7 +117,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/bg.png'),
+                image: AssetImage('assets/images/bgmmk.png'),
                 fit: BoxFit.cover,
               ),
             ),

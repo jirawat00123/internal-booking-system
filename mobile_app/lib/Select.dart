@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'Manage.dart'; 
 import 'Admin_pin.dart'; 
+import 'SecurityPin.dart';
 
 class LoginSelectionPage extends StatelessWidget {
   const LoginSelectionPage({super.key});
@@ -97,7 +98,12 @@ class LoginSelectionPage extends StatelessWidget {
                                   title: 'ความปลอดภัย (รปภ)',
                                   subtitle: 'ตรวจสอบและบันทึกรถเข้า-ออก',
                                   onTap: () {
-                                    // TODO: หน้ารปภ.
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const Security_Pinpage(), 
+                                      ),
+                                    );
                                   },
                                 ),
                                 const SizedBox(height: 16),
