@@ -3,7 +3,7 @@ import 'Select.dart'; // เชื่อมไปหาหน้า LoginSelecti
 import 'Manage.dart'; 
 import 'Digitel.dart'; 
 import 'Booking_room/Room_Completed.dart'; 
-// 👈 เพิ่มชิ้นนี้ (ปรับชื่อไฟล์ .dart ให้ตรงกับชื่อไฟล์จริงของคุณนะครับ เช่น digitel.dart)
+
 
 void main() {
   runApp(const WelcomeApp());
