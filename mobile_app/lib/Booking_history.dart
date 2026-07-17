@@ -242,7 +242,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const UserMenuPage()), (route) => false),
+          onPressed: () => Navigator.pop(context),
         ),
         title: const Text('ประวัติและสถานะ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18, fontFamily: 'Kanit')),
         centerTitle: true,

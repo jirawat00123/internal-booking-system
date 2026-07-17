@@ -3,6 +3,7 @@ import 'package:mobile_app/Admin/vehicle/vehicle_page.dart';
 import 'package:flutter/material.dart';
 import '/Admin/room/Admin_roompage.dart';
 import 'Select.dart';
+import 'Booking_History.dart'; // นำเข้าหน้า BookingHistoryScreen
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ
 
 class AdminGroupPage extends StatelessWidget {
@@ -32,21 +33,30 @@ class AdminGroupPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start, // จัดชิดซ้า
                 children: [
                   const SizedBox(height: 20),
-                  
-                  
+
                   Align(
                     alignment: Alignment.topRight,
                     child: OutlinedButton.icon(
                       onPressed: () {
                         Navigator.push(
-    context,
-    MaterialPageRoute(builder: (context) => const LoginSelectionPage()),
-  );
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LoginSelectionPage(),
+                          ),
+                        );
                       },
-                      icon: const Icon(Icons.logout, color: Colors.white, size: 16),
+                      icon: const Icon(
+                        Icons.logout,
+                        color: Colors.white,
+                        size: 16,
+                      ),
                       label: const Text(
                         'ออกจากระบบ',
-                        style: TextStyle(color: Colors.white, fontSize: 12, fontFamily: 'Kanit'),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontFamily: 'Kanit',
+                        ),
                       ),
                       style: OutlinedButton.styleFrom(
                         backgroundColor: Colors.white.withOpacity(0.2),
@@ -54,7 +64,10 @@ class AdminGroupPage extends StatelessWidget {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 6,
+                        ),
                         minimumSize: Size.zero,
                       ),
                     ),
@@ -64,42 +77,39 @@ class AdminGroupPage extends StatelessWidget {
 
                   // --- โลโก้ และข้อความต้อนรับ ---
                   const SizedBox(height: 40),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center, 
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start, 
-                          children: [
-                            
-                            Image.asset(
-                              'assets/images/MMK_logo.png', 
-                              height: 100,
-                              fit: BoxFit.contain,
-                            ),
-                            const SizedBox(height: 16),
-                            
-                            
-                            Container(
-                              width: 320, 
-                              height: 1,   
-                              color: Colors.white.withOpacity(0.9), 
-                            ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Image.asset(
+                            'assets/images/MMK_logo.png',
+                            height: 100,
+                            fit: BoxFit.contain,
+                          ),
+                          const SizedBox(height: 16),
 
-                            const SizedBox(height: 20),
-                            
-                           
-                            const Text(
-                              'ยินดีต้อนรับ Admin',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                          Container(
+                            width: 320,
+                            height: 1,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          const Text(
+                            'ยินดีต้อนรับ Admin',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
 
                   const SizedBox(height: 30),
 
@@ -113,48 +123,72 @@ class AdminGroupPage extends StatelessWidget {
                           title: 'ห้องประชุม',
                           onTap: () {
                             Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => const MobileFrameContainer(), 
-                                      ),
-                                    );
-                                  
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const MobileFrameContainer(),
+                              ),
+                            );
                           },
                         ),
                         const SizedBox(height: 16),
-                        
+
                         AdminMenuCard(
                           icon: Icons.directions_car_filled_outlined,
                           title: 'ยานพาหนะ',
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => const VehiclePage()),
+                              MaterialPageRoute(
+                                builder: (context) => const VehiclePage(),
+                              ),
                             );
                           },
                         ),
                         const SizedBox(height: 16),
-                        
+
                         AdminMenuCard(
                           icon: Icons.car_rental, // ไอคอนรูปรถและกุญแจ
                           title: 'ระบบจัดการรถ เข้า - ออก',
-                          onTap: () {
-                            
-                          },
+                          onTap: () {},
                         ),
                         const SizedBox(height: 16),
-                        
+
                         AdminMenuCard(
                           icon: Icons.people_alt_outlined,
                           title: 'ระบบจัดการผู้ใช้',
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (context) => const UsersPage()),
+                              MaterialPageRoute(
+                                builder: (context) => const UsersPage(),
+                              ),
                             );
-                            
                           },
                         ),
+                        // นำไปวางต่อจากปุ่มสุดท้าย (ก่อนถึงข้อความลิขสิทธิ์ด้านล่าง)
+                        Center(
+                      child: TextButton.icon(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const BookingHistoryScreen()),
+                          );
+                        },
+                        icon: const Icon(Icons.history, color: Colors.white, size: 18),
+                        label: const Text(
+                          'ประวัติการจอง',
+                          style: TextStyle(color: Colors.white, fontSize: 14),
+                        ),
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.white.withOpacity(0.3), 
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                        ),
+                      ),
+                    ),
                       ],
                     ),
                   ),
@@ -164,7 +198,7 @@ class AdminGroupPage extends StatelessWidget {
                     child: Column(
                       children: [
                         Container(
-                          height:1,
+                          height: 1,
                           width: double.infinity,
                           color: Colors.white.withOpacity(0.9),
                         ),
@@ -228,7 +262,10 @@ class AdminMenuCard extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 16.0,
+            ),
             child: Row(
               children: [
                 // กล่องไอคอน
@@ -241,7 +278,7 @@ class AdminMenuCard extends StatelessWidget {
                   child: Icon(icon, size: 28, color: const Color(0xFF00529B)),
                 ),
                 const SizedBox(width: 16),
-                
+
                 // ข้อความชื่อเมนู
                 Expanded(
                   child: Text(
@@ -254,7 +291,7 @@ class AdminMenuCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                
+
                 // ไอคอนลูกศร
                 Container(
                   padding: const EdgeInsets.all(6),
@@ -262,7 +299,11 @@ class AdminMenuCard extends StatelessWidget {
                     color: Color(0xFFE8F1F5),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.chevron_right, size: 20, color: Color(0xFF00529B)),
+                  child: const Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: Color(0xFF00529B),
+                  ),
                 ),
               ],
             ),

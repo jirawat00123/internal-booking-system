@@ -35,9 +35,11 @@ class VehicleBookingSuccessPage extends StatelessWidget {
               width: 280, height: 50,
               child: ElevatedButton(
                 onPressed: () {
-                   // 💡 เปลี่ยน MyHistoryPage() เป็นชื่อคลาสหน้าประวัติของคุณ
-                   // ใช้ pushAndRemoveUntil เพื่อลบประวัติการกด Back ป้องกันผู้ใช้กดย้อนกลับมาหน้า Success
-                   Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => const BookingHistoryScreen()), (route) => false);
+                   
+                   Navigator.pushAndRemoveUntil
+                   (context, MaterialPageRoute(builder: (context) => const BookingHistoryScreen()
+                   ), 
+                   (Route<dynamic> route) => route.isFirst,);
                 },
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                 child: const Text('ไปที่ประวัติการจอง', style: TextStyle(color: Color(0xFF1E2838), fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
