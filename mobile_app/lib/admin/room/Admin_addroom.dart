@@ -1,10 +1,15 @@
 import 'dart:io'; 
+import 'package:http/http.dart' as http; // 💡 ดึง API
+import 'package:shared_preferences/shared_preferences.dart'; // 💡 จัดการ Token
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart'; 
 import 'Admin_addsuccess.dart'; 
 import 'Admin_roompage.dart'; 
 import '../../Booking_room/Room_model.dart'; 
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:convert';
 
+// ... (MobileFrameAddRoomContainer เหมือนเดิมเป๊ะ ขอข้ามไปที่ State เลยครับ)
 class MobileFrameAddRoomContainer extends StatelessWidget {
   const MobileFrameAddRoomContainer({super.key});
 
@@ -17,13 +22,7 @@ class MobileFrameAddRoomContainer extends StatelessWidget {
           width: 400, 
           height: 800, 
           clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(30), 
-            boxShadow: const [
-              BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5),
-            ],
-          ),
+          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(30), boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5)]),
           child: const AddMeetingRoomScreen(), 
         ),
       ),
@@ -33,14 +32,13 @@ class MobileFrameAddRoomContainer extends StatelessWidget {
 
 class AddMeetingRoomScreen extends StatefulWidget {
   const AddMeetingRoomScreen({Key? key}) : super(key: key);
-
   @override
   _AddMeetingRoomScreenState createState() => _AddMeetingRoomScreenState();
 }
 
 class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
   int floorNumber = 1;
-  String selectedSide = 'A';
+  String selectedSide = 'สำนักงาน';
   int capacity = 4;
 
   XFile? _imageFile;
@@ -48,63 +46,84 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
 
   Future<void> _pickImage() async {
     try {
-      final XFile? pickedFile = await _picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 600,
-        imageQuality: 85,
-      );
-
-      if (pickedFile != null) {
-        setState(() {
-          _imageFile = pickedFile;
-        });
-      }
+      final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 800, maxHeight: 600, imageQuality: 85);
+      if (pickedFile != null) setState(() => _imageFile = pickedFile);
     } catch (e) {
       debugPrint('เกิดข้อผิดพลาดในการเลือกรูปภาพ: $e');
     }
   }
 
+  // =======================================================
+  // 🚀 ฟังก์ชันบันทึกข้อมูลเข้าฐานข้อมูล (POST)
+  // =======================================================
+  Future<void> _saveRoomToAPI(BuildContext dialogContext) async {
+    Navigator.pop(dialogContext); 
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator())); 
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token = prefs.getString('token') ?? '';
+
+      var request = http.MultipartRequest('POST', Uri.parse('http://localhost:3001/api/rooms'));
+      request.headers['Authorization'] = 'Bearer $token';
+      
+      // 💡 1. สร้างชื่อห้องอัตโนมัติให้เลย แอดมินไม่ต้องพิมพ์เอง!
+      String autoRoomName = 'ห้องประชุม ชั้น $floorNumber ฝั่ง$selectedSide';
+      
+      // 💡 2. ส่งชื่อห้องที่สร้างเองไปให้หลังบ้าน (ส่งไปทั้ง 2 คีย์กันเหนียว)
+      request.fields['name'] = autoRoomName; 
+      request.fields['roomName'] = autoRoomName; 
+      
+      request.fields['location'] = floorNumber.toString(); 
+      request.fields['capacity'] = capacity.toString();
+      
+      if (_imageFile != null) {
+        if (kIsWeb) {
+          var bytes = await _imageFile!.readAsBytes();
+          request.files.add(http.MultipartFile.fromBytes('image', bytes, filename: _imageFile!.name));
+        } else {
+          request.files.add(await http.MultipartFile.fromPath('image', _imageFile!.path));
+        }
+      }
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+
+      Navigator.pop(context); 
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        Navigator.push(context, MaterialPageRoute(builder: (context) => const MobileFrameSuccessContainer()));
+      } else {
+        print('❌ Error จากหลังบ้าน: ${response.body}');
+        // ดึงข้อความ Error จากหลังบ้านมาโชว์บนแอปให้เห็นชัดๆ เลย
+        final errorMsg = jsonDecode(response.body)['message'] ?? 'เกิดข้อผิดพลาด';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMsg, style: const TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.red));
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      print('❌ Catch Error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด', style: TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.red));
+    }
+  }
+  
   void _showAddRoomConfirmDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (BuildContext dialogContext) { 
         return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
             width: 320,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.note_add_outlined,
-                  size: 64,
-                  color: Color(0xFF0D47A1),
-                ),
+                const Icon(Icons.note_add_outlined, size: 64, color: Color(0xFF0D47A1)),
                 const SizedBox(height: 16),
-                const Text(
-                  'ยืนยันการเพิ่มห้อง',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF0D47A1),
-                    fontFamily: 'Kanit',
-                  ),
-                ),
+                const Text('ยืนยันการเพิ่มห้อง', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0D47A1), fontFamily: 'Kanit')),
                 const SizedBox(height: 6),
-                const Text(
-                  'คุณต้องการเพิ่มห้องใช่หรือไม่?',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF0D47A1),
-                    fontFamily: 'Kanit',
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+                const Text('คุณต้องการเพิ่มห้องใช่หรือไม่?', style: TextStyle(fontSize: 13, color: Color(0xFF0D47A1), fontFamily: 'Kanit'), textAlign: TextAlign.center),
                 const SizedBox(height: 28),
                 Row(
                   children: [
@@ -112,49 +131,9 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                       child: SizedBox(
                         height: 44,
                         child: ElevatedButton(
-                          onPressed: () {
-                            // 💡 แก้ไขจุดบันทึกข้อมูลเรียลไทม์: แปลงดึงข้อมูลอาเรย์ชุดเดิมออกมาและสร้างอันใหม่เพื่อยิงสัญญาณอัปเดตไปทุกหน้าจอค้าง
-                            final updatedList = List<MeetingRoom>.from(globalMeetingRooms.value);
-                            
-                            // จำลองสุ่มหรือใช้ ID อิงตามสัดส่วนความยาว
-                            String generatedId = '${floorNumber}0${updatedList.length + 1}';
-                            
-                            updatedList.add(
-                              MeetingRoom(
-                                id: generatedId, 
-                                floor: floorNumber.toString(),
-                                side: selectedSide,
-                                capacity: capacity,
-                                imagePath: _imageFile?.path, 
-                                status: 'ว่างพร้อมใช้งาน',
-                              ),
-                            );
-                            
-                            globalMeetingRooms.value = updatedList; // ข้อมูลเปลี่ยนเรียลไทม์ทันทีในพริบตา!
-
-                            Navigator.pop(dialogContext); 
-                            
-                            debugPrint('บันทึกข้อมูลเข้าสู่ globalMeetingRooms (ValueNotifier) เรียบร้อยแล้ว');
-
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const MobileFrameSuccessContainer(), 
-                              ),
-                            );
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF0096C7),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'ตกลง',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit'),
-                          ),
+                          onPressed: () => _saveRoomToAPI(dialogContext), // 💡 เรียกใช้งาน API ที่เขียนใหม่
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0096C7), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          child: const Text('ตกลง', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                         ),
                       ),
                     ),
@@ -164,18 +143,8 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                         height: 44,
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(dialogContext), 
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFB70000),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'ยกเลิก',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit'),
-                          ),
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB70000), foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          child: const Text('ยกเลิก', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                         ),
                       ),
                     ),
@@ -189,6 +158,7 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
     );
   }
 
+  // 💡 โค้ด UI ส่วนล่างของไฟล์ _AddMeetingRoomScreenState เหมือนเดิมครับ วางต่อได้เลย
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -196,21 +166,8 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF0D47A1),
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
-        title: const Text(
-          'เพิ่มห้องประชุม',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-            fontSize: 20,
-            fontFamily: 'Kanit',
-          ),
-        ),
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios, color: Colors.white), onPressed: () => Navigator.pop(context)),
+        title: const Text('เพิ่มห้องประชุม', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Kanit')),
         centerTitle: true,
       ),
       body: Column(
@@ -218,43 +175,17 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20.0),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  _buildImagePickerCard(),
-                  const SizedBox(height: 40),
-                  _buildFormCard(),
-                ],
-              ),
+              child: Column(children: [const SizedBox(height: 10), _buildImagePickerCard(), const SizedBox(height: 40), _buildFormCard()]),
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.only(left: 24.0, right: 24.0, bottom: 24.0),
             child: SizedBox(
-              width: 220,
-              height: 48,
+              width: 220, height: 48,
               child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0096C7),
-                  shadowColor: Colors.black38,
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14.0),
-                  ),
-                ),
-                onPressed: () {
-                  _showAddRoomConfirmDialog();
-                },
-                child: const Text(
-                  'ต่อไป',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'Kanit',
-                  ),
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0096C7), elevation: 4, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0))),
+                onPressed: _showAddRoomConfirmDialog,
+                child: const Text('ต่อไป', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
               ),
             ),
           ),
@@ -266,52 +197,20 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
   Widget _buildImagePickerCard() {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 15,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 4))]),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text(
-            'เลือกรูปห้องประชุม',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Kanit'),
-          ),
+          const Text('เลือกรูปห้องประชุม', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Kanit')),
           GestureDetector(
             onTap: _pickImage,
             child: Container(
-              width: 110,
-              height: 65,
+              width: 110, height: 65,
               decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(14),
-                image: _imageFile != null
-                    ? DecorationImage(
-                        image: FileImage(File(_imageFile!.path)),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
+                color: Colors.grey[300], borderRadius: BorderRadius.circular(14),
+                image: _imageFile != null ? DecorationImage(image: FileImage(File(_imageFile!.path)), fit: BoxFit.cover) : null,
               ),
-              child: _imageFile == null
-                  ? const Center(
-                      child: Icon(Icons.camera_alt_outlined, color: Colors.black38, size: 24),
-                    )
-                  : Container(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.camera_alt, color: Colors.white70, size: 18),
-                      ),
-                    ),
+              child: _imageFile == null ? const Center(child: Icon(Icons.camera_alt_outlined, color: Colors.black38, size: 24)) : Container(decoration: BoxDecoration(color: Colors.black.withOpacity(0.2), borderRadius: BorderRadius.circular(14)), child: const Center(child: Icon(Icons.camera_alt, color: Colors.white70, size: 18))),
             ),
           ),
         ],
@@ -322,17 +221,7 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
   Widget _buildFormCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 30),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 4))]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -345,51 +234,25 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                   children: [
                     const Text('ชั้นที่', style: TextStyle(color: Color(0xFF9BB1BD), fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                     const SizedBox(height: 10),
-                    _buildCustomStepper(
-                      value: floorNumber,
-                      onMinus: () {
-                        if (floorNumber > 1) setState(() => floorNumber--);
-                      },
-                      onPlus: () {
-                        setState(() => floorNumber++);
-                      },
-                    ),
+                    _buildCustomStepper(value: floorNumber, onMinus: () { if (floorNumber > 1) setState(() => floorNumber--); }, onPlus: () => setState(() => floorNumber++)),
                   ],
                 ),
               ),
               const SizedBox(width: 24),
-
               Expanded(
                 child: Column(
                   children: [
                     const Text('ฝั่ง', style: TextStyle(color: Color(0xFF9BB1BD), fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        _buildSideToggleButton('สำนักงาน'),
-                        const SizedBox(width: 10),
-                        _buildSideToggleButton('โรงงาน'),
-                      ],
-                    ),
+                    Row(children: [_buildSideToggleButton('สำนักงาน'), const SizedBox(width: 10), _buildSideToggleButton('โรงงาน')]),
                   ],
                 ),
               ),
             ],
           ),
-
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Divider(color: Color(0xFFE8EFF2), thickness: 1.2),
-          ),
-
-          const Center(
-            child: Text(
-              'รองรับได้ทั้งหมด (คน)',
-              style: TextStyle(color: Color(0xFF9BB1BD), fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit'),
-            ),
-          ),
+          const Padding(padding: EdgeInsets.symmetric(vertical: 32), child: Divider(color: Color(0xFFE8EFF2), thickness: 1.2)),
+          const Center(child: Text('รองรับได้ทั้งหมด (คน)', style: TextStyle(color: Color(0xFF9BB1BD), fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit'))),
           const SizedBox(height: 14),
-
           _buildCapacityStepper(),
         ],
       ),
@@ -403,61 +266,23 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
         onTap: () => setState(() => selectedSide = side),
         child: Container(
           height: 40,
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFFEBF3F9) : Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isSelected
-                  ? const Color(0xFF00529B).withOpacity(0.5)
-                  : Colors.grey.shade300,
-              width: 1,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              side,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? const Color(0xFF00529B) : Colors.black54,
-                fontFamily: 'Kanit',
-              ),
-            ),
-          ),
+          decoration: BoxDecoration(color: isSelected ? const Color(0xFFEBF3F9) : Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: isSelected ? const Color(0xFF00529B).withOpacity(0.5) : Colors.grey.shade300, width: 1)),
+          child: Center(child: Text(side, style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isSelected ? const Color(0xFF00529B) : Colors.black54, fontFamily: 'Kanit'))),
         ),
       ),
     );
   }
 
-  Widget _buildCustomStepper({
-    required int value,
-    required VoidCallback onMinus,
-    required VoidCallback onPlus,
-  }) {
+  Widget _buildCustomStepper({required int value, required VoidCallback onMinus, required VoidCallback onPlus}) {
     return Container(
       height: 40,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.grey.shade300)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          IconButton(
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.remove, size: 16, color: Color(0xFF00529B)),
-            onPressed: onMinus,
-          ),
-          Text(
-            '$value',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-          ),
-          IconButton(
-            padding: EdgeInsets.zero,
-            icon: const Icon(Icons.add, size: 16, color: Color(0xFF00529B)),
-            onPressed: onPlus,
-          ),
+          IconButton(padding: EdgeInsets.zero, icon: const Icon(Icons.remove, size: 16, color: Color(0xFF00529B)), onPressed: onMinus),
+          Text('$value', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+          IconButton(padding: EdgeInsets.zero, icon: const Icon(Icons.add, size: 16, color: Color(0xFF00529B)), onPressed: onPlus),
         ],
       ),
     );
@@ -465,42 +290,14 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
 
   Widget _buildCapacityStepper() {
     return Container(
-      height: 52,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
+      height: 52, padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.grey.shade300)),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          IconButton(
-            icon: const Icon(Icons.remove, color: Color(0xFF00529B), size: 18),
-            onPressed: () {
-              if (capacity > 1) setState(() => capacity--);
-            },
-          ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.people_alt_outlined, color: Color(0xFF9BB1BD), size: 24),
-              const SizedBox(width: 10),
-              Text(
-                '$capacity',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                  fontFamily: 'Kanit',
-                ),
-              ),
-            ],
-          ),
-          IconButton(
-            icon: const Icon(Icons.add, color: Color(0xFF00529B), size: 18),
-            onPressed: () => setState(() => capacity++),
-          ),
+          IconButton(icon: const Icon(Icons.remove, color: Color(0xFF00529B), size: 18), onPressed: () { if (capacity > 1) setState(() => capacity--); }),
+          Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.people_alt_outlined, color: Color(0xFF9BB1BD), size: 24), const SizedBox(width: 10), Text('$capacity', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87, fontFamily: 'Kanit'))]),
+          IconButton(icon: const Icon(Icons.add, color: Color(0xFF00529B), size: 18), onPressed: () => setState(() => capacity++)),
         ],
       ),
     );

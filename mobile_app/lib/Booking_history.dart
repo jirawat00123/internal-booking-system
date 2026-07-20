@@ -75,55 +75,84 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   String _formatTime(TimeOfDay time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
-
-  // =========================================================
+// =========================================================
   // 📥 ดึงข้อมูลจากฐานข้อมูล (API)
   // =========================================================
   Future<void> fetchHistory() async {
     try {
       setState(() => isLoading = true);
       String token = await getSavedToken();
+      print('🔑 Token ที่กำลังส่งไปหลังบ้าน: $token');
+      
+      // 💡 สมมติว่าดึง currentUserId มาจาก SharedPreferences แล้ว (ตามโค้ดก่อนหน้าที่แก้ไป)
+      final prefs = await SharedPreferences.getInstance();
+      int currentUserId = prefs.getInt('userId') ?? 1;
+
       final headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'};
 
-      final roomResponseFuture = http.get(Uri.parse('http://localhost:3001/api/bookings?page=1&limit=50'), headers: headers);
-      final vehicleResponseFuture = http.get(Uri.parse('http://localhost:3001/api/vehicle-bookings?page=1&limit=50'), headers: headers);
+      final roomResponseFuture = http.get(Uri.parse('http://localhost:3001/api/bookings?page=1&limit=50&userId=$currentUserId'), headers: headers);
+      final vehicleResponseFuture = http.get(Uri.parse('http://localhost:3001/api/vehicle-bookings?page=1&limit=50&userId=$currentUserId'), headers: headers);
 
       final responses = await Future.wait([roomResponseFuture, vehicleResponseFuture]);
       List<BookingHistoryModel> fetchedList = [];
+      
+      // 💡 สร้างตัวแปรเก็บ "วันนี้" แบบตัดเวลาทิ้ง (เอาไว้วัดว่าผ่านเที่ยงคืนหรือยัง)
+      DateTime now = DateTime.now();
+      DateTime today = DateTime(now.year, now.month, now.day); 
 
-      // 1. ดึงห้องประชุม
+      // 💡 1. ดึงข้อมูลประวัติ ห้องประชุม
       if (responses[0].statusCode == 200) {
         final data = jsonDecode(responses[0].body);
-        for (var item in (data['bookings'] ?? [])) {
+        List<dynamic> rBookings = data['bookings'] ?? data['data'] ?? [];
+        for (var item in rBookings) {
           DateTime start = DateTime.parse(item['startDatetime']).toLocal();
           DateTime end = DateTime.parse(item['endDatetime']).toLocal();
           
+          // แปลงสถานะให้ตรงกับ UI
           String rawStatus = item['status'] ?? 'ถูกจองไว้อยู่';
           if (rawStatus.toLowerCase() == 'pending') rawStatus = 'ถูกจองไว้อยู่';
+          if (rawStatus.toLowerCase() == 'approved' || rawStatus.toLowerCase() == 'in_use') rawStatus = 'กำลังใช้งาน';
+          if (rawStatus.toLowerCase() == 'completed') rawStatus = 'เสร็จสิ้น';
+          if (rawStatus.toLowerCase() == 'cancelled') rawStatus = 'ยกเลิกแล้ว';
+
+          // 🎯 [ไฮไลท์สำคัญ] เช็คว่าถ้ายกเลิกแล้ว และผ่านวันนั้นมาแล้ว (ข้ามเที่ยงคืน) ให้ข้ามไปเลย ไม่ต้องโชว์
+          DateTime bookingDateOnly = DateTime(start.year, start.month, start.day);
+          if (rawStatus == 'ยกเลิกแล้ว' && bookingDateOnly.isBefore(today)) {
+            continue; // ข้ามการทำงานรอบนี้ไป (ไม่ทำโค้ดด้านล่าง)
+          }
 
           // ค้นหาชื่อ User ของห้องประชุม
           String userName = 'ไม่ระบุชื่อ';
-          if (item['user'] != null) {
-            userName = item['user']['employee']?['fullName'] ?? item['user']['firstName'] ?? item['user']['username'] ?? 'ไม่ระบุชื่อ';
+          if (item['user'] != null && item['user']['employee'] != null) {
+            userName = item['user']['employee']['fullName'] ?? 'ไม่ระบุชื่อ';
           }
+
+          String roomTitle = item['purpose'] != null && item['purpose'].toString().isNotEmpty 
+              ? item['purpose'] 
+              : (item['room']?['roomName'] ?? 'Meeting Room ${item['roomId']}');
+
+          String imgUrl = item['room']?['uploadUrl'] ?? '';
+          String roomLocation = item['room']?['location'] != null ? 'ชั้น ${item['room']['location']}' : '-';
 
           fetchedList.add(BookingHistoryModel(
             id: item['id'].toString(),
             type: 'ห้องประชุม',
-            title: 'Meeting Room ${item['roomId']}',
+            title: roomTitle,
             date: _formatThaiDate(start),
             endDate: _formatThaiDate(end),
             startTime: TimeOfDay(hour: start.hour, minute: start.minute),
             endTime: TimeOfDay(hour: end.hour, minute: end.minute),
             bookedBy: userName,
-            bookerName: userName, // 💡 เพิ่มสำหรับโมเดลที่อัปเดตแล้ว
+            bookerName: userName, 
             participantCount: 0, 
             currentStatus: rawStatus,
+            imageUrl: imgUrl,
+            destination: roomLocation, 
           ));
         }
       }
 
-      // 2. ดึงจองรถ
+      // 💡 2. ดึงข้อมูลประวัติ จองรถ
       if (responses[1].statusCode == 200) {
         final data = jsonDecode(responses[1].body);
         List<dynamic> vBookings = data['data'] ?? data['bookings'] ?? [];
@@ -137,18 +166,20 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           if (rawStatus.toLowerCase() == 'completed') rawStatus = 'เสร็จสิ้น';
           if (rawStatus.toLowerCase() == 'cancelled') rawStatus = 'ยกเลิกแล้ว';
 
-          // 💡 1. ดึงชื่อผู้ทำรายการจากการจองรถ (ใช้ fullName ตาม Database Schema)
-          String userName = 'ไม่ระบุชื่อ';
-          if (item['user'] != null) {
-            userName = item['user']['employee']?['fullName'] ?? 'ไม่ระบุชื่อ';
+          // 🎯 [ไฮไลท์สำคัญ] เช็คซ่อนประวัติจองรถที่ยกเลิกไปแล้วเช่นกัน
+          DateTime bookingDateOnly = DateTime(start.year, start.month, start.day);
+          if (rawStatus == 'ยกเลิกแล้ว' && bookingDateOnly.isBefore(today)) {
+            continue; 
           }
 
-          // 💡 2. ดึงจำนวนคน (ใช้ passengers หรือ passengerCount)
+          String userName = 'ไม่ระบุชื่อ';
+          if (item['user'] != null && item['user']['employee'] != null) {
+            userName = item['user']['employee']['fullName'] ?? 'ไม่ระบุชื่อ';
+          }
+
           int pCount = 0;
           if (item['passengers'] != null) {
              pCount = int.tryParse(item['passengers'].toString()) ?? 0;
-          } else if (item['passengerCount'] != null) { 
-             pCount = int.tryParse(item['passengerCount'].toString()) ?? 0;
           }
 
           fetchedList.add(BookingHistoryModel(
@@ -160,8 +191,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             startTime: TimeOfDay(hour: start.hour, minute: start.minute),
             endTime: TimeOfDay(hour: end.hour, minute: end.minute),
             bookedBy: userName, 
-            bookerName: userName, // 💡 ส่งตัวแปรชื่อเข้าไป
-            participantCount: pCount, // 💡 ส่งจำนวนคนเข้าไป
+            bookerName: userName,
+            participantCount: pCount, 
             currentStatus: rawStatus,
             imageUrl: item['vehicle']?['uploadUrl'] ?? '',
             plateNumber: item['vehicle']?['plateNumber'] ?? '-',
@@ -171,6 +202,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         }
       }
 
+      // เรียงลำดับจากวันที่ล่าสุดขึ้นก่อน
       fetchedList.sort((a, b) => b.date.compareTo(a.date));
       if (mounted) setState(() { historyList = fetchedList; isLoading = false; });
     } catch (e) {
@@ -178,8 +210,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       if (mounted) setState(() => isLoading = false);
     }
   }
-
-// =========================================================
+  // =========================================================
   // 🚀 อัปเดตสถานะไปยังฐานข้อมูล (API)
   // =========================================================
   Future<void> _updateStatus(BookingHistoryModel booking, String newStatus) async {
@@ -189,18 +220,25 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       String token = await getSavedToken();
       http.Response response;
 
-      // 💡 เงื่อนไขที่ 1: ถ้าเป็นการ "ยกเลิกรถ"
+      // 💡 เงื่อนไขที่ 1: ยกเลิก "จองรถ"
       if (booking.type == 'จองรถ' && (newStatus == 'Cancelled' || newStatus == 'ยกเลิกแล้ว')) {
-        // 🚀 ต้องใช้ API เส้น PATCH และห้อยท้ายด้วย /cancel (ตามโค้ด Node.js ของคุณ)
         String endpoint = 'http://localhost:3001/api/vehicle-bookings/${booking.id}/cancel';
         response = await http.patch(
           Uri.parse(endpoint),
           headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
-          // ไม่ต้องส่ง body แล้ว เพราะ Node.js จัดการเปลี่ยนสถานะให้เองเลย
         );
-        newStatus = 'ยกเลิกแล้ว'; // บังคับเซ็ตค่ากลับเป็นภาษาไทยเพื่อโชว์บนหน้าจอ
+        newStatus = 'ยกเลิกแล้ว'; 
       } 
-      // 💡 เงื่อนไขที่ 2: ถ้าเป็นการอัปเดตสถานะอื่นๆ ของรถ (เช่น คืนรถ)
+      // 💡 เงื่อนไขที่ 2: ยกเลิก "จองห้องประชุม"
+      else if (booking.type == 'ห้องประชุม' && (newStatus == 'Cancelled' || newStatus == 'ยกเลิกแล้ว')) {
+        String endpoint = 'http://localhost:3001/api/bookings/${booking.id}/cancel';
+        response = await http.patch(
+          Uri.parse(endpoint),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+        );
+        newStatus = 'ยกเลิกแล้ว'; 
+      }
+      // 💡 เงื่อนไขที่ 3: อัปเดตสถานะอื่นๆ ของรถ
       else if (booking.type == 'จองรถ') {
         String endpoint = 'http://localhost:3001/api/vehicle-bookings/${booking.id}';
         response = await http.put(
@@ -209,7 +247,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           body: jsonEncode({"status": newStatus}), 
         );
       } 
-      // 💡 เงื่อนไขที่ 3: สำหรับระบบจองห้องประชุม
+      // 💡 เงื่อนไขที่ 4: อัปเดตสถานะอื่นๆ ของห้องประชุม
       else {
         String endpoint = 'http://localhost:3001/api/bookings/${booking.id}';
         response = await http.put(
@@ -223,13 +261,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         setState(() => booking.currentStatus = newStatus);
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อัปเดตสถานะสำเร็จ'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อัปเดตสถานะสำเร็จ', style: TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.green));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อัปเดตไม่สำเร็จ กรุณาลองใหม่'), backgroundColor: Colors.redAccent));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('อัปเดตไม่สำเร็จ กรุณาลองใหม่', style: TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.redAccent));
       }
     } catch (e) {
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด'), backgroundColor: Colors.redAccent));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด', style: TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.redAccent));
     }
   }
 
@@ -347,11 +385,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   borderRadius: BorderRadius.circular(10),
                   child: Container(
                     width: 70, height: 70, color: Colors.grey[200],
-                    child: booking.type == 'จองรถ' && booking.imageUrl.isNotEmpty
+                    child: booking.imageUrl.isNotEmpty
                         ? Image.network(
                             booking.imageUrl.startsWith('/uploads') ? 'http://localhost:3001${booking.imageUrl}' : booking.imageUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (c,e,s) => const Icon(Icons.directions_car, color: Colors.grey, size: 30),
+                            errorBuilder: (c,e,s) => Icon(booking.type == 'จองรถ' ? Icons.directions_car : Icons.meeting_room, color: Colors.grey, size: 30),
                           )
                         : Icon(booking.type == 'ห้องประชุม' ? Icons.meeting_room : Icons.directions_car, color: Colors.grey, size: 30),
                   ),
@@ -516,12 +554,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         const SizedBox(height: 12),
                         _buildPopupDetailRow('วันที่', booking.date == booking.endDate ? booking.date : '${booking.date} - ${booking.endDate}'),
                         const SizedBox(height: 12),
-                        _buildPopupDetailRow('เวลา', '${_formatTime(booking.startTime)} น.'),
+                        _buildPopupDetailRow('เวลา', '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.'),
                         const SizedBox(height: 12),
-                        // 💡 แก้ไขให้ใช้ชื่อผู้ทำรายการแทน driverType แล้วครับ
                         _buildPopupDetailRow('ผู้ทำรายการ', booking.bookerName),
-                        const SizedBox(height: 12),
-                        _buildPopupDetailRow('จำนวนคน', '${booking.participantCount} คน'),
+                        if (booking.type == 'จองรถ') ...[
+                           const SizedBox(height: 12),
+                           _buildPopupDetailRow('จำนวนคน', '${booking.participantCount} คน'),
+                        ]
                       ],
                     ),
                   ),
@@ -536,11 +575,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       children: [
                         const Text('ข้อมูลเพิ่มเติม', style: TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                         const SizedBox(height: 12),
-                        _buildPopupDetailRow('ปลายทาง', booking.destination),
-                        const SizedBox(height: 12),
-                        _buildPopupDetailRow('วัตถุประสงค์', booking.type == 'ห้องประชุม' ? booking.title : '-'),
-                        const SizedBox(height: 12),
-                        _buildPopupDetailRow('รูปแบบคนขับ', booking.driverType),
+                        _buildPopupDetailRow(booking.type == 'ห้องประชุม' ? 'สถานที่' : 'ปลายทาง', booking.destination),
+                        if (booking.type == 'จองรถ') ...[
+                           const SizedBox(height: 12),
+                           _buildPopupDetailRow('รูปแบบคนขับ', booking.driverType),
+                        ]
                       ],
                     ),
                   ),

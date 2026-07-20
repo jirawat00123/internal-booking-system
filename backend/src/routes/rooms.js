@@ -31,7 +31,7 @@ router.post('/', verifyToken, upload.single('image'), roomController.createRoom)
 
 // 💡 [แก้ไข 3] ปิด 2 บรรทัดนี้ไว้ก่อนชั่วคราว เพราะใน roomController ยังไม่ได้เขียนฟังก์ชัน updateRoom กับ deleteRoom
 // ไว้คุณไปเขียนฟังก์ชันใน Controller เสร็จ ค่อยกลับมาเอาเครื่องหมาย // ออกครับ
-// router.put('/:id', verifyToken, upload.single('image'), roomController.updateRoom);
-// router.delete('/:id', verifyToken, roomController.deleteRoom);
+ router.put('/:id', verifyToken, upload.single('image'), roomController.updateRoom);
+ router.delete('/:id', verifyToken, roomController.deleteRoom);
 
 module.exports = router;

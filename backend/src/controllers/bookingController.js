@@ -2,16 +2,29 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 // =========================================================================
-// Helper Function: สำหรับแปลงสตริงเวลาให้เป็น Date Object 
+// Helper Function: สำหรับแปลงสตริงเวลาให้เป็น Date Object (รองรับ DD/MM/YYYY)
 // =========================================================================
 const normalizeTime = (dateString, timeString) => {
   if (!dateString || !timeString) return null;
-  const datePart = new Date(dateString).toISOString().split('T')[0];
-  const isTimeOnly = timeString.match(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/);
-  if (isTimeOnly) {
-    return new Date(`${datePart}T${timeString}.000Z`);
+
+  // 1. จัดการ Date: เช็คว่าถ้ามี / ให้สลับจาก DD/MM/YYYY เป็น YYYY-MM-DD
+  let formattedDate = dateString;
+  if (dateString.includes('/')) {
+    const [day, month, year] = dateString.split('/');
+    formattedDate = `${year}-${month}-${day}`; 
   }
-  return new Date(timeString);
+
+  // 2. จัดการ Time: เช็คว่าเป็นรูปแบบ HH:mm หรือไม่
+  const isTimeOnly = timeString.match(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/);
+  
+  if (isTimeOnly) {
+    // ถ้าส่งมาแค่ 10:00 ให้เติม :00 (วินาที) เข้าไป
+    const timeWithSeconds = timeString.length === 5 ? `${timeString}:00` : timeString;
+    // ประกอบร่างแล้วบังคับเป็นเวลาไทย (+07:00) ป้องกันเวลาคลาดเคลื่อนจาก UTC
+    return new Date(`${formattedDate}T${timeWithSeconds}+07:00`);
+  }
+  
+  return new Date(`${formattedDate}T${timeString}`);
 };
 
 // =========================================================================
@@ -78,6 +91,7 @@ exports.checkAvailability = async (req, res, next) => {
     next(error); 
   }
 };
+
 // =========================================================================
 // [POST] /api/bookings - API สร้างรายการจองห้องประชุม
 // =========================================================================

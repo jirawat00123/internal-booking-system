@@ -311,7 +311,7 @@ class _ManagePageState extends State<ManagePage> {
 
                             // 💡 1. อัปเดตชื่อ และ ID ให้ระบบ
                             globalCurrentUserName = _selectedEmployeeText!; 
-                            
+                            globalRoomUserId = selectedId;
                             
                             // 💡 2. อัปเดตชื่อ และ ID ให้ระบบจองรถ
                             v_model.globalCurrentUserName = _selectedEmployeeText!; 

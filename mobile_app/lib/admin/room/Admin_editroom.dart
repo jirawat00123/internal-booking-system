@@ -1,10 +1,13 @@
 import 'dart:io'; 
+import 'package:http/http.dart' as http; // 💡 ดึง API
+import 'package:shared_preferences/shared_preferences.dart'; // 💡 จัดการ Token
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart'; 
 import 'Admin_roompage.dart'; 
 import 'Admin_editsuccess.dart'; 
 import '../../Booking_room/Room_model.dart'; 
 
+// ... (MobileFrameEditRoomContainer เหมือนเดิมเป๊ะ)
 class MobileFrameEditRoomContainer extends StatelessWidget {
   final MeetingRoom room;
   final int index;
@@ -17,14 +20,8 @@ class MobileFrameEditRoomContainer extends StatelessWidget {
       color: Colors.grey[900],
       child: Center(
         child: Container(
-          width: 400,
-          height: 800,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5)],
-          ),
+          width: 400, height: 800, clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(30), boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5)]),
           child: AdminEditRoomScreen(room: room, index: index),
         ),
       ),
@@ -35,9 +32,7 @@ class MobileFrameEditRoomContainer extends StatelessWidget {
 class AdminEditRoomScreen extends StatefulWidget {
   final MeetingRoom room;
   final int index;
-
   const AdminEditRoomScreen({Key? key, required this.room, required this.index}) : super(key: key);
-
   @override
   _AdminEditRoomScreenState createState() => _AdminEditRoomScreenState();
 }
@@ -53,7 +48,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
   @override
   void initState() {
     super.initState();
-    floorNumber = int.parse(widget.room.floor);
+    floorNumber = widget.room.location;
     selectedSide = widget.room.side;
     capacity = widget.room.capacity;
     selectedStatus = widget.room.status; 
@@ -61,10 +56,47 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
 
   Future<void> _pickImage() async {
     final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = pickedFile;
-      });
+    if (pickedFile != null) setState(() => _imageFile = pickedFile);
+  }
+
+  // =======================================================
+  // 🚀 ฟังก์ชันแก้ไขข้อมูลเข้าฐานข้อมูล (PUT)
+  // =======================================================
+  Future<void> _updateRoomToAPI(BuildContext dialogContext) async {
+    Navigator.pop(dialogContext); 
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator())); 
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token = prefs.getString('token') ?? '';
+
+      var request = http.MultipartRequest('PUT', Uri.parse('http://localhost:3001/api/rooms/${widget.room.id}'));
+      request.headers['Authorization'] = 'Bearer $token';
+      
+      request.fields['name'] = selectedSide; 
+      request.fields['location'] = floorNumber.toString(); 
+      request.fields['capacity'] = capacity.toString();
+      
+      // อัปเดตสถานะ (แปลงกลับเป็น EN เพื่อให้ตรงกับ Prisma Schema Enum ของคุณ)
+      request.fields['status'] = selectedStatus == 'ว่างพร้อมใช้งาน' ? 'AVAILABLE' : 'IN_USE';
+
+      if (_imageFile != null) {
+        request.files.add(await http.MultipartFile.fromPath('image', _imageFile!.path));
+      }
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+
+      Navigator.pop(context); 
+
+      if (response.statusCode == 200) {
+        Navigator.push(context, MaterialPageRoute(builder: (context) => const MobileFrameEditSuccessContainer()));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เกิดข้อผิดพลาดในการแก้ไข', style: TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.red));
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด', style: TextStyle(fontFamily: 'Kanit')), backgroundColor: Colors.red));
     }
   }
 
@@ -93,28 +125,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                       child: SizedBox(
                         height: 44,
                         child: ElevatedButton(
-                          onPressed: () {
-                            // 💡 แก้ไขจุดบันทึกข้อมูลเรียลไทม์: สร้าง List ก๊อปปี้ชุดใหม่แล้วกระจายสัญญาณไปหน้า User และหน้าหลักแอดมิน
-                            final updatedList = List<MeetingRoom>.from(globalMeetingRooms.value);
-                            updatedList[widget.index] = MeetingRoom(
-                              id: widget.room.id,
-                              floor: floorNumber.toString(),
-                              side: selectedSide,
-                              capacity: capacity,
-                              imagePath: _imageFile?.path ?? widget.room.imagePath,
-                              status: selectedStatus, 
-                            );
-                            globalMeetingRooms.value = updatedList; // กระจายสัญญาณความเปลี่ยนแปลงเรียลไทม์
-                            
-                            Navigator.pop(dialogContext);
-                            
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const MobileFrameEditSuccessContainer(), 
-                              ),
-                            );
-                          },
+                          onPressed: () => _updateRoomToAPI(dialogContext), // 💡 ใช้ API
                           style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0096C7), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
                           child: const Text('ตกลง', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
                         ),
@@ -141,6 +152,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
     );
   }
 
+  // 💡 โค้ด UI ส่วนล่างของไฟล์ _AdminEditRoomScreenState เหมือนเดิมครับ วางต่อได้เลย
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -157,21 +169,13 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20.0),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  _buildImageEditCard(),
-                  const SizedBox(height: 40),
-                  _buildFormCard(),
-                ],
-              ),
+              child: Column(children: [const SizedBox(height: 10), _buildImageEditCard(), const SizedBox(height: 40), _buildFormCard()]),
             ),
           ),
           Padding(
             padding: const EdgeInsets.only(left: 24.0, right: 24.0, bottom: 24.0),
             child: SizedBox(
-              width: 220,
-              height: 48,
+              width: 220, height: 48,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0096C7), elevation: 4, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.0))),
                 onPressed: _showEditConfirmDialog,
@@ -200,9 +204,9 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                 color: Colors.grey[300], borderRadius: BorderRadius.circular(14),
                 image: _imageFile != null 
                   ? DecorationImage(image: FileImage(File(_imageFile!.path)), fit: BoxFit.cover)
-                  : (widget.room.imagePath != null ? DecorationImage(image: FileImage(File(widget.room.imagePath!)), fit: BoxFit.cover) : null),
+                  : (widget.room.imagePath != null ? DecorationImage(image: NetworkImage(widget.room.imagePath!), fit: BoxFit.cover) : null), // 💡 ใช้ NetworkImage ถ้าดึงมาจากหลังบ้าน
               ),
-              child: const Center(child: Icon(Icons.camera_alt, color: Colors.white70, size: 24)),
+              child: _imageFile == null && widget.room.imagePath == null ? const Center(child: Icon(Icons.camera_alt, color: Colors.white70, size: 24)) : null,
             ),
           ),
         ],
@@ -267,31 +271,18 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
     );
   }
 
-Widget _buildSideToggle() {
+  Widget _buildSideToggle() {
     return Container(
       height: 38,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300), 
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
       child: Row(
         children: ['สำนักงาน', 'โรงงาน'].map((s) => Expanded(
           child: GestureDetector(
             onTap: () => setState(() => selectedSide = s),
             child: Container(
               alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: selectedSide == s ? const Color(0xFFEBF3F9) : Colors.white, 
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: Text(
-                s, 
-                style: TextStyle(
-                  color: selectedSide == s ? const Color(0xFF0D47A1) : Colors.black54, 
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Kanit', // 💡 เพิ่มเพื่อให้ Font กลมกลืนกับส่วนอื่น
-                ),
-              ),
+              decoration: BoxDecoration(color: selectedSide == s ? const Color(0xFFEBF3F9) : Colors.white, borderRadius: BorderRadius.circular(7)),
+              child: Text(s, style: TextStyle(color: selectedSide == s ? const Color(0xFF0D47A1) : Colors.black54, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
             ),
           ),
         )).toList(),
@@ -304,10 +295,7 @@ Widget _buildSideToggle() {
     
     return Container(
       height: 40,
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade300),
-        borderRadius: BorderRadius.circular(10),
-      ),
+      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(10)),
       child: Row(
         children: statuses.map((status) {
           bool isSelected = selectedStatus == status;
@@ -318,28 +306,13 @@ Widget _buildSideToggle() {
               onTap: () => setState(() => selectedStatus = status),
               child: Container(
                 alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: isSelected ? activeColor.withOpacity(0.12) : Colors.white,
-                  borderRadius: BorderRadius.circular(9),
-                ),
+                decoration: BoxDecoration(color: isSelected ? activeColor.withOpacity(0.12) : Colors.white, borderRadius: BorderRadius.circular(9)),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(
-                      Icons.circle, 
-                      size: 8, 
-                      color: isSelected ? activeColor : Colors.grey.shade400
-                    ),
+                    Icon(Icons.circle, size: 8, color: isSelected ? activeColor : Colors.grey.shade400),
                     const SizedBox(width: 6),
-                    Text(
-                      status,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontFamily: 'Kanit',
-                        fontWeight: FontWeight.bold,
-                        color: isSelected ? activeColor : Colors.black54,
-                      ),
-                    ),
+                    Text(status, style: TextStyle(fontSize: 12, fontFamily: 'Kanit', fontWeight: FontWeight.bold, color: isSelected ? activeColor : Colors.black54)),
                   ],
                 ),
               ),
@@ -364,4 +337,4 @@ Widget _buildSideToggle() {
       ),
     );
   }
-} 
+}

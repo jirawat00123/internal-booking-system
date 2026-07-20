@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:convert'; // 💡 เพิ่มสำหรับจัดการ JSON
+import 'package:http/http.dart' as http; // 💡 เพิ่มสำหรับยิง API
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'Room_model.dart';
-import '../Admin/room/Admin_roompage.dart';
-import 'Room_bookingA.dart'; // เรียกใช้ globalMeetingRooms ตัวเดียวกันที่เป็น ValueNotifier
+import 'Room_bookingA.dart'; 
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RoomListScreen extends StatefulWidget {
   const RoomListScreen({Key? key}) : super(key: key);
@@ -13,6 +15,45 @@ class RoomListScreen extends StatefulWidget {
 }
 
 class _RoomListScreenState extends State<RoomListScreen> {
+
+  // 💡 ฟังก์ชันดึงข้อมูลจาก API ห้องประชุม
+  Future<List<MeetingRoom>> _fetchRoomsFromAPI() async {
+    try {
+      // 1. ดึง Token จากเครื่อง
+      final prefs = await SharedPreferences.getInstance();
+      String token = prefs.getString('token') ?? '';
+
+      // 2. ยิง API พร้อมแนบ Token
+      final response = await http.get(
+        Uri.parse('http://localhost:3001/api/rooms'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token', // 👈 ใส่บัตรผ่านให้หลังบ้าน
+        }
+      );
+
+      if (response.statusCode == 200) {
+        final decodedData = json.decode(response.body);
+        List<dynamic> roomData = [];
+
+        // 💡 3. เช็กโครงสร้าง JSON เพื่อป้องกันบั๊ก type 'String' is not a subtype of type 'int'
+        if (decodedData is List) {
+          roomData = decodedData; // ถ้า API ส่งมาเป็น Array [...] โดยตรง
+        } else if (decodedData is Map) {
+          roomData = decodedData['data'] ?? []; // ถ้า API ส่งมาเป็น { data: [...] }
+        }
+
+        return roomData.map((json) => MeetingRoom.fromJson(json)).toList();
+      } else {
+        print('Error API (${response.statusCode}): ${response.body}');
+        return [];
+      }
+    } catch (e) {
+      print('Error fetching rooms: $e');
+      return [];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -39,12 +80,18 @@ class _RoomListScreenState extends State<RoomListScreen> {
         children: [
           _buildStepIndicator(),
 
-          // 💡 ซิงค์การรับข้อมูลเรียลไทม์จากระบบเพิ่ม/ลบ/แก้ไขของ Admin
+          // 💡 ใช้ FutureBuilder แทนเพื่อดึงข้อมูลจาก API
           Expanded(
-            child: ValueListenableBuilder<List<MeetingRoom>>(
-              valueListenable: globalMeetingRooms,
-              builder: (context, rooms, child) {
-                if (rooms.isEmpty) {
+            child: FutureBuilder<List<MeetingRoom>>(
+              future: _fetchRoomsFromAPI(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                } else if (snapshot.hasError) {
+                  return const Center(
+                    child: Text('เชื่อมต่อเซิร์ฟเวอร์ขัดข้อง', style: TextStyle(fontFamily: 'Kanit')),
+                  );
+                } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
                   return const Center(
                     child: Text(
                       'ไม่มีห้องประชุมที่พร้อมใช้งาน',
@@ -56,6 +103,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     ),
                   );
                 }
+
+                final rooms = snapshot.data!;
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
@@ -74,7 +123,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
-  // ส่วนสร้าง Step Indicator (1 เลือกห้อง -> 2 กรอกข้อมูล -> 3 ยืนยัน)
   Widget _buildStepIndicator() {
     return Container(
       color: const Color(0xFF004AAD),
@@ -146,7 +194,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
-  // ส่วนสร้าง Card ห้องประชุมสำหรับ User (มีเฉพาะปุ่มเลือกห้อง)
   Widget _buildRoomCard(MeetingRoom room) {
     bool isAvailable = room.status == 'ว่างพร้อมใช้งาน';
     Color statusColor = isAvailable
@@ -177,32 +224,18 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   top: Radius.circular(24),
                 ),
                 child: room.imagePath != null
-                    ? (kIsWeb
-                          ? Image.network(
-                              room.imagePath!,
-                              height: 180,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                            )
-                          : Image.file(
-                              File(room.imagePath!),
-                              height: 180,
-                              width: double.infinity,
-                              fit: BoxFit.cover,
-                            ))
-                    : Container(
-                        height: 180,
-                        width: double
-                            .infinity, // 💡 เพิ่มตรงนี้เพื่อให้สีเทาเต็มความกว้างการ์ด
-                        color: Colors.grey[300],
-                        alignment: Alignment
-                            .center, // 💡 เพิ่มตรงนี้เพื่อให้ Icon อยู่ตรงกลางเป๊ะ
-                        child: const Icon(
-                          Icons.image,
-                          size: 50,
-                          color: Colors.grey,
-                        ),
-                      ),
+                    ? (room.imagePath!.startsWith('http') 
+                        ? Image.network(
+                            room.imagePath!,
+                            height: 180,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => _buildImagePlaceholder(),
+                          )
+                        : (kIsWeb
+                            ? Image.network(room.imagePath!, height: 180, width: double.infinity, fit: BoxFit.cover)
+                            : Image.file(File(room.imagePath!), height: 180, width: double.infinity, fit: BoxFit.cover)))
+                    : _buildImagePlaceholder(),
               ),
               Positioned(
                 top: 12,
@@ -242,7 +275,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  'ห้องประชุม ชั้น ${room.floor}',
+                  'ห้องประชุม ชั้น ${room.location}',
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -257,7 +290,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     children: [
                       _buildIconDetail(
                         Icons.location_on_outlined,
-                        'ชั้น ${room.floor} ฝั่ง ${room.side}',
+                        'ชั้น ${room.location} ฝั่ง ${room.side}',
                       ),
                       const SizedBox(height: 6),
                       _buildIconDetail(
@@ -280,7 +313,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                 _buildTag('กระดานไวท์บอร์ด'),
                 const SizedBox(height: 20),
 
-                // ปุ่มแอคชันสำหรับ User ทั่วไป (พาไปทำรายการต่อที่ Step 2)
                 SizedBox(
                   width: double.infinity,
                   height: 46,
@@ -292,11 +324,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
                               MaterialPageRoute(
                                 builder: (context) => RoomBookingAScreen(
                                   room: room,
-                                ), // ส่งข้อมูลห้องมาหน้านี้เรียลไทม์
+                                ),
                               ),
                             );
                           }
-                        : null, // ถูกปิดการใช้งานอัตโนมัติหากห้องไม่ว่าง
+                        : null, 
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF00A8CC),
                       disabledBackgroundColor: Colors.grey.shade300,
@@ -320,6 +352,20 @@ class _RoomListScreenState extends State<RoomListScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildImagePlaceholder() {
+    return Container(
+      height: 180,
+      width: double.infinity,
+      color: Colors.grey[300],
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.image,
+        size: 50,
+        color: Colors.grey,
       ),
     );
   }

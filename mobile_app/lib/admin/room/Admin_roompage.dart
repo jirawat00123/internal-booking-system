@@ -1,15 +1,13 @@
 import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb; 
+import 'dart:convert'; // 💡 เพิ่มเพื่อจัดการ JSON
+import 'package:http/http.dart' as http; // 💡 เพิ่มสำหรับยิง API
+import 'package:shared_preferences/shared_preferences.dart'; // 💡 ดึง Token
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'Admin_addroom.dart';
-import 'Admin_editroom.dart'; 
-import '../../Booking_room/Room_model.dart'; 
-import '../../AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
-
-// 💡 รายการข้อมูลส่วนกลาง ValueNotifier
-final ValueNotifier<List<MeetingRoom>> globalMeetingRooms = ValueNotifier<List<MeetingRoom>>([
-  
-]);
+import 'Admin_editroom.dart';
+import '../../Booking_room/Room_model.dart';
+import '../../AdminGroupPage.dart';
 
 class MobileFrameContainer extends StatelessWidget {
   const MobileFrameContainer({super.key});
@@ -30,12 +28,7 @@ class MobileFrameContainer extends StatelessWidget {
               BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5),
             ],
           ),
-          child: ValueListenableBuilder<List<MeetingRoom>>(
-            valueListenable: globalMeetingRooms,
-            builder: (context, rooms, child) {
-              return const MeetingRoomListScreen();
-            },
-          ),
+          child: const MeetingRoomListScreen(),
         ),
       ),
     );
@@ -50,14 +43,136 @@ class MeetingRoomListScreen extends StatefulWidget {
 }
 
 class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
-  
-  void _showDeleteConfirmDialog(int index) {
+  List<MeetingRoom> rooms = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRooms(); // 💡 โหลดข้อมูลจากฐานข้อมูลทันทีเมื่อเปิดหน้า
+  }
+
+  // =======================================================
+  // 📥 ฟังก์ชันดึงข้อมูลจาก API (GET)
+  // =======================================================
+  // =======================================================
+  // 📥 ฟังก์ชันดึงข้อมูลจาก API (GET)
+  // =======================================================
+  Future<void> _fetchRooms() async {
+    if (!mounted) return; // 💡 ป้องกันเรียกตอน Widget ถูกทำลาย
+    setState(() => isLoading = true);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token = prefs.getString('token') ?? '';
+
+      final response = await http.get(
+        Uri.parse('http://localhost:3001/api/rooms'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (!mounted) return; // 💡 ตรวจสอบอีกครั้งหลังได้ข้อมูลจาก await
+
+      if (response.statusCode == 200) {
+        final decodedData = json.decode(response.body);
+        List<dynamic> roomData = decodedData is List
+            ? decodedData
+            : (decodedData['data'] ?? []);
+
+        setState(() {
+          rooms = roomData.map((json) => MeetingRoom.fromJson(json)).toList();
+          isLoading = false;
+        });
+      } else {
+        setState(() => isLoading = false);
+      }
+    } catch (e) {
+      debugPrint('Error fetching rooms: $e');
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  // =======================================================
+  // 🗑️ ฟังก์ชันลบห้องออกจากฐานข้อมูล (DELETE)
+  // =======================================================
+  Future<void> _deleteRoomFromAPI(String roomId) async {
+    // ตรวจสอบ context ก่อนใช้ showDialog
+    if (!mounted) return;
+
     showDialog(
       context: context,
-      barrierDismissible: false, 
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token = prefs.getString('token') ?? '';
+
+      final response = await http.delete(
+        Uri.parse('http://localhost:3001/api/rooms/$roomId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (mounted) Navigator.pop(context); // ปิด Loading (เช็ค mounted ก่อนปิด)
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'ลบห้องประชุมสำเร็จ',
+                style: TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _fetchRooms(); // ดึงข้อมูลใหม่
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'เกิดข้อผิดพลาดในการลบ',
+                style: TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด',
+              style: TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showDeleteConfirmDialog(String roomId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
       builder: (BuildContext dialogContext) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
             width: 320,
@@ -66,13 +181,36 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(color: Color(0xFFBC0101), shape: BoxShape.circle),
-                  child: const Icon(Icons.priority_high, color: Colors.white, size: 38),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFBC0101),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.priority_high,
+                    color: Colors.white,
+                    size: 38,
+                  ),
                 ),
                 const SizedBox(height: 20),
-                const Text('ยืนยันการลบห้อง', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0D47A1), fontFamily: 'Kanit')),
+                const Text(
+                  'ยืนยันการลบห้อง',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF0D47A1),
+                    fontFamily: 'Kanit',
+                  ),
+                ),
                 const SizedBox(height: 6),
-                const Text('คุณต้องการลบห้องนี้ใช่หรือไม่?', style: TextStyle(fontSize: 13, color: Color(0xFF0D47A1), fontFamily: 'Kanit'), textAlign: TextAlign.center),
+                const Text(
+                  'คุณต้องการลบห้องนี้ใช่หรือไม่?',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF0D47A1),
+                    fontFamily: 'Kanit',
+                  ),
+                  textAlign: TextAlign.center,
+                ),
                 const SizedBox(height: 28),
                 Row(
                   children: [
@@ -81,15 +219,24 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         height: 44,
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.pop(dialogContext);
-                            final updatedList = List<MeetingRoom>.from(globalMeetingRooms.value);
-                            updatedList.removeAt(index);
-                            globalMeetingRooms.value = updatedList;
-                            
-                            setState(() {}); 
+                            Navigator.pop(dialogContext); // ปิด Popup ยืนยัน
+                            _deleteRoomFromAPI(roomId); // เรียกฟังก์ชันลบจริง
                           },
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFB70000), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                          child: const Text('ลบห้อง', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFB70000),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'ลบห้อง',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -99,8 +246,21 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         height: 44,
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(dialogContext),
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0096C7), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                          child: const Text('ยกเลิก', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF0096C7),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'ยกเลิก',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -116,8 +276,6 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rooms = globalMeetingRooms.value;
-
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
@@ -126,13 +284,21 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
           onPressed: () {
-                        Navigator.push(
-    context,
-    MaterialPageRoute(builder: (context) => const AdminGroupPage()),
-  );
-                      },
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AdminGroupPage()),
+            );
+          },
         ),
-        title: const Text('ห้องประชุม', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20, fontFamily: 'Kanit')),
+        title: const Text(
+          'ห้องประชุม',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 20,
+            fontFamily: 'Kanit',
+          ),
+        ),
         centerTitle: true,
       ),
       body: Column(
@@ -146,39 +312,64 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color.fromARGB(255, 1, 148, 188),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12.0),
+                  ),
                 ),
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const MobileFrameAddRoomContainer()),
-                  ).then((_) => setState(() {}));
+                    MaterialPageRoute(
+                      builder: (context) => const MobileFrameAddRoomContainer(),
+                    ),
+                  ).then((_) => _fetchRooms()); // โหลดใหม่เมื่อกลับมาหน้านี้
                 },
                 icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text('เพิ่มห้องประชุม', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+                label: const Text(
+                  'เพิ่มห้องประชุม',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Kanit',
+                  ),
+                ),
               ),
             ),
           ),
           const SizedBox(height: 20),
           Expanded(
-            child: rooms.isEmpty
-                ? const Center(child: Text('ยังไม่มีห้องประชุมในระบบ', style: TextStyle(fontFamily: 'Kanit', color: Colors.grey)))
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    itemCount: rooms.length,
-                    itemBuilder: (context, index) {
-                      return _buildRoomCard(rooms[index], index);
-                    },
-                  ),
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : (rooms.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'ยังไม่มีห้องประชุมในระบบ',
+                            style: TextStyle(
+                              fontFamily: 'Kanit',
+                              color: Colors.grey,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: rooms.length,
+                          itemBuilder: (context, index) {
+                            return _buildRoomCard(rooms[index], index);
+                          },
+                        )),
           ),
         ],
       ),
     );
   }
 
- Widget _buildRoomCard(MeetingRoom room, int index) {
+  // 💡 _buildRoomCard โค้ดเดิมของคุณ นำมาใช้งานต่อได้เลย
+  Widget _buildRoomCard(MeetingRoom room, int index) {
     bool isAvailable = room.status == 'ว่างพร้อมใช้งาน';
-    Color statusColor = isAvailable ? const Color(0xFF2EC4B6) : const Color(0xFFE11D48);
+    Color statusColor = isAvailable
+        ? const Color(0xFF2EC4B6)
+        : const Color(0xFFE11D48);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
@@ -187,45 +378,63 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04), 
-            blurRadius: 10, 
-            offset: const Offset(0, 4)
-          )
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(
         children: [
-          // 💡 ส่วนของการทำภาพและกล่องข้อมูลลอยซ้อนเกยกัน
           SizedBox(
-            height: 310, // ล็อกความสูงรวมของส่วนแสดงผลด้านบนเพื่อไม่ให้เบียดกัน
+            height: 310,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // 1. ตัวรูปภาพประชุม (หรือกล่องสีเทา) วางเต็มพื้นที่ด้านบน
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
                   child: room.imagePath != null
-                      ? (kIsWeb 
-                          ? Image.network(room.imagePath!, height: 180, width: double.infinity, fit: BoxFit.cover)
-                          : Image.file(File(room.imagePath!), height: 180, width: double.infinity, fit: BoxFit.cover))
-                      : Container(
-                          height: 180, 
-                          width: double.infinity, 
-                          color: Colors.grey[300], 
-                          child: const Icon(Icons.image, size: 50, color: Colors.grey),
-                        ),
+                      ? (room.imagePath!.startsWith('http')
+                            ? Image.network(
+                                room.imagePath!,
+                                height: 180,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) =>
+                                    _buildImagePlaceholder(),
+                              )
+                            : (kIsWeb
+                                  ? Image.network(
+                                      room.imagePath!,
+                                      height: 180,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                    )
+                                  : Image.file(
+                                      File(room.imagePath!),
+                                      height: 180,
+                                      width: double.infinity,
+                                      fit: BoxFit.cover,
+                                    )))
+                      : _buildImagePlaceholder(),
                 ),
-                
-                // 2. ป้ายสถานะ เกาะอยู่ที่มุมบนขวาของรูปภาพอย่างถูกต้อง
+
                 Positioned(
                   top: 16,
                   right: 16,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.9),
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black12, blurRadius: 4),
+                      ],
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -234,45 +443,73 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         const SizedBox(width: 6),
                         Text(
                           room.status,
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor, fontFamily: 'Kanit'),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: statusColor,
+                            fontFamily: 'Kanit',
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
 
-                // 3. 🔥 กล่องทรงมนสีขาวลอยขึ้นมาเกยทับรูปภาพ (จัดตำแหน่งโดยใช้ Positioned)
                 Positioned(
-                  top: 120, // ดันลงมาให้อยู่กึ่งกลางรอยต่อขอบภาพพอดี
+                  top: 120,
                   left: 20,
                   right: 20,
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(32), // มนกลมสวยงามตาม image_cd9329.png
+                      borderRadius: BorderRadius.circular(32),
                       border: Border.all(color: Colors.grey.shade100),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.08),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
-                        )
+                        ),
                       ],
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // ค้นหาตำแหน่งที่แสดงชื่อห้องใน _buildRoomCard แล้วเปลี่ยนเป็น:
                         Text(
-                          'ห้องประชุม ชั้น ${room.floor}', 
-                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E293B), fontFamily: 'Kanit')
+                          'ห้องประชุม ${room.location} ฝั่ง ${room.side}', // ตั้งคำว่า ห้องประชุม ตายตัวที่นี่
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E293B),
+                            fontFamily: 'Kanit',
+                          ),
                         ),
                         const SizedBox(height: 12),
+                        // ส่วนแสดง ชั้น และ ฝั่ง
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _buildIconDetail(
+                              Icons.layers,
+                              'ชั้น ${room.location}',
+                            ), // แสดงค่าจากฟิลด์ location 
+                            const SizedBox(width: 15),
+                            _buildIconDetail(
+                              Icons.location_on_outlined,
+                              'ฝั่ง ${room.side}',
+                            ), // แสดงค่าจากฟิลด์ side
+                          ],
+                        ),
+                        
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            _buildIconDetail(Icons.location_on_outlined, 'ชั้น ${room.floor} ฝั่ง ${room.side}'),
-                            _buildIconDetail(Icons.people_outline, 'รองรับสูงสุด ${room.capacity} ท่าน'),
+                            _buildIconDetail(
+                              Icons.people_outline,
+                              'รองรับสูงสุด ${room.capacity} ท่าน',
+                            ),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -296,8 +533,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
               ],
             ),
           ),
-          
-          // ส่วนล่างสุด: ปุ่มแก้ไขและลบห้อง
+
           Padding(
             padding: const EdgeInsets.only(left: 24, right: 24, bottom: 20),
             child: Row(
@@ -305,7 +541,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                 Expanded(
                   child: _buildActionButton(
                     'แก้ไขห้อง',
-                    const Color(0xFF0096C7), // เปลี่ยนโทนสีฟ้าตามดีไซน์ต้นฉบับ
+                    const Color(0xFF0096C7),
                     () {
                       Navigator.push(
                         context,
@@ -315,7 +551,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                             index: index,
                           ),
                         ),
-                      ).then((_) => setState(() {})); 
+                      ).then((_) => _fetchRooms());
                     },
                   ),
                 ),
@@ -323,8 +559,8 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                 Expanded(
                   child: _buildActionButton(
                     'ลบห้อง',
-                    const Color(0xFFB70000), // เปลี่ยนโทนสีแดงเข้มตามดีไซน์ต้นฉบับ
-                    () => _showDeleteConfirmDialog(index),
+                    const Color(0xFFB70000),
+                    () => _showDeleteConfirmDialog(room.id),
                   ),
                 ),
               ],
@@ -335,12 +571,28 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     );
   }
 
+  Widget _buildImagePlaceholder() {
+    return Container(
+      height: 180,
+      width: double.infinity,
+      color: Colors.grey[300],
+      child: const Icon(Icons.image, size: 50, color: Colors.grey),
+    );
+  }
+
   static Widget _buildIconDetail(IconData icon, String text) {
     return Row(
       children: [
         Icon(icon, size: 16, color: Colors.blueGrey),
         const SizedBox(width: 4),
-        Text(text, style: const TextStyle(fontSize: 12, color: Colors.blueGrey, fontFamily: 'Kanit')),
+        Text(
+          text,
+          style: const TextStyle(
+            fontSize: 12,
+            color: Colors.blueGrey,
+            fontFamily: 'Kanit',
+          ),
+        ),
       ],
     );
   }
@@ -348,20 +600,45 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
   static Widget _buildTag(String text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(8)),
-      child: Text(text, style: const TextStyle(fontSize: 10, color: Colors.grey, fontFamily: 'Kanit')),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 10,
+          color: Colors.grey,
+          fontFamily: 'Kanit',
+        ),
+      ),
     );
   }
 
-  static Widget _buildActionButton(String text, Color color, VoidCallback onTap) {
+  static Widget _buildActionButton(
+    String text,
+    Color color,
+    VoidCallback onTap,
+  ) {
     return SizedBox(
       height: 40,
       child: ElevatedButton(
-        onPressed: () {
-                        onTap();
-        },
-        style: ElevatedButton.styleFrom(backgroundColor: color, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-        child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Kanit')),
+        onPressed: onTap,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Kanit',
+          ),
+        ),
       ),
     );
   }

@@ -1,7 +1,9 @@
+import 'dart:convert'; // 💡 เพิ่มเข้ามา
+import 'package:http/http.dart' as http; // 💡 เพิ่มเข้ามา
 import 'package:flutter/material.dart';
 import 'Room_model.dart';
 import 'Room_confirm.dart';
- // 💡 นำเข้าเพื่อเรียกใช้ globalBookingHistory
+import 'package:shared_preferences/shared_preferences.dart'; // 💡 เพิ่มบรรทัดนี้
 
 class RoomBookingAScreen extends StatefulWidget {
   final MeetingRoom room;
@@ -16,15 +18,16 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   final TextEditingController titleController = TextEditingController();
   bool showWarning = false;
 
-  // 💡 [แก้ไข] เปลี่ยนจาก DateTime(2026, 5, 27) ตายตัว ให้เริ่มต้นเป็นวันที่ปัจจุบัน ณ ตอนที่เปิดจองแทน
   DateTime selectedDate = DateTime.now();
   TimeOfDay startTime = const TimeOfDay(hour: 10, minute: 0);
   TimeOfDay endTime = const TimeOfDay(hour: 12, minute: 0);
   int participantCount = 4;
 
-  // 💡 [แก้ไข] ปรับเปลี่ยนฟอร์แมตโครงสร้างวันที่ให้เป็น วัน/เดือน/ปี (DD/MM/YYYY) ตามปกติ
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+  String _formatDateForApi(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 
   String _formatTime(TimeOfDay time) {
@@ -33,38 +36,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
     return '$hour:$minute';
   }
 
-  // 💡 ฟังก์ชันแปลง TimeOfDay เป็นนาทีทั้งหมด เพื่อให้ง่ายต่อการคำนวณเปรียบเทียบเลขคณิต
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
-
-  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อน
-  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อน (เวอร์ชันอัปเดตเพื่อคืนสิทธิ์เวลาที่เสร็จสิ้น/ยกเลิก)
-  bool _isTimeSlotOverlapping() {
-    final int newStart = _timeToMinutes(startTime);
-    final int newEnd = _timeToMinutes(endTime);
-    final String targetDate = _formatDate(selectedDate);
-
-    // วนลูปเช็คประวัติการจองทั้งหมดในระบบ
-    for (var booking in globalBookingHistory.value) {
-      
-      // 🔥 [เพิ่มเงื่อนไขใหม่] ถ้าการจองนั้นขึ้นสถานะ "เสร็จสิ้น" หรือ "ยกเลิกแล้ว" 
-      // ให้ข้ามไปเลย ไม่ต้องนำมาคิดว่าเป็นการจองที่ทับซ้อน เพื่อเปิดโอกาสให้จองช่วงเวลานั้นใหม่ได้
-      if (booking.currentStatus == 'เสร็จสิ้น' || booking.currentStatus == 'ยกเลิกแล้ว') {
-        continue; // ข้ามลูปนี้ไปเช็ครายการถัดไปทันที
-      }
-
-      // เช็คเฉพาะที่เป็น "ห้องเดียวกัน" และ "วันเดียวกัน" เท่านั้น
-      if (booking.roomId == widget.room.id && booking.date == targetDate) {
-        final int existingStart = _timeToMinutes(booking.startTime);
-        final int existingEnd = _timeToMinutes(booking.endTime);
-
-        // สูตรคำนวณหาจุดคาบเกี่ยวของเวลา
-        if (newStart < existingEnd && newEnd > existingStart) {
-          return true; // ❌ เวลาทับซ้อนกัน (เฉพาะกรณีที่สถานะเป็น "จองแล้ว" หรือ "กำลังใช้งาน")
-        }
-      }
-    }
-    return false; //  เวลาว่างพร้อมจองฉลุย
-  }
 
   Future<void> _selectDate(BuildContext context) async {
     final DateTime? picked = await showDatePicker(
@@ -158,7 +130,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                         elevation: 4,
                         shadowColor: Colors.black26,
                       ),
-                      onPressed: () {
+                      onPressed: () async {
                         // 1. เช็คกรอกข้อมูลหัวข้อ
                         if (titleController.text.trim().isEmpty) {
                           setState(() {
@@ -167,9 +139,8 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                           return;
                         }
 
-                        // 💡 2. เช็คเงื่อนไขความถูกต้องของเวลาเบื้องต้น (เวลาเริ่ม ต้องไม่เท่ากับหรือมากกว่าเวลาสิ้นสุด)
-                        if (_timeToMinutes(startTime) >=
-                            _timeToMinutes(endTime)) {
+                        // 2. เช็คเงื่อนไขความถูกต้องของเวลา
+                        if (_timeToMinutes(startTime) >= _timeToMinutes(endTime)) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               backgroundColor: Color(0xFFB70000),
@@ -182,69 +153,100 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                           return;
                         }
 
-                        // 💡 3. ตรวจเช็คเวลาชนกันเรียลไทม์
-                        if (_isTimeSlotOverlapping()) {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              title: const Row(
-                                children: [
-                                  Icon(
-                                    Icons.lock_clock,
-                                    color: Color(0xFFE11D48),
-                                  ),
-                                  SizedBox(width: 10),
-                                  Text(
-                                    'เวลานี้ถูกจองแล้ว',
-                                    style: TextStyle(
-                                      fontFamily: 'Kanit',
-                                      fontWeight: FontWeight.bold,
+                        // 💡 3. ตรวจเช็คเวลาชนกันแบบเรียลไทม์ผ่าน API
+                        showDialog(
+                          context: context, 
+                          barrierDismissible: false, 
+                          builder: (_) => const Center(child: CircularProgressIndicator())
+                        );
+
+                        try {
+                          final prefs = await SharedPreferences.getInstance();
+                          String token = prefs.getString('token') ?? '';
+
+                          final response = await http.post(
+                            Uri.parse('http://localhost:3001/api/bookings/check-availability'),
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': 'Bearer $token',
+                            },
+                            body: jsonEncode({
+                              "roomId": int.parse(widget.room.id),
+                              // 💡 เปลี่ยนมาใช้ฟังก์ชัน _formatDateForApi
+                              "bookingDate": _formatDateForApi(selectedDate), 
+                              "startTime": _formatTime(startTime),
+                              "endTime": _formatTime(endTime),
+                            }),
+                          );
+                          
+                          Navigator.pop(context); // ปิด Loading
+
+                          if (response.statusCode == 409) {
+                            // ❌ เวลาถูกจองแล้ว
+                            showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                title: const Row(
+                                  children: [
+                                    Icon(Icons.lock_clock, color: Color(0xFFE11D48)),
+                                    SizedBox(width: 10),
+                                    Text(
+                                      'เวลานี้ถูกจองแล้ว',
+                                      style: TextStyle(
+                                        fontFamily: 'Kanit',
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                content: Text(
+                                  'ขออภัย ช่วงเวลา ${_formatTime(startTime)} - ${_formatTime(endTime)} ของวันที่ ${_formatDate(selectedDate)} มีผู้ใช้งานอื่นจองไว้ก่อนหน้าแล้ว กรุณาเลือกช่วงเวลาอื่น',
+                                  style: const TextStyle(fontFamily: 'Kanit'),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text(
+                                      'ตกลง',
+                                      style: TextStyle(
+                                        fontFamily: 'Kanit',
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF004AAD),
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
-                              content: Text(
-                                'ขออภัย ช่วงเวลา ${_formatTime(startTime)} - ${_formatTime(endTime)} ของวันที่ ${_formatDate(selectedDate)} มีผู้ใช้งานอื่นจองไว้ก่อนหน้าแล้ว กรุณาเลือกช่วงเวลาอื่น',
-                                style: const TextStyle(fontFamily: 'Kanit'),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text(
-                                    'ตกลง',
-                                    style: TextStyle(
-                                      fontFamily: 'Kanit',
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF004AAD),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        } else {
-                          // ผ่านทุกเงื่อนไข สลับไปหน้ายืนยันข้อมูลจองได้ปกติ
-                          setState(() {
-                            showWarning = false;
-                          });
+                            );
+                          } else if (response.statusCode == 200) {
+                            // ✅ ผ่านทุกเงื่อนไข สลับไปหน้ายืนยันข้อมูลจอง
+                            setState(() {
+                              showWarning = false;
+                            });
 
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => RoomConfirmScreen(
-                                room: widget.room,
-                                bookingTitle: titleController.text,
-                                formattedDate: _formatDate(selectedDate),
-                                formattedTime:
-                                    '${_formatTime(startTime)} - ${_formatTime(endTime)}',
-                                participantCount: participantCount,
-                                startTime: startTime, 
-                                endTime: endTime, 
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => RoomConfirmScreen(
+                                  room: widget.room,
+                                  bookingTitle: titleController.text,
+                                  formattedDate: _formatDate(selectedDate),
+                                  formattedTime: '${_formatTime(startTime)} - ${_formatTime(endTime)}',
+                                  participantCount: participantCount,
+                                  startTime: startTime, 
+                                  endTime: endTime, 
+                                  userId: globalRoomUserId,
+                                ),
                               ),
-                            ),
+                            );
+                          }
+                        } catch (e) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด', style: TextStyle(fontFamily: 'Kanit')))
                           );
                         }
                       },
@@ -284,26 +286,11 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildStepCircle(
-              '1',
-              'เลือกห้อง',
-              isActive: false,
-              isCompleted: true,
-            ),
+            _buildStepCircle('1', 'เลือกห้อง', isActive: false, isCompleted: true),
             _buildStepLine(isCompleted: true),
-            _buildStepCircle(
-              '2',
-              'กรอกข้อมูล',
-              isActive: true,
-              isCompleted: false,
-            ),
+            _buildStepCircle('2', 'กรอกข้อมูล', isActive: true, isCompleted: false),
             _buildStepLine(isCompleted: false),
-            _buildStepCircle(
-              '3',
-              'ยืนยัน',
-              isActive: false,
-              isCompleted: false,
-            ),
+            _buildStepCircle('3', 'ยืนยัน', isActive: false, isCompleted: false),
           ],
         ),
       ),
@@ -335,9 +322,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
           decoration: BoxDecoration(
             color: circleColor,
             shape: BoxShape.circle,
-            border: isCompleted
-                ? Border.all(color: const Color(0xFF004AAD), width: 1.5)
-                : null,
+            border: isCompleted ? Border.all(color: const Color(0xFF004AAD), width: 1.5) : null,
           ),
           alignment: Alignment.center,
           child: Text(
@@ -354,9 +339,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
           label,
           style: TextStyle(
             fontSize: 10,
-            color: isActive || isCompleted
-                ? const Color(0xFF004AAD)
-                : Colors.grey,
+            color: isActive || isCompleted ? const Color(0xFF004AAD) : Colors.grey,
             fontFamily: 'Kanit',
             fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
           ),
@@ -570,7 +553,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                         fontSize: 15,
                         fontWeight: FontWeight.w500,
                         color: Colors.black87,
-                        fontFamily: 'Kanit', // 💡 เพิ่มฟอนต์เพิ่มความสวยงาม
+                        fontFamily: 'Kanit',
                       ),
                     ),
                     const Icon(

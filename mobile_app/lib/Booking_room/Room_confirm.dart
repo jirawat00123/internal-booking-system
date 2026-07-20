@@ -1,8 +1,11 @@
 import 'dart:io';
+import 'dart:convert'; // 💡 เพิ่มสำหรับ JSON
+import 'package:http/http.dart' as http; // 💡 เพิ่มสำหรับเรียก API
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'Room_model.dart';
 import 'Room_completed.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RoomConfirmScreen extends StatelessWidget {
   final MeetingRoom room;
@@ -12,6 +15,8 @@ class RoomConfirmScreen extends StatelessWidget {
   final int participantCount;
   final TimeOfDay startTime;
   final TimeOfDay endTime;
+  final int userId; // 💡 เพิ่มตัวแปร userId
+
 
   const RoomConfirmScreen({
     Key? key,
@@ -22,6 +27,7 @@ class RoomConfirmScreen extends StatelessWidget {
     required this.participantCount,
     required this.startTime,
     required this.endTime,
+    required this.userId,
   }) : super(key: key);
 
   @override
@@ -48,7 +54,6 @@ class RoomConfirmScreen extends StatelessWidget {
       ),
       body: Column(
         children: [
-          // ส่วนแสดงสถานะ Step ด้านบน (ขยับมาไฮไลต์เต็มที่ Step 3 ยืนยัน)
           _buildStepIndicator(),
 
           Expanded(
@@ -59,11 +64,9 @@ class RoomConfirmScreen extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  // ตัวตั๋ว/Receipt ยืนยันข้อมูลการจอง
                   _buildConfirmTicketCard(),
                   const SizedBox(height: 40),
 
-                  // ปุ่มยืนยันการจองห้อง
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -76,28 +79,73 @@ class RoomConfirmScreen extends StatelessWidget {
                         elevation: 4,
                         shadowColor: Colors.black26,
                       ),
-                      onPressed: () {
-  final currentHistory = List<BookingHistory>.from(globalBookingHistory.value);
-  currentHistory.add(
-    BookingHistory(
-      roomId: room.id,
-      title: bookingTitle, // 💡 ส่งชื่อหัวข้อเข้าไปเก็บ
-      date: formattedDate,
-      startTime: startTime,
-      endTime: endTime,
-      participantCount: participantCount, // 💡 ส่งจำนวนคนเข้าไปเก็บ
-      type: 'ห้องประชุม', // 💡 ระบุประเภทเป็น 'ห้องประชุม'
-      bookedBy: globalCurrentUserName, // 💡 ส่งชื่อผู้จองเข้าไปเก็บ
-    ),
-  );
-  globalBookingHistory.value = currentHistory; // ยิงสัญญาณเรียลไทม์!
+                      onPressed: () async {
+                        // 💡 1. แปลงรูปแบบวันที่ให้ตรงกับระบบฐานข้อมูล
+                        List<String> dateParts = formattedDate.split('/');
+                        int day = int.parse(dateParts[0]);
+                        int month = int.parse(dateParts[1]);
+                        int year = int.parse(dateParts[2]);
+                        
+                        DateTime startDt = DateTime(year, month, day, startTime.hour, startTime.minute);
+                        DateTime endDt = DateTime(year, month, day, endTime.hour, endTime.minute);
 
-  Navigator.pushAndRemoveUntil(
-    context,
-    MaterialPageRoute(builder: (context) => const RoomCompletedScreen()),
-    (route) => route.isFirst,
-  );
-},
+                        showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+
+                        try {
+                          final prefs = await SharedPreferences.getInstance();
+                        String token = prefs.getString('token') ?? '';
+
+                       
+
+                          if (token.isEmpty) {
+                            // ดักจับกรณีไม่มี Token
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('กรุณาเข้าสู่ระบบก่อนใช้งาน (No Token)')),
+                            );
+                            return;
+                          }
+                          // 💡 2. ส่งข้อมูลไปที่ API
+                          final response = await http.post(
+                            Uri.parse('http://localhost:3001/api/bookings'),
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': 'Bearer $token',
+                            },
+                          
+                            body: jsonEncode({
+                              "roomId": int.parse(room.id),
+                              "startDatetime": startDt.toIso8601String(),
+                              "endDatetime": endDt.toIso8601String(),
+                              "title": bookingTitle,
+                              "userId": userId,
+                              
+                            }),
+                          );
+
+                          Navigator.pop(context); // ปิดหน้า Loading
+
+                          if (response.statusCode == 201) {
+                            // 🚀 บันทึกเสร็จ ไปหน้าสำเร็จ
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (context) => const RoomCompletedScreen()),
+                              (route) => route.isFirst,
+                            );
+                          } else {
+                            final errorMsg = jsonDecode(response.body)['message'] ?? 'เกิดข้อผิดพลาดในการจอง';
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(errorMsg, style: const TextStyle(fontFamily: 'Kanit')), 
+                              backgroundColor: Colors.red
+                            ));
+                          }
+                        } catch (e) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('ไม่สามารถติดต่อเซิร์ฟเวอร์ได้', style: TextStyle(fontFamily: 'Kanit')), 
+                            backgroundColor: Colors.red
+                          ));
+                        }
+                      },
                       child: const Text(
                         'ยืนยันการจองห้อง',
                         style: TextStyle(
@@ -134,19 +182,9 @@ class RoomConfirmScreen extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildStepCircle(
-              '1',
-              'เลือกห้อง',
-              isActive: false,
-              isCompleted: true,
-            ),
+            _buildStepCircle('1', 'เลือกห้อง', isActive: false, isCompleted: true),
             _buildStepLine(isCompleted: true),
-            _buildStepCircle(
-              '2',
-              'กรอกข้อมูล',
-              isActive: false,
-              isCompleted: true,
-            ),
+            _buildStepCircle('2', 'กรอกข้อมูล', isActive: false, isCompleted: true),
             _buildStepLine(isCompleted: true),
             _buildStepCircle('3', 'ยืนยัน', isActive: true, isCompleted: false),
           ],
@@ -237,7 +275,6 @@ class RoomConfirmScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ส่วนบน: รูปภาพห้องประชุมพร้อมข้อความ Overlay
           Stack(
             children: [
               ClipRRect(
@@ -249,16 +286,17 @@ class RoomConfirmScreen extends StatelessWidget {
                   width: double.infinity,
                   color: Colors.grey[300],
                   child: room.imagePath != null
-                      ? (kIsWeb
-                            ? Image.network(room.imagePath!, fit: BoxFit.cover)
-                            : Image.file(
-                                File(room.imagePath!),
-                                fit: BoxFit.cover,
-                              ))
+                      ? (room.imagePath!.startsWith('http')
+                          ? Image.network(room.imagePath!, fit: BoxFit.cover)
+                          : (kIsWeb
+                              ? Image.network(room.imagePath!, fit: BoxFit.cover)
+                              : Image.file(
+                                  File(room.imagePath!),
+                                  fit: BoxFit.cover,
+                                )))
                       : const Icon(Icons.image, size: 50, color: Colors.grey),
                 ),
               ),
-              // แผ่นฟิล์มสีมืดจาง ๆ บังรูปเพื่อให้ตัวหนังสือเด่นชัดขึ้นแบบดีไซน์
               Positioned.fill(
                 child: Container(
                   decoration: BoxDecoration(
@@ -269,7 +307,6 @@ class RoomConfirmScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              // ข้อความระบุชั้น และชื่อห้อง บนรูปภาพ
               Positioned(
                 left: 20,
                 bottom: 20,
@@ -277,9 +314,9 @@ class RoomConfirmScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'ห้องประชุมชั้น ${room.floor}',
+                      'ห้องประชุมชั้น ${room.location}',
                       style: const TextStyle(
-                        color: Color(0xFF00E5FF), // สีฟ้าสว่างตามรูปดีไซน์
+                        color: Color(0xFF00E5FF),
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                         fontFamily: 'Kanit',
@@ -300,8 +337,6 @@ class RoomConfirmScreen extends StatelessWidget {
               ),
             ],
           ),
-
-          // เส้นประคั่นกลางตั๋วแบบดีไซน์ (Ticket Dash Divider)
           Padding(
             padding: const EdgeInsets.symmetric(
               vertical: 20.0,
@@ -321,8 +356,6 @@ class RoomConfirmScreen extends StatelessWidget {
               ),
             ),
           ),
-
-          // ส่วนล่าง: รายละเอียดข้อมูลที่ User กรอกเข้ามา
           Padding(
             padding: const EdgeInsets.only(
               left: 24.0,
@@ -343,7 +376,6 @@ class RoomConfirmScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  // 💡 ดึงค่าจากหน้าฟอร์มที่กรอกส่งมา: ถ้าค่าว่างให้แสดง 'ประชุมงานทั่วไป' แต่ถ้ากรอกมาจะแสดงตามที่พิมพ์เป๊ะๆ
                   bookingTitle.trim().isEmpty
                       ? 'ประชุมงานทั่วไป'
                       : bookingTitle,
@@ -355,7 +387,6 @@ class RoomConfirmScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 12),
-
                 Row(
                   children: [
                     const Icon(
@@ -365,7 +396,7 @@ class RoomConfirmScreen extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'ชั้น ${room.floor} ฝั่ง ${room.side}',
+                      'ชั้น ${room.location} ฝั่ง ${room.side}',
                       style: const TextStyle(
                         fontSize: 13,
                         color: Colors.blueGrey,
@@ -374,12 +405,10 @@ class RoomConfirmScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 16.0),
                   child: Divider(color: Color(0xFFE2E8F0)),
                 ),
-
                 Row(
                   children: [
                     Expanded(
@@ -436,7 +465,6 @@ class RoomConfirmScreen extends StatelessWidget {
                     ),
                   ],
                 ),
-
                 const SizedBox(height: 20),
                 const Text(
                   'ผู้เข้าร่วม',

@@ -35,9 +35,10 @@ exports.getAllRooms = async (req, res, next) => {
 // =========================================================================
 exports.createRoom = async (req, res, next) => {
   try {
+    console.log('📥 ข้อมูลที่ได้รับจาก Frontend:', req.body); // พิมพ์เช็กข้อมูล
     const { name, capacity, location } = req.body;
 
-    // ตรวจสอบว่า Frontend ส่งข้อมูลมาครบหรือไม่
+    // ตรวจสอบข้อมูลเบื้องต้น
     if (!name || !capacity) {
       return res.status(400).json({
         success: false,
@@ -45,12 +46,14 @@ exports.createRoom = async (req, res, next) => {
       });
     }
 
-    // 💡 หัวใจสำคัญ: ใช้ await เพื่อบังคับให้ระบบรอจนกว่าจะบันทึกลง PostgreSQL สำเร็จ
+    // 💡 แก้ไขบั๊ก Prisma: ใช้ 'roomName' แทน 'name' ให้ตรงกับ Schema
     const newRoom = await prisma.room.create({
       data: {
-        name: name.toString(),
+        roomName: name.toString(), 
         capacity: parseInt(capacity),
         location: location ? location.toString() : null,
+        // 💡 เพิ่มการบันทึกที่อยู่รูปภาพลงฐานข้อมูล
+        uploadUrl: req.file ? `uploads/${req.file.filename}` : null,
       },
     });
 
@@ -65,6 +68,103 @@ exports.createRoom = async (req, res, next) => {
     return res.status(500).json({
       success: false,
       message: 'เกิดข้อผิดพลาดในการสร้างห้องประชุม',
+      error: error.message,
+    });
+  }
+};
+
+exports.updateRoom = async (req, res, next) => {
+  try {
+    const roomId = parseInt(req.params.id);
+    const { name, capacity, location, status } = req.body;
+
+    // 1. ตรวจสอบว่ามีห้องนี้อยู่จริงไหม
+    const existingRoom = await prisma.room.findUnique({
+      where: { id: roomId },
+    });
+
+    if (!existingRoom) {
+      return res.status(404).json({
+        success: false,
+        message: 'ไม่พบห้องประชุมที่ต้องการแก้ไข',
+      });
+    }
+
+    // 2. ดึงชื่อไฟล์รูปภาพเดิมมาใช้ กรณีที่ไม่ได้อัปโหลดรูปใหม่มา
+    let uploadUrl = existingRoom.uploadUrl;
+    if (req.file) {
+      // ถ้ามีการอัปโหลดรูปใหม่ (ผ่าน multer)
+      uploadUrl = `/uploads/${req.file.filename}`;
+    }
+
+    // 3. อัปเดตข้อมูลลง Database
+    const updatedRoom = await prisma.room.update({
+      where: { id: roomId },
+      data: {
+        roomName: name || existingRoom.roomName,
+        capacity: capacity ? parseInt(capacity) : existingRoom.capacity,
+        location: location || existingRoom.location,
+        status: status || existingRoom.status,
+        uploadUrl: uploadUrl, // อัปเดต Path รูปภาพ
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: '✅ แก้ไขข้อมูลห้องประชุมเรียบร้อยแล้ว',
+      data: updatedRoom,
+    });
+  } catch (error) {
+    console.error('❌ Error updating room:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'เกิดข้อผิดพลาดในการแก้ไขข้อมูล',
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================================
+// [DELETE] /api/rooms/:id - ลบห้องประชุม
+// =========================================================================
+exports.deleteRoom = async (req, res, next) => {
+  try {
+    const roomId = parseInt(req.params.id);
+
+    // 1. ตรวจสอบว่ามีห้องนี้อยู่จริงไหม
+    const existingRoom = await prisma.room.findUnique({
+      where: { id: roomId },
+    });
+
+    if (!existingRoom) {
+      return res.status(404).json({
+        success: false,
+        message: 'ไม่พบห้องประชุมที่ต้องการลบ',
+      });
+    }
+
+    // 2. สั่งลบข้อมูลจาก Database
+    await prisma.room.delete({
+      where: { id: roomId },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: '🗑️ ลบห้องประชุมสำเร็จ',
+    });
+  } catch (error) {
+    // 💡 ดัก Error กรณีห้องนี้ถูกจองไปแล้ว (ผูกอยู่กับ Foreign Key ในตาราง RoomBooking)
+    if (error.code === 'P2003') {
+      return res.status(400).json({
+        success: false,
+        message: 'ไม่สามารถลบห้องนี้ได้ เนื่องจากมีประวัติการจองค้างอยู่ในระบบ',
+      });
+    }
+    
+    console.error('❌ Error deleting room:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'เกิดข้อผิดพลาดในการลบห้องประชุม',
       error: error.message,
     });
   }

@@ -47,8 +47,8 @@ exports.createVehicle = async (req, res) => {
         }
 
         const existingVehicle = await prisma.vehicle.findUnique({
-            where: { plateNumber: plateNumber }
-        });
+  where: { plateNumber: plateNumber } // ใช้ชื่อฟิลด์ "plateNumber" ตามที่เขียนใน Prisma Model
+});
 
         if (existingVehicle) {
             if (req.file) await safeDeleteFile(req.file.path);
