@@ -6,6 +6,8 @@ const attachmentService = require('../services/attachmentService');
  */
 const uploadFile = async (req, res) => {
   try {
+
+    console.log('[AttachmentController Debug] req.file:', req.file);
     // 1. Validate Middleware Input
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded or invalid file type' });

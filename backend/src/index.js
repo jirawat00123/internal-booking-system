@@ -16,6 +16,28 @@ const vehicleBookingsRouter = require('./routes/vehicleBookings');
 const securityRoutes = require('./routes/security');
 const attachmentRoutes = require('./routes/attachments');
 
+// 🚀 [เพิ่ม] นำเข้า Route จัดการ User และ Monitor
+const userRoutes = require('./routes/users');
+const monitorRoutes = require('./routes/monitor');
+
+// ==========================================
+// 🔌 เชื่อมต่อ Routes กลุ่มเดิมที่เหลือ
+// ==========================================
+app.use('/api', authRoutes);              
+app.use('/api/bookings', bookingRoutes);  
+app.use('/api/resources', resourceRoutes); 
+app.use('/api/rooms', roomRoutes);
+app.use('/api', employeeRoutes); 
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/vehicle-bookings', vehicleBookingsRouter);
+app.use('/api/security', securityRoutes);
+app.use('/api/attachments', attachmentRoutes);
+
+// 🚀 [เพิ่ม] ผูก Route สำหรับ Users และ Monitor Mode
+app.use('/api/users', userRoutes);
+app.use('/api/admin/users', userRoutes); // รองรับทั้ง /api/users และ /api/admin/users
+app.use('/api/monitor', monitorRoutes);
+
 const multer = require('multer');
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -27,7 +49,7 @@ const storage = multer.diskStorage({
       dir = path.join(__dirname, '../uploads', 'rooms');
     } else {
       // 🚀 แก้ไขเฉพาะ Vehicle: ถอย 2 ระดับเพื่อเซฟไฟล์ลงที่ backend/uploads/vehicles/ โดยตรง
-      dir = path.join(__dirname, '../../uploads', 'vehicles');
+      dir = path.join(__dirname, '..//uploads', 'vehicles');
     }
     
     if (!fs.existsSync(dir)) {

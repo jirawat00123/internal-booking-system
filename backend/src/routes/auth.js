@@ -4,9 +4,12 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { JWT_SECRET, authenticateToken } = require('../middlewares/auth');
 
+// ✅ เพิ่มการเรียกใช้ Service และ Controller
+const { verifyPin } = require('../services/pinService');
+const authController = require('../controllers/authController');
+
 const router = express.Router();
 const prisma = new PrismaClient();
-
 // ==========================================
 // 🔑 API 1: Login (USER ใช้ Dropdown ไม่ต้องมี PIN / ADMIN & SECURITY ต้องใช้ PIN)
 // ==========================================
@@ -51,10 +54,13 @@ router.post('/login', async (req, res) => {
       if (!pin) {
         return res.status(400).json({ success: false, error: `คุณมีสิทธิ์เป็น ${role} กรุณากรอกรหัส PIN เพื่อยืนยันตัวตน` });
       }
-      if (userAccount.pin !== pin) {
+      
+      // ✅ ใช้ verifyPin จาก Service แทนการเปรียบเทียบข้อความธรรมดา
+      const isPinValid = await verifyPin(String(pin).trim(), userAccount.pin);
+      if (!isPinValid) {
         return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง" });
       }
-    } 
+    }
 
     // 🚀 เพิ่มระบบบันทึกประวัติ (Log) สำหรับ API 1
     try {
@@ -147,7 +153,9 @@ router.post('/login-pin', async (req, res) => {
         }
 
         // 💡 ตรวจสอบ PIN กับ Database จริง
-        if (userAccount.pin !== inputPin) {
+        // ✅ ตรวจสอบ PIN กับ Database ด้วย Argon2id
+        const isPinValid = await verifyPin(inputPin, userAccount.pin);
+        if (!isPinValid) {
             return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง' });
         }
 
@@ -177,22 +185,30 @@ router.post('/login-pin', async (req, res) => {
         });
 
         // 💡 1. ค้นหา User จาก PIN ใน Database ทันที (ลบตัวแปร pinRoles ทิ้งทั้งหมด)
-        const matchedUser = await prisma.user.findFirst({
-          where: {
-            pin: inputPin,
-            active: true
-          },
-          include: {
-            role: true, 
-            employee: {
-              include: {
-                position: {
-                  include: { department: true }
-                }
-              }
+        const activeUsers = await prisma.user.findMany({
+        where: { 
+          active: true,
+          pin: { not: null } 
+        },
+        include: {
+          role: true, 
+          employee: {
+            include: {
+              position: { include: { department: true } }
             }
           }
-        });
+        }
+      });
+
+      let matchedUser = null;
+
+      // ✅ วนลูปตรวจสอบ PIN ด้วย Argon2id
+      for (const user of activeUsers) {
+        if (user.pin && (await verifyPin(inputPin, user.pin))) {
+          matchedUser = user;
+          break;
+        }
+      }
 
         if (!matchedUser) {
           return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง หรือบัญชีถูกระงับ' });
@@ -210,6 +226,20 @@ router.post('/login-pin', async (req, res) => {
         assignedDept = matchedUser.employee?.position?.department?.departmentName || "ไม่ระบุแผนก";
 
         console.log("assignedRole After =", assignedRole);
+        console.log("STEP 1 : Role determined successfully:", assignedRole);
+
+// --- แทรกก่อนบรรทัดที่มีการ Generate JWT / Create Session ---
+        console.log("STEP 2 : Preparing JWT Payload & Session DB Update");
+
+// --- แทรกก่อนบรรทัด jwt.sign() ---
+        console.log("STEP 3 : Executing jwt.sign()");
+
+// --- แทรกหลัง jwt.sign() สำเร็จ ---
+        console.log("STEP 4 : JWT Generated Successfully");
+
+// --- แทรกก่อน res.json() หรือ res.status().json() ---
+          console.log("STEP 5 : Executing res.json()");
+
 
         // 💡 3. ตรวจสอบสิทธิ์แบบยืดหยุ่น (จัดกลุ่ม SECURITY และ GUARD ให้เข้าถึงกันได้เหมือน Middleware)
         const isSecurityGroup = (expectedRole === 'GUARD' || expectedRole === 'SECURITY') && 
@@ -365,8 +395,10 @@ router.get('/me', authenticateToken, async (req, res) => {
       fullName: emp.fullName,
       positionName: pos ? pos.positionName : "ไม่ระบุตำแหน่ง",
       departmentName: dept ? dept.departmentName : "ไม่ระบุแผนก",
-      role: user.roles,
-      active: user.active
+      role: user.role ? user.role.name : (user.roles || 'USER'), // ✅ แก้ไขให้ดึงข้อมูล Role ที่ถูกต้อง
+      active: user.active,
+      pinInitialized: user.pinInitialized, // ✅ เพิ่มให้ Frontend รับรู้
+      pinResetRequired: user.pinResetRequired // ✅ เพิ่มให้ Frontend รับรู้
     });
 
   } catch (error) {
@@ -412,7 +444,12 @@ router.post('/logout', authenticateToken, async (req, res) => {
     return res.status(500).json({ success: false, error: "ระบบไม่สามารถออกจากระบบได้" });
   }
 });
-
+// ==========================================
+// 🔐 API 6 & 7: PIN Management (ส่งต่อไปยัง authController)
+// ==========================================
+router.post('/setup-pin', authenticateToken, authController.setupPin);
+router.post('/change-pin', authenticateToken, authController.changePin);
+router.post('/admin/users/:id/reset-pin', authenticateToken, isAdmin, authController.resetUserPin);
 router.isAdmin = isAdmin;
 router.isGuard = isGuard;
 module.exports = router;

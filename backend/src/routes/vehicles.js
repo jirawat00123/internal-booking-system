@@ -86,8 +86,23 @@ const upload = multer({
 // ==========================================
 
 // 💡 1. ปลดล็อก GET (ดึงข้อมูลรถทั้งหมด) เพื่อให้ User ทั่วไปเข้าดูได้โดยไม่ต้องมี Token
+// 💡 1. ปลดล็อก GET (ดึงข้อมูลรถทั้งหมด) เพื่อให้ User ทั่วไปเข้าดูได้โดยไม่ต้องมี Token
 router.get('/', 
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
+);
+
+// 📺 API Monitor ยานพาหนะสำหรับ Guest/User ดูรายการรถและสถานะ (Requirement Week 13)
+router.get('/monitor/vehicles',
+    checkHandler(verifyToken, 'verifyToken'),
+    checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
+);
+
+// 📜 ดึงประวัติการใช้งานรถ (ย้ายขึ้นมาก่อน /:id เพื่อป้องกัน Express สับสนคำว่า 'history' เป็น parameter id)
+// ✅ เพิ่ม 'GUEST' ใน requireRole เพื่อเปิดให้ Guest เข้าดูประวัติได้ตาม Requirement Week 13
+router.get('/history', 
+    checkHandler(verifyToken, 'verifyToken'),
+    checkHandler(requireRole ? requireRole(['ADMIN', 'USER', 'GUARD', 'GUEST']) : null, 'requireRole'), 
+    checkHandler(vehicleBookingController.getHistory, 'vehicleBookingController.getHistory')
 );
 
 // 🔒 เพิ่มข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
@@ -109,12 +124,6 @@ router.put('/:id',
     checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
     upload.single('image'), 
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
-);
-
-router.get('/history', 
-    checkHandler(verifyToken, 'verifyToken'), // ✅ เปลี่ยนมาใช้ verifyToken ตามตัวแปรที่ Import ไว้
-    checkHandler(requireRole ? requireRole(['ADMIN', 'USER', 'GUARD']) : null, 'requireRole'), 
-    checkHandler(vehicleBookingController.getHistory, 'vehicleBookingController.getHistory') // ✅ ใส่ตัวครอบเพื่อความปลอดภัย
 );
 
 // 🔒 ลบข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)

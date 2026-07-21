@@ -42,9 +42,27 @@ const authenticateToken = async (req, res, next) => {
 
     //  แก้ไขเพิ่มเติม: ตรวจสอบสถานะการเปิดใช้งานบัญชี (Account Status Validation)
     // อ้างอิงจาก Source of Truth ตาราง user ฟิลด์เก็บสถานะคือ "active" (Boolean)
+    //  แก้ไขเพิ่มเติม: ตรวจสอบสถานะการเปิดใช้งานบัญชี (Account Status Validation)
+    // อ้างอิงจาก Source of Truth ตาราง user ฟิลด์เก็บสถานะคือ "active" (Boolean)
     if (!user.active) {
       console.log(`[EVIDENCE] 7. 403 Failure Cause: [USER_INACTIVE] User ID "${decoded.userId}" account is deactivated.`);
       return res.status(403).json({ success: false, error: "บัญชีผู้ใช้งานของคุณถูกระงับสิทธิ์การใช้งานชั่วคราว" });
+    }
+
+    // 🔒 [Security Feature]: บังคับตั้งค่า PIN ใหม่ หากถูก Admin สั่งรีเซ็ต หรือเป็นการเข้าใช้งานครั้งแรก
+    if (user.pinResetRequired) {
+      // อนุญาตให้ผ่านได้เฉพาะ API ที่ใช้สำหรับจัดการ PIN และ Logout เท่านั้น
+      const allowedPaths = ['/setup-pin', '/change-pin', '/logout'];
+      const isAllowed = allowedPaths.some(path => req.originalUrl.includes(path));
+      
+      if (!isAllowed) {
+        console.log(`[EVIDENCE] 403 Failure Cause: [PIN_RESET_REQUIRED] User ID "${decoded.userId}" needs to set up a new PIN.`);
+        return res.status(403).json({ 
+          success: false, 
+          error: "กรุณาตั้งค่าหรือเปลี่ยนรหัส PIN ใหม่ก่อนเข้าใช้งานระบบ",
+          requirePinSetup: true // ส่ง flag ไปให้ Frontend รู้ว่าต้องเด้งหน้าตั้งค่ารหัส
+        });
+      }
     }
 
     // 🚨 [Requirement 5] LOG: ค่า currentSessionId ที่ได้จากฐานข้อมูล ณ ขนาดนี้
@@ -63,8 +81,16 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ success: false, error: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" });
     }
 
-    // ✅ เพิ่มการอัปเดต Role จาก Database ลงใน req.user เพื่อส่งต่อให้ requireRole นำไปเช็คได้อย่างถูกต้อง
-    req.user.role = user.role?.name || user.role;
+    // ✅ ปรับการอ่านค่า Role ให้ปลอดภัย รองรับทั้งจากตาราง Role Relation และฟิลด์ roles Enum 
+    req.user.role = user.role?.name || user.roles || decoded.role || 'USER';
+
+    // 💡 [Requirement Week 13] Guest Mode Validation
+    // ดักจับ Role GUEST ไม่ให้ทำการเขียน/แก้ไขข้อมูลใดๆ ผ่าน API
+    if (req.user.role === 'GUEST' && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+      console.log(`[EVIDENCE] 403 Failure Cause: [GUEST_WRITE_ATTEMPT] Guest tried to use ${req.method} on ${req.originalUrl}`);
+      // ส่งข้อความกลับไป เพื่อให้ Frontend นำไปโชว์เป็น Popup ได้ทันที
+      return res.status(403).json({ success: false, error: "กรุณา Login ก่อนใช้งาน" }); 
+    }
 
     next();
 

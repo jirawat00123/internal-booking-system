@@ -25,6 +25,9 @@ const storage = multer.diskStorage({
 
 // 2. Extension & Mime Validation Config
 const fileFilter = (req, file, cb) => {
+
+  console.log('[UploadMiddleware Debug] File received:', file.originalname);
+  console.log('[UploadMiddleware Debug] MIME Type:', file.mimetype);
   // Allowed extensions & mime types (Production Standard)
   const allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf'];
   const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];

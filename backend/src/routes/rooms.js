@@ -32,6 +32,7 @@ const upload = multer({ storage: storage });
 // ==========================================
 // 🚨 จุดสำคัญ: โยง Route ไปหา Controller เท่านั้น ห้ามมี Logic ลบข้อมูลในหน้านี้
 // ==========================================
+router.get('/monitor/rooms', authenticateToken, roomController.getAllRooms);
 router.get('/', authenticateToken, roomController.getAllRooms);
 // ✅ เพิ่ม requireRole(['ADMIN']) เข้าไปต่อจาก authenticateToken 
 // เพื่อบังคับให้ระบบเช็ค Role ก่อนเข้าไปถึง Controller

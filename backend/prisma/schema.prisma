@@ -61,12 +61,12 @@ model User {
   id                      Int                     @id @default(autoincrement())
   employeeId              Int                     @map("employee_id")
   roleId                  Int                     @map("role_id")
-  pin                     String?                 @db.VarChar(6) // 👈 เพิ่มตรงนี้
-  pinInitialized          Boolean                 @default(false) @map("pin_initialized")   // ตั้ง PIN ครั้งแรกรึยัง
-  pinChangedAt            DateTime?               @map("pin_changed_at")                   // เปลี่ยน PIN ล่าสุดเมื่อไหร่
-  pinResetRequired        Boolean                 @default(false) @map("pin_reset_required") // Admin Reset แล้วต้องบังคับตั้งใหม่ไหม
+  pin                     String?                 @map("pin_hash") 
+  pinInitialized          Boolean                 @default(false) @map("pin_initialized")   
+  pinChangedAt            DateTime?               @map("pin_changed_at")                   
+  pinResetRequired        Boolean                 @default(false) @map("pin_reset_required") 
   active                  Boolean                 @default(true)
-  currentSessionId        String?                 @map("current_session_id") // เพิ่มฟิลด์นี้
+  currentSessionId        String?                 @map("current_session_id") 
   createdAt               DateTime                @default(now()) @map("created_at")
   attachments             Attachment[]
   auditLogs               AuditLog[]
