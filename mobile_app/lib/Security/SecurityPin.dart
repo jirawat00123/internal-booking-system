@@ -149,7 +149,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/bg.png'),
+                image: AssetImage('assets/images/bgmmk.png'),
                 fit: BoxFit.cover,
               ),
             ),

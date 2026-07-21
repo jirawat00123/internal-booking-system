@@ -15,7 +15,7 @@ class VehicleModel {
   final String vehicleName;
   final DateTime? createdAt;
   final DateTime? updatedAt;
-  
+
   // ตัวแปรสำหรับใช้งานฝั่ง UI
   final bool hasFutureBooking;
 
@@ -77,8 +77,12 @@ class VehicleModel {
       uploadUrl: json['uploadUrl'],
       isDeleted: json['isDeleted'] ?? false,
       vehicleName: json['vehicleName'] ?? '',
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
-      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'])
+          : null,
     );
   }
 }
@@ -92,7 +96,8 @@ class VehicleBookingModel {
   final int userId;
   final int? driverEmployeeId;
   final String destination;
-  final DateTime startDatetime; // รวมวันที่และเวลาไว้ใน DateTime เดียวตาม Prisma
+  final DateTime
+  startDatetime; // รวมวันที่และเวลาไว้ใน DateTime เดียวตาม Prisma
   final DateTime endDatetime;
   final String purpose;
   String status;
@@ -122,14 +127,14 @@ class VehicleBookingModel {
 
     final now = DateTime.now();
     if (now.isBefore(startDatetime)) {
-      return 'จองแล้ว'; 
+      return 'จองแล้ว';
     } else if (now.isAfter(startDatetime) && now.isBefore(endDatetime)) {
-      return 'กำลังใช้งาน'; 
+      return 'กำลังใช้งาน';
     } else if (now.isAfter(endDatetime)) {
-      return 'เสร็จสิ้น'; 
+      return 'เสร็จสิ้น';
     }
 
-    return status; 
+    return status;
   }
 
   // 💡 แปลง JSON จาก API เป็น Object
@@ -145,8 +150,12 @@ class VehicleBookingModel {
       purpose: json['purpose'] ?? '',
       status: json['status'] ?? 'Pending',
       passengers: json['passengers'] ?? 1,
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
-      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'])
+          : null,
     );
   }
 }
@@ -195,12 +204,18 @@ class VehicleLogModel {
       checkoutMileage: json['checkoutMileage'],
       checkoutFuelLevel: json['checkoutFuelLevel'],
       returnById: json['returnById'],
-      returnTime: json['returnTime'] != null ? DateTime.parse(json['returnTime']) : null,
+      returnTime: json['returnTime'] != null
+          ? DateTime.parse(json['returnTime'])
+          : null,
       returnMileage: json['returnMileage'],
       returnFuelLevel: json['returnFuelLevel'],
       remark: json['remark'],
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
-      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'])
+          : null,
     );
   }
 }
@@ -212,7 +227,9 @@ String globalCurrentUserName = "MMK"; // จำลองชื่อผู้ใ
 int globalCurrentUserId = 1; // จำลอง ID ผู้ใช้งานล็อกอิน
 
 // 🚗 ตัวแปรเก็บข้อมูลรถยนต์ทั้งหมด
-final ValueNotifier<List<VehicleModel>> globalVehicles = ValueNotifier<List<VehicleModel>>([]);
+final ValueNotifier<List<VehicleModel>> globalVehicles =
+    ValueNotifier<List<VehicleModel>>([]);
 
 // 📋 ตัวแปรเก็บประวัติการจองรถทั้งหมดในแอป (เริ่มต้นเป็นลิสต์ว่าง)
-final ValueNotifier<List<VehicleBookingModel>> globalVehicleBookingHistory = ValueNotifier<List<VehicleBookingModel>>([]);
+final ValueNotifier<List<VehicleBookingModel>> globalVehicleBookingHistory =
+    ValueNotifier<List<VehicleBookingModel>>([]);

@@ -274,6 +274,7 @@ exports.checkIn = async (req, res, next) => {
       // ✅ 3. ลบบล็อกที่ทำหน้าที่บันทึก Attachment ซ้ำซ้อนออกเรียบร้อยแล้ว
     });
 
+    // ... โค้ดส่วนท้ายของฟังก์ชัน checkIn ...
     return res.status(200).json({
       success: true,
       message: 'ทำรายการ Check-In รับรถยนต์คืนคลังสำเร็จเรียบร้อย'
@@ -289,6 +290,60 @@ exports.checkIn = async (req, res, next) => {
     if (error.message === 'VEHICLE_NOT_IN_USE') {
       return res.status(400).json({ success: false, message: 'รถคันนี้ไม่ได้อยู่ในสถานะนำออกใช้งาน (IN USE) ไม่สามารถรับคืนได้' });
     }
+    next(error);
+  }
+};
+
+// =========================================================================
+// [GET] /api/vehicle-logs/:id - ดึงข้อมูลประวัติการบันทึก Check-Out / Check-In รายรายการ
+// =========================================================================
+exports.getVehicleLogById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const logId = parseInt(id);
+
+    if (isNaN(logId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'รูปแบบ ID ของ Log ไม่ถูกต้อง'
+      });
+    }
+
+    const log = await prisma.vehicleLog.findUnique({
+      where: { id: logId },
+      include: {
+        checkoutBy: {
+          include: { employee: true }
+        },
+        returnBy: {
+          include: { employee: true }
+        },
+        booking: {
+          include: {
+            user: {
+              include: { employee: true }
+            },
+            vehicle: true,
+            attachments: {
+              where: { isDeleted: false }
+            }
+          }
+        }
+      }
+    });
+
+    if (!log) {
+      return res.status(404).json({
+        success: false,
+        message: 'ไม่พบข้อมูลบันทึกประวัติ (Vehicle Log) ที่ระบุในระบบ'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: log
+    });
+  } catch (error) {
     next(error);
   }
 };

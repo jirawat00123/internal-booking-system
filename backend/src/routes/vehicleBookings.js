@@ -1,3 +1,4 @@
+const { authenticateToken } = require('../middlewares/auth');
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
@@ -53,109 +54,78 @@ const deleteGarbageFile = (filePath) => {
 // ==========================================
 // 🟢 สเตปที่ 1: สร้างการจอง อัปโหลดไฟล์ และ The Brain (เช็กรถ + เช็กคนขับ)
 // ==========================================
-router.post('/', upload.single('document'), async (req, res) => {
+// 💡 เพิ่ม authenticateToken เพื่อยืนยันตัวตนผู้จองเสมอ
+router.post('/', authenticateToken, upload.single('document'), async (req, res) => {
   try {
-    const { vehicleId, userId, driverEmployeeId, destination, passengers, startDatetime, endDatetime, purpose } = req.body;
+    const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, purpose, driverType } = req.body;
 
     // 🛑 1. ตรวจสอบข้อมูลเบื้องต้น
-    if (!vehicleId || !destination || !startDatetime || !endDatetime) {
+    if (!vehicleId || !startDatetime || !endDatetime) {
       deleteGarbageFile(req.file?.path);
       return res.status(400).json({
         success: false,
-        error: "กรุณากรอกข้อมูลให้ครบถ้วน (รหัสรถ, จุดหมายปลายทาง, วันเวลาเริ่มและสิ้นสุด)"
+        error: "กรุณากรอกข้อมูลให้ครบถ้วน (รหัสรถ, วันเวลาเริ่มและสิ้นสุด)"
       });
     }
 
     const parsedVehicleId = parseInt(vehicleId, 10);
-    const parsedPassengers = passengers ? parseInt(passengers, 10) : 1;
-    const parsedDriverId = driverEmployeeId ? parseInt(driverEmployeeId, 10) : null;
+    // 💡 รองรับทั้ง key แบบเก่าและใหม่ที่ Flutter ส่งมา
+    const parsedPassengers = parseInt(passengers || passengerCount || 1, 10);
+    
+    // 👤 2. ดึง User ID จาก Token ที่ผ่านการตรวจสอบแล้ว (มั่นใจได้ว่าถูกคน 100%)
+    const finalUserId = parseInt(req.user.userId, 10);
 
-    if (isNaN(parsedVehicleId)) {
-      deleteGarbageFile(req.file?.path);
-      return res.status(400).json({ success: false, error: "รหัสรถยนต์ไม่ถูกต้อง" });
-    }
-
-    // 🔍 2. ตรวจสอบรถยนต์ว่ามีในระบบ
-    const vehicleExists = await prisma.vehicle.findFirst({
-      where: { id: parsedVehicleId, isDeleted: false }
-    });
-
-    if (!vehicleExists) {
-      deleteGarbageFile(req.file?.path);
-      return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ในระบบ" });
-    }
-
-    // 👤 3. จัดการ User ID (Fallback)
-    let finalUserId = userId ? parseInt(userId, 10) : null;
     if (!finalUserId || isNaN(finalUserId)) {
-      const activeUser = await prisma.user.findFirst({ where: { active: true } });
-      if (!activeUser) {
-        deleteGarbageFile(req.file?.path);
-        return res.status(400).json({ success: false, error: "ไม่พบผู้ใช้งาน (User) ในระบบ" });
-      }
-      finalUserId = activeUser.id;
+      deleteGarbageFile(req.file?.path);
+      return res.status(401).json({ success: false, error: "ไม่พบสิทธิ์ผู้ใช้งาน กรุณาล็อกอินใหม่" });
     }
 
-    // 🧠 4. The Brain (ส่วนที่ 1): ตรวจสอบคิวรถทับซ้อน
-    const overlappingVehicle = await prisma.vehicleBooking.findFirst({
-      where: {
-        vehicleId: parsedVehicleId,
-        status: { not: "Cancelled" },
-        startDatetime: { lt: new Date(endDatetime) },
-        endDatetime: { gt: new Date(startDatetime) }
-      }
-    });
-
-    if (overlappingVehicle) {
-      deleteGarbageFile(req.file?.path); // เช็กชนปุ๊บ ลบไฟล์ทิ้งปั๊บ
-      return res.status(400).json({
-        success: false,
-        error: "รถคันนี้มีการจองในช่วงเวลาดังกล่าวแล้ว กรุณาเลือกช่วงเวลาอื่น"
+    // 🧠 3. The Brain & Transaction (รวมการเช็กคิวและล็อกสถานะรถเข้าด้วยกัน)
+    const newBooking = await prisma.$transaction(async (tx) => {
+      
+      // 3.1 ตรวจสอบรถยนต์ว่ามีในระบบ และ "ว่าง (AVAILABLE)" หรือไม่
+      const vehicle = await tx.vehicle.findFirst({
+        where: { id: parsedVehicleId, isDeleted: false }
       });
-    }
 
-    // 🧠 5. The Brain (ส่วนที่ 2): ตรวจสอบคิวคนขับทับซ้อน (ถ้ามีการเลือกคนขับ)
-    // 🧠 5. The Brain (ส่วนที่ 2): ตรวจสอบคิวคนขับทับซ้อน (ถ้ามีการเลือกคนขับ)
-    if (parsedDriverId && !isNaN(parsedDriverId)) {
-      const overlappingDriver = await prisma.vehicleBooking.findFirst({
+      if (!vehicle) throw new Error('NOT_FOUND');
+      if (vehicle.status !== 'AVAILABLE') throw new Error('NOT_AVAILABLE');
+
+      // 3.2 ตรวจสอบคิวรถทับซ้อน
+      const overlappingVehicle = await tx.vehicleBooking.findFirst({
         where: {
-          driverId: parsedDriverId, // ✅ แก้เป็น driverId ให้ตรงกับ Schema จริง
-          status: { not: "Cancelled" },
+          vehicleId: parsedVehicleId,
+          status: { notIn: ["Cancelled", "Completed", "Rejected", "CANCELLED", "REJECTED"] },
           startDatetime: { lt: new Date(endDatetime) },
           endDatetime: { gt: new Date(startDatetime) }
         }
       });
 
-      if (overlappingDriver) {
-        deleteGarbageFile(req.file?.path);
-        return res.status(400).json({
-          success: false,
-          error: "พนักงานขับรถท่านนี้ติดคิวงานอื่นในช่วงเวลาดังกล่าวแล้ว"
-        });
-      }
-    }
+      if (overlappingVehicle) throw new Error('OVERLAP');
 
-    // 🟢 6. บันทึกข้อมูลลงฐานข้อมูล
-    const bookingData = {
-      vehicle: { connect: { id: parsedVehicleId } },
-      user: { connect: { id: finalUserId } },
-      destination,
-      passengers: parsedPassengers,
-      startDatetime: new Date(startDatetime),
-      endDatetime: new Date(endDatetime),
-      purpose: purpose || "",
-      status: "Pending"
-    };
+      // 🔥 3.3 อัปเดตสถานะรถเป็น RESERVED ทันที
+      await tx.vehicle.update({
+        where: { id: parsedVehicleId },
+        data: { status: 'RESERVED' }
+      });
 
-    if (parsedDriverId && !isNaN(parsedDriverId)) {
-      bookingData.driver = { connect: { id: parsedDriverId } };
-    }
-
-    const newBooking = await prisma.vehicleBooking.create({
-      data: bookingData
+      // 🟢 3.4 บันทึกข้อมูลลงฐานข้อมูล
+      return await tx.vehicleBooking.create({
+        data: {
+          vehicleId: parsedVehicleId,
+          userId: finalUserId,
+          destination: destination || 'ไม่ระบุเป้าหมาย',
+          passengers: parsedPassengers,
+          startDatetime: new Date(startDatetime),
+          endDatetime: new Date(endDatetime),
+          purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
+          driverType: driverType || 'ขับขี่เอง',
+          status: 'Pending'
+        }
+      });
     });
 
-    // 📎 7. บันทึกข้อมูลไฟล์แนบ (ถ้ามีการอัปโหลด)
+    // 📎 4. บันทึกข้อมูลไฟล์แนบ (ถ้ามีการอัปโหลด)
     if (req.file) {
       try {
         await prisma.attachment.create({
@@ -171,24 +141,24 @@ router.post('/', upload.single('document'), async (req, res) => {
         });
       } catch (attachError) {
         console.error("⚠️ Attachment saving warning:", attachError);
-        // อนุญาตให้การจองสำเร็จแม้บันทึกไฟล์ลงฐานข้อมูลพลาด เพื่อไม่ให้ User เสียเวลาจองใหม่
       }
     }
 
     return res.status(201).json({
       success: true,
-      message: "บันทึกคำขอจองรถยนต์เรียบร้อยแล้ว",
+      message: "บันทึกคำขอจองรถยนต์และล็อกคิวรถเรียบร้อยแล้ว",
       data: newBooking
     });
 
   } catch (error) {
     deleteGarbageFile(req.file?.path);
     console.error("🔴 Create Vehicle Booking Error:", error);
-    return res.status(500).json({
-      success: false,
-      error: "เกิดข้อผิดพลาดในการประมวลผลการจอง",
-      developerMessage: error.message
-    });
+    
+    if (error.message === 'OVERLAP') return res.status(409).json({ success: false, error: "รถคันนี้มีการจองในช่วงเวลาดังกล่าวแล้ว กรุณาเลือกช่วงเวลาอื่น" });
+    if (error.message === 'NOT_FOUND') return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ในระบบ" });
+    if (error.message === 'NOT_AVAILABLE') return res.status(400).json({ success: false, error: "รถคันนี้ไม่ว่างพร้อมใช้งาน (อาจถูกล็อกคิวไปแล้ว)" });
+
+    return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการประมวลผล", developerMessage: error.message });
   }
 });
 
@@ -204,14 +174,13 @@ router.get('/history', async (req, res) => {
     }
 
     const historyBookings = await prisma.vehicleBooking.findMany({
-      where: { userId: userId },
-      include: {
-        vehicle: true,
-        driver: true,
-        attachments: true
-      },
-      orderBy: { createdAt: 'desc' }
-    });
+  where: { userId: userId },
+  include: {
+    vehicle: true,
+    attachments: true
+  },
+  orderBy: { createdAt: 'desc' }
+});
 
     return res.status(200).json({
       success: true,
@@ -227,7 +196,7 @@ router.get('/history', async (req, res) => {
 // ==========================================
 // 🔍 ดึงรายละเอียดการจองรายตัว (GET /:id)
 // ==========================================
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const bookingId = parseInt(req.params.id, 10);
     if (isNaN(bookingId)) {
@@ -235,14 +204,13 @@ router.get('/:id', async (req, res) => {
     }
 
     const booking = await prisma.vehicleBooking.findUnique({
-      where: { id: bookingId },
-      include: {
-        vehicle: true,
-        user: { include: { employee: true } },
-        driver: true,
-        attachments: true
-      }
-    });
+  where: { id: bookingId },
+  include: {
+    vehicle: true,
+    user: { include: { employee: true } },
+    attachments: true
+  }
+});
 
     if (!booking) {
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจองนี้" });
@@ -261,17 +229,16 @@ router.get('/:id', async (req, res) => {
 // ==========================================
 // 🚗 ดึงรายการประวัติการจองรถยนต์ทั้งหมด (GET /)
 // ==========================================
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const bookings = await prisma.vehicleBooking.findMany({
-      include: {
-        vehicle: true,
-        user: { include: { employee: true } },
-        driver: true
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 100 // ป้องกันปัญหา Out of Memory
-    });
+  include: {
+    vehicle: true,
+    user: { include: { employee: true } }
+  },
+  orderBy: { createdAt: 'desc' },
+  take: 100
+});
 
     return res.status(200).json({
       success: true,
@@ -287,7 +254,7 @@ router.get('/', async (req, res) => {
 // ==========================================
 // 🟡 ยกเลิกการจองรถยนต์ (PATCH /:id/cancel)
 // ==========================================
-router.patch('/:id/cancel', async (req, res) => {
+router.patch('/:id/cancel', authenticateToken, async (req, res) => {
   try {
     const bookingId = parseInt(req.params.id, 10);
     if (isNaN(bookingId)) {
@@ -300,6 +267,17 @@ router.patch('/:id/cancel', async (req, res) => {
 
     if (!bookingExists) {
       return res.status(404).json({ success: false, error: `ไม่พบรายการจองรหัส #${bookingId} ในระบบ` });
+    }
+
+    // 🛡️ เช็กสิทธิ์ข้อ 1: GUARD และ SECURITY ดูประวัติรถได้อย่างเดียว ไม่มีสิทธิ์ยกเลิก
+    if (req.user.role === 'GUARD' || req.user.role === 'SECURITY') {
+      return res.status(403).json({ success: false, error: "คุณไม่มีสิทธิ์ยกเลิกการจอง" });
+    }
+
+    // 🛡️ เช็กสิทธิ์ข้อ 2: พนักงานทั่วไป (USER) ยกเลิกได้เฉพาะรายการที่ตัวเองเป็นคนจองเท่านั้น
+    // (ADMIN จะหลุดรอดเงื่อนไขนี้ไป ทำให้ยกเลิกของใครก็ได้ตาม Requirement)
+    if (req.user.role === 'USER' && bookingExists.userId !== req.user.userId) {
+      return res.status(403).json({ success: false, error: "คุณไม่มีสิทธิ์ยกเลิกการจองของผู้อื่น" });
     }
 
     if (bookingExists.status === "Cancelled") {
@@ -322,5 +300,4 @@ router.patch('/:id/cancel', async (req, res) => {
     return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการยกเลิกรายการจอง" });
   }
 });
-
 module.exports = router;

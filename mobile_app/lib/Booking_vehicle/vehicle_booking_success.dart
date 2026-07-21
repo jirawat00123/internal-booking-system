@@ -53,14 +53,12 @@ class VehicleBookingSuccessPage extends StatelessWidget {
               height: 50,
               child: ElevatedButton(
                 onPressed: () {
-                  // 💡 เปลี่ยน MyHistoryPage() เป็นชื่อคลาสหน้าประวัติของคุณ
-                  // ใช้ pushAndRemoveUntil เพื่อลบประวัติการกด Back ป้องกันผู้ใช้กดย้อนกลับมาหน้า Success
                   Navigator.pushAndRemoveUntil(
                     context,
                     MaterialPageRoute(
                       builder: (context) => const BookingHistoryScreen(),
                     ),
-                    (route) => false,
+                    (Route<dynamic> route) => route.isFirst,
                   );
                 },
                 style: ElevatedButton.styleFrom(

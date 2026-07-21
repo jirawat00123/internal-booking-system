@@ -62,6 +62,30 @@ class _ManagePageState extends State<ManagePage> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', token);
 
+        // 🟢 เพิ่มโค้ดส่วนนี้เพื่อเซฟ userId และ role จาก Token ลงเครื่อง 🟢
+        try {
+          if (token.isNotEmpty) {
+            // ถอดรหัส JWT Token ด้วย Base64
+            final parts = token.split('.');
+            if (parts.length == 3) {
+              final payload = parts[1];
+              final normalized = base64Url.normalize(payload);
+              final decoded = utf8.decode(base64Url.decode(normalized));
+              final payloadMap = json.decode(decoded);
+
+              if (payloadMap['userId'] != null) {
+                // บันทึก userId และ Role ลงเครื่อง
+                await prefs.setInt('userId', payloadMap['userId']);
+                await prefs.setString('role', payloadMap['role'] ?? 'USER');
+                debugPrint('✅ บันทึก userId: ${payloadMap['userId']} สำเร็จ');
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('❌ เกิดข้อผิดพลาดในการดึง userId จาก Token: $e');
+        }
+        // 🟢 สิ้นสุดโค้ดที่เพิ่มใหม่ 🟢
+
         if (!dialogContext.mounted) return;
         Navigator.pop(dialogContext); // ปิด Dialog ทันทีเมื่อทำงานสำเร็จ
 

@@ -15,7 +15,9 @@ class SecurityGroupPage extends StatelessWidget {
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage('assets/bg.png'),
+                image: AssetImage(
+                  'assets/images/bgmmk.png',
+                ), // ใช้ภาพพื้นหลังใหม่
                 fit: BoxFit.cover,
               ),
             ),
@@ -71,7 +73,7 @@ class SecurityGroupPage extends StatelessWidget {
 
                   // โลโก้ (เอา Center ออก เพื่อให้ชิดซ้าย)
                   Image.asset(
-                    'assets/MMK_logo.png',
+                    'assets/images/MMK_logo.png',
                     width: screenWidth * 0.5, // ปรับให้กว้างขึ้นตามสัดส่วนในรูป
                     fit: BoxFit.contain,
                   ),

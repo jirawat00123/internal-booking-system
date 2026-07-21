@@ -11,7 +11,9 @@ const verifyToken = authMiddleware.verifyToken;
 const requireRole = authMiddleware.requireRole;
 
 // นำเข้า Controller
+// นำเข้า Controller
 const vehicleController = require('../controllers/vehicleController');
+const vehicleBookingController = require('../controllers/vehicleBookingController'); // ✅ เพิ่ม Import เพื่อแก้ Error ลืมประกาศตัวแปร
 
 // ==========================================
 // 🛡️ [เพิ่มระบบดักจับข้อผิดพลาด] ตรวจสอบ Middleware & Controller
@@ -49,11 +51,24 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
+    // 4. เพิ่ม Debug Log ก่อนเข้าเงื่อนไข (เพื่อหา Evidence)
+    console.log('--- Debug Multer fileFilter ---');
+    console.log('Fieldname:', file.fieldname);
+    console.log('Originalname:', file.originalname);
+    console.log('Mimetype:', file.mimetype);
+    console.log('-------------------------------');
+
     const allowedTypes = /jpeg|jpg|png/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
     
-    if (extname && mimetype) {
+    // ตรวจสอบนามสกุลไฟล์อย่างเข้มงวด
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    
+    // ตรวจสอบ Mimetype ว่าเป็นรูปภาพ หรือเป็น octet-stream จาก Flutter Web
+    const isImageMimetype = allowedTypes.test(file.mimetype);
+    const isFlutterWebBinary = file.mimetype === 'application/octet-stream' || file.mimetype === 'binary/octet-stream';
+    
+    // เงื่อนไข: นามสกุลต้องถูกต้องเสมอ และ (Mimetype ต้องเป็นรูปภาพ หรือเป็น Binary จาก Web)
+    if (extname && (isImageMimetype || isFlutterWebBinary)) {
         return cb(null, true);
     } else {
         return cb(new Error('รองรับเฉพาะไฟล์รูปภาพ (png, jpg, jpeg) เท่านั้น'));
@@ -96,11 +111,21 @@ router.put('/:id',
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
 );
 
+router.get('/history', 
+    checkHandler(verifyToken, 'verifyToken'), // ✅ เปลี่ยนมาใช้ verifyToken ตามตัวแปรที่ Import ไว้
+    checkHandler(requireRole ? requireRole(['ADMIN', 'USER', 'GUARD']) : null, 'requireRole'), 
+    checkHandler(vehicleBookingController.getHistory, 'vehicleBookingController.getHistory') // ✅ ใส่ตัวครอบเพื่อความปลอดภัย
+);
+
 // 🔒 ลบข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
 router.delete('/:id', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
     checkHandler(vehicleController.deleteVehicle, 'vehicleController.deleteVehicle')
 );
+
+// ✅ แก้ไข: อนุญาต ADMIN, USER, และ GUARD ให้ดูประวัติรถได้
+// ✅ แก้ไข: อนุญาต ADMIN, USER, และ GUARD ให้ดูประวัติรถได้
+
 
 module.exports = router;

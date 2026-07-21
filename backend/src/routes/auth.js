@@ -21,13 +21,9 @@ router.post('/login', async (req, res) => {
     // 1. ค้นหาพนักงานและข้อมูลบัญชีผู้ใช้
     // 1. ค้นหาพนักงานและข้อมูลบัญชีผู้ใช้ (แก้ไขการ Include ตารางสิทธิ์)
     const employee = await prisma.employee.findUnique({
-      where: { employeeCode: String(employeeCode).trim() },
+      where: { employeeCode: employeeCode },
       include: {
-        users: {
-          include: {
-            role: true // ✅ แก้ไข: ดึงข้อมูลแบบ Nested Relation โยงตาราง Role ออกมาด้วยตรงตาม Schema
-          }
-        },
+        users: { include: { role: true } }, // ✅ สั่ง Include ตาราง role เพื่อให้นำไปใช้ .role.name ได้
         position: true
       }
     });
@@ -51,13 +47,11 @@ router.post('/login', async (req, res) => {
 
     // 2. 🛡️ เช็ก PIN ตาม Role ที่กำหนด
     // 💡 สิทธิ์ 'USER' จะข้ามบล็อก if นี้ไปเลย ทำให้ล็อกอินผ่านได้ทันทีแค่มี employeeCode
-    if (role === 'ADMIN' || role === 'SECURITY' || role === 'GUARD') {
+     if (role === 'ADMIN' || role === 'SECURITY' || role === 'GUARD') {
       if (!pin) {
         return res.status(400).json({ success: false, error: `คุณมีสิทธิ์เป็น ${role} กรุณากรอกรหัส PIN เพื่อยืนยันตัวตน` });
       }
-      
-      const inputPin = String(pin).trim();
-      if (userAccount.pin !== inputPin) {
+      if (userAccount.pin !== pin) {
         return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง" });
       }
     } 
@@ -117,57 +111,123 @@ router.post('/login', async (req, res) => {
 // ==========================================
 router.post('/login-pin', async (req, res) => {
   try {
-    const { pin, expectedRole } = req.body; 
+    // 💡 1. รับ employeeCode เพิ่มมาจาก Frontend เพื่อเชื่อมโยงว่าใครกำลังล็อกอิน
+    const { pin, expectedRole, employeeCode } = req.body; 
 
     if (!pin) {
       return res.status(400).json({ success: false, message: 'กรุณาส่งข้อมูล PIN' });
     }
 
     const inputPin = String(pin).trim();
-
-    const pinRoles = {
-      '001122': { assignedRole: 'SECURITY', assignedDept: 'SECURITY' },
-      '741963': { assignedRole: 'ADMIN', assignedDept: 'HR' },
-      '852000': { assignedRole: 'ADMIN', assignedDept: 'IT' }
-    };
-
-    const roleData = pinRoles[inputPin];
-
-    if (!roleData) {
-      return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง' }); 
-    }
-
-    const { assignedRole, assignedDept } = roleData;
-
-    if (expectedRole && assignedRole !== expectedRole) {
-      return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
-    }
-
+    
     let actualUserId = null;
     let actualUserName = "ไม่ทราบชื่อ";
-    
-    // ✅ AFTER: ตรวจสอบหา User ที่มีค่าสิทธิ์ตรงกับ assignedRole ตรงๆ และไม่มีสถานะถูกลบ (isDeleted)
-const matchedUser = await prisma.user.findFirst({
-  where: { 
-    role: assignedRole, // ค้นหาโดยเทียบ String ตรงๆ กับฟิลด์ role ในโมเดล User
-    isDeleted: false    // ตรวจสอบว่าผู้ใช้งานนี้ยังมีตัวตนอยู่จริงและไม่ได้ถูกลบ
-  }, 
-  include: { 
-    employee: true 
-  }
-});
-    
-    if (matchedUser) {
-      actualUserId = matchedUser.id;
-      actualUserName = matchedUser.employee?.fullName || "ไม่ระบุชื่อ";
+    let actualEmployeeCode = "";
+    let assignedRole = "USER";
+    let assignedDept = "ไม่ระบุแผนก";
+
+    // 💡 2. เปลี่ยนมาตรวจ PIN จาก Database จริงตามรหัสพนักงาน
+    if (employeeCode) {
+        const employee = await prisma.employee.findUnique({
+            where: { employeeCode: String(employeeCode).trim() },
+            include: {
+                users: { include: { role: true } },
+                position: { include: { department: true } }
+            }
+        });
+
+        if (!employee || !employee.users || employee.users.length === 0) {
+            return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งานนี้ในระบบ' });
+        }
+
+        const userAccount = employee.users[0];
+        
+        if (!userAccount.active) {
+            return res.status(403).json({ success: false, message: 'บัญชีผู้ใช้งานถูกระงับ' });
+        }
+
+        // 💡 ตรวจสอบ PIN กับ Database จริง
+        if (userAccount.pin !== inputPin) {
+            return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง' });
+        }
+
+        actualUserId = userAccount.id;
+        actualUserName = employee.fullName;
+        actualEmployeeCode = employee.employeeCode;
+        assignedRole = userAccount.role ? userAccount.role.name : 'USER';
+        assignedDept = employee.position?.department?.departmentName || "ไม่ระบุแผนก";
+
+        // ตรวจสอบสิทธิ์หาก Frontend มีการกำหนด expectedRole
+        if (expectedRole && assignedRole !== expectedRole) {
+            return res.status(403).json({ success: false, message: `เข้าไม่ได้! คุณไม่มีสิทธิ์เป็น ${expectedRole}` });
+        }
+
     } else {
-      return res.status(401).json({ success: false, message: 'ไม่พบผู้ดูแลระบบในฐานข้อมูล ไม่สามารถออก Token ได้' });
+        // 💡 3. Fallback: เผื่อหน้าบ้านยังไม่ส่ง employeeCode มา (ลอจิกเดิม)
+        
+        // 💡 เพิ่ม Console Log ชั่วคราวเพื่อพิสูจน์ Root Cause ตามที่คุณต้องการ
+        console.log("=== Debug PIN Login ===");
+        console.log({
+          employeeCode,
+          pin,
+          expectedRole,
+          assignedRole, // ก่อนนี้จะเป็น 'USER'
+          actualUserId,
+          actualEmployeeCode
+        });
+
+        // 💡 1. ค้นหา User จาก PIN ใน Database ทันที (ลบตัวแปร pinRoles ทิ้งทั้งหมด)
+        const matchedUser = await prisma.user.findFirst({
+          where: {
+            pin: inputPin,
+            active: true
+          },
+          include: {
+            role: true, 
+            employee: {
+              include: {
+                position: {
+                  include: { department: true }
+                }
+              }
+            }
+          }
+        });
+
+        if (!matchedUser) {
+          return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง หรือบัญชีถูกระงับ' });
+        }
+
+        // 💡 2. อ่าน Role จากฐานข้อมูลจริงๆ (ให้ผลลัพธ์เป็น 'ADMIN' ตามที่คุณแก้ DB ไว้)
+        // 💡 เพิ่ม Debug ตามที่กำหนดเพื่อพิสูจน์ค่า (ลบออกได้เมื่อแก้ปัญหาเสร็จ)
+        console.log("matchedUser =", matchedUser);
+        console.log("matchedUser.role =", matchedUser.role);
+        console.log("matchedUser.roles =", matchedUser.roles);
+        console.log("assignedRole Before =", assignedRole);
+
+        // 💡 2. ปรับการดึง Role ให้รองรับทั้งแบบ Relation (.role.name) และแบบ Field (.roles)
+        assignedRole = matchedUser.role ? matchedUser.role.name : (matchedUser.roles || 'USER');
+        assignedDept = matchedUser.employee?.position?.department?.departmentName || "ไม่ระบุแผนก";
+
+        console.log("assignedRole After =", assignedRole);
+
+        // 💡 3. ตรวจสอบสิทธิ์แบบยืดหยุ่น (จัดกลุ่ม SECURITY และ GUARD ให้เข้าถึงกันได้เหมือน Middleware)
+        const isSecurityGroup = (expectedRole === 'GUARD' || expectedRole === 'SECURITY') && 
+                                (assignedRole === 'GUARD' || assignedRole === 'SECURITY');
+
+        if (expectedRole && assignedRole !== expectedRole && !isSecurityGroup) {
+          return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
+        }
+
+        // 💡 4. เก็บตัวแปรเตรียมส่งทำ Session และ Audit Log
+        actualUserId = matchedUser.id;
+        actualUserName = matchedUser.employee?.fullName || "ไม่ระบุชื่อ";
+        actualEmployeeCode = matchedUser.employee?.employeeCode || "";
     }
 
-    // 🚀 1. สร้าง Session ID ใหม่สำหรับ PIN Login เพื่อให้ตรงกับมาตรฐาน Middleware
+    // 🚀 สร้าง Session ID และฝัง JWT (โค้ดเดิมทั้งหมด ไม่ลบ)
     const newSessionId = crypto.randomUUID();
 
-    // 🚀 2. อัปเดต Session ID ลง Database ป้องกัน Token หลุดวงโคจร
     await prisma.user.update({
       where: { id: actualUserId },
       data: { currentSessionId: newSessionId }
@@ -185,14 +245,15 @@ const matchedUser = await prisma.user.findFirst({
       console.error("⚠️ ไม่สามารถบันทึก Log ลง Database ได้:", logError.message);
     }
 
-    // 🎟️ 3. ฝัง sessionId ลงใน JWT Payload ให้เหมือนกับ API 1
     const secretKey = JWT_SECRET || process.env.JWT_SECRET || 'default_secret_key';
     const token = jwt.sign(
       { 
         userId: actualUserId,   
-        role: assignedRole,     
+        role: assignedRole, 
+        employeeCode: actualEmployeeCode, // 👈 เพิ่มให้ Token Payload เหมือน API 1
+        fullName: actualUserName,         // 👈 เพิ่มให้ Token Payload เหมือน API 1
         department: assignedDept,
-        sessionId: newSessionId // 👈 เพิ่มชิ้นส่วนสำคัญตรงนี้
+        sessionId: newSessionId 
       }, 
       secretKey, 
       { expiresIn: '12h' }
@@ -210,8 +271,6 @@ const matchedUser = await prisma.user.findFirst({
     return res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาดที่เซิร์ฟเวอร์' });
   }
 });
-
-
 // ==========================================
 // 📋 API 3: ดึงข้อมูลพนักงานจัดกลุ่มตามแผนก (สำหรับทำ Cascading Dropdown)
 // ==========================================
@@ -280,6 +339,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
       include: {
+        role: true, // ✅ เพิ่มการ Include ข้อมูล role ของ User
         employee: {
           include: {
             position: {

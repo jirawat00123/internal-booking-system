@@ -8,7 +8,7 @@ const {
   authenticateToken,
   requireRole
 } = require('../middlewares/auth');
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient, BookingStatus } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 // สร้างโฟลเดอร์ uploads อัตโนมัติ ป้องกัน Multer Error
@@ -52,9 +52,10 @@ router.get('/:id/schedule', authenticateToken, async (req, res, next) => {
     const schedules = await prisma.roomBooking.findMany({
       where: { 
         roomId: parseInt(id),
-        // 🟢 เพิ่ม 'CANCELLED' (ตัวพิมพ์ใหญ่ทั้งหมด) เข้าไปใน List นี้ครับ
+        // ใช้ Prisma BookingStatus Enum เพื่อให้ตรงกับ Type ที่ Prisma คาดหวัง
+        // ตัดค่าที่ไม่ใช่ Enum ออก เพื่อไม่ให้เกิด Error และดึงเฉพาะคิวที่ยังแอคทีฟอยู่ (เช่น ยกเว้น CANCELLED หรือ REJECTED)
         status: { 
-          notIn: ['CANCELLED', 'Cancelled', 'Cancel', 'Canceled', 'ยกเลิก', 'เสร็จสิ้น', 'Completed'] 
+          notIn: [BookingStatus.CANCELLED, BookingStatus.REJECTED] 
         } 
       },
       select: {

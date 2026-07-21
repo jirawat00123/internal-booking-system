@@ -31,7 +31,8 @@ const authenticateToken = async (req, res, next) => {
     req.user = decoded;
 
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId }
+      where: { id: decoded.userId },
+      include: { role: true } // 💡 สั่งให้ Prisma JOIN ข้อมูลตาราง roles มาด้วย
     });
 
     if (!user) {
@@ -62,7 +63,11 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ success: false, error: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" });
     }
 
+    // ✅ เพิ่มการอัปเดต Role จาก Database ลงใน req.user เพื่อส่งต่อให้ requireRole นำไปเช็คได้อย่างถูกต้อง
+    req.user.role = user.role?.name || user.role;
+
     next();
+
   } catch (error) {
     // 🚨 [Requirement 7] LOG สาเหตุ 401: การตรวจสอบด้วย jwt.verify ล้มเหลว
     console.log(`[EVIDENCE] 7. 401 Failure Cause: [JWT_VERIFICATION_FAILED] Error message: "${error.message}"`);

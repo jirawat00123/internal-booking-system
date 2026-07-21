@@ -19,14 +19,28 @@ const attachmentRoutes = require('./routes/attachments');
 const multer = require('multer');
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const dir = path.join(process.cwd(), 'uploads', 'vehicles');
-    // 👈 เพิ่มบรรทัดนี้ เพื่อบอกให้ Multer นำไฟล์ไปบันทึกในโฟลเดอร์ที่ระบุจริง
+    const isRoom = req.originalUrl.includes('/rooms');
+    
+    let dir;
+    if (isRoom) {
+      // 🔒 ห้ามแก้ Rooms: ปล่อยให้ใช้ Path เดิมที่ทำงานได้ปกติ
+      dir = path.join(__dirname, '../uploads', 'rooms');
+    } else {
+      // 🚀 แก้ไขเฉพาะ Vehicle: ถอย 2 ระดับเพื่อเซฟไฟล์ลงที่ backend/uploads/vehicles/ โดยตรง
+      dir = path.join(__dirname, '../../uploads', 'vehicles');
+    }
+    
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     cb(null, dir); 
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    // 👈 ใส่คำว่า 'vehicle_' นำหน้า เพื่อให้ชื่อไฟล์ตรงกับรูปแบบในฐานข้อมูล
-    cb(null, 'vehicle_' + uniqueSuffix + path.extname(file.originalname)); 
+    const isRoom = req.originalUrl.includes('/rooms');
+    const prefix = isRoom ? 'room_' : 'vehicle_';
+    
+    cb(null, prefix + uniqueSuffix + path.extname(file.originalname)); 
   }
 });
 
@@ -406,7 +420,8 @@ app.post('/api/rooms', upload.single('image'), async (req, res) => {
 
     let uploadUrl = null;
     if (req.file) {
-      uploadUrl = `/uploads/${req.file.filename}`;
+      // 💡 ระบุ Sub-folder 'rooms' ให้ตรงกับที่ Multer บันทึกไฟล์ลงไป
+      uploadUrl = `/uploads/rooms/${req.file.filename}`;
     }
 
     const newRoom = await prisma.room.create({
@@ -478,6 +493,7 @@ app.get('/api/vehicles/available', async (req, res) => {
 });
 
 // [POST] จองรถยนต์
+// [POST] จองรถยนต์ (อัปเดตเวอร์ชันล็อกสถานะรถยนต์ 100%)
 app.post('/api/vehicle-bookings/book', async (req, res) => {
   const { vehicleId, userId, startDate, endDate, purpose, destination, passengers } = req.body;
 
@@ -489,6 +505,7 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
     const parsedVehicleId = parseInt(vehicleId, 10);
     const parsedUserId = parseInt(userId, 10);
 
+    // 1. ตรวจสอบว่ามีรถยนต์คันนี้ในระบบจริงไหม
     const vehicleExists = await prisma.vehicle.findUnique({
       where: { id: parsedVehicleId }
     });
@@ -496,6 +513,12 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
       return res.status(404).json({ message: `ไม่พบรถยนต์รหัส ${parsedVehicleId} ในระบบ (คุณอาจใส่ vehicleId ผิด)` });
     }
 
+    // 🔒 เช็กเพิ่มเติม: รถต้องสถานะ ว่าง (AVAILABLE) เท่านั้นถึงจะจองได้
+    if (vehicleExists.status !== 'AVAILABLE') {
+      return res.status(400).json({ message: 'รถคันนี้ไม่ว่างพร้อมใช้งาน (อาจถูกล็อกคิวไปแล้ว)' });
+    }
+
+    // 2. ตรวจสอบว่าผู้ใช้งานมีตัวตนจริงไหม
     const userExists = await prisma.user.findUnique({
       where: { id: parsedUserId }
     });
@@ -506,6 +529,7 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
+    // 3. ตรวจสอบคิวรถทับซ้อน (Collision Check)
     const overlappingBooking = await prisma.vehicleBooking.findFirst({
       where: {
         vehicleId: parsedVehicleId,
@@ -524,20 +548,38 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
       });
     }
 
-    const newBooking = await prisma.vehicleBooking.create({
-      data: {
-        vehicleId: parsedVehicleId,
-        userId: parsedUserId,
-        startDatetime: start,
-        endDatetime: end,    
-        purpose: purpose.trim(),
-        destination: destination ? destination.trim() : purpose.trim(), 
-        passengers: passengers ? parseInt(passengers, 10) : 1,
-        status: 'Pending'
-      }
+    // 👑 4. ใช้ Prisma $transaction มัดรวมการเปลี่ยนสถานะรถ + สร้างใบจองเข้าด้วยกัน
+    const transactionResult = await prisma.$transaction(async (tx) => {
+      
+      // 🔥 สเตปเด็ด: อัปเดตสถานะรถยนต์ในตาราง Vehicle ให้เป็น RESERVED ทันที!
+      await tx.vehicle.update({
+        where: { id: parsedVehicleId },
+        data: { status: 'RESERVED' }
+      });
+
+      // สเตปปกติ: บันทึกใบจองลงตาราง VehicleBooking
+      const booking = await tx.vehicleBooking.create({
+        data: {
+          vehicleId: parsedVehicleId,
+          userId: parsedUserId,
+          startDatetime: start,
+          endDatetime: end,    
+          purpose: purpose.trim(),
+          destination: destination ? destination.trim() : purpose.trim(), 
+          passengers: passengers ? parseInt(passengers, 10) : 1,
+          status: 'Pending'
+        }
+      });
+
+      return booking;
     });
 
-    return res.status(201).json({ success: true, message: 'ส่งคำขอจองรถยนต์สำเร็จ', booking: newBooking });
+    return res.status(201).json({ 
+      success: true, 
+      message: 'ส่งคำขอจองรถยนต์สำเร็จและเปลี่ยนสถานะรถเป็น RESERVED เรียบร้อยแล้ว', 
+      booking: transactionResult 
+    });
+
   } catch (error) {
     console.error('Error creating vehicle booking:', error);
     return res.status(500).json({ message: 'ระบบหลังบ้านขัดข้อง ไม่สามารถบันทึกการจองรถได้', error: error.message });
@@ -583,12 +625,18 @@ app.use((req, res, next) => {
 
 app.use((err, req, res, next) => {
   console.error('🔴 Centralized Error:', err.stack);
+
+  // ✅ เพิ่มการตรวจสอบสิทธิ์การส่ง Header (Minimal Change ตามหลัก Express.js)
+  // หากมีการส่ง Response หรือ Header ไปก่อนหน้านี้แล้ว ให้โยนต่อให้ Express Default Handler ปิดสตรีมอย่างปลอดภัย
+  if (res.headersSent) {
+    return next(err);
+  }
+
   res.status(err.status || 500).json({
     error: "เกิดข้อผิดพลาดภายในระบบหลังบ้าน กรุณาแจ้งผู้ดูแลระบบ",
     developerMessage: err.message
   });
 });
-
 // ==========================================
 // 🚀 เริ่มต้นทำงาน Server พร้อมจัดการสถานะพอร์ต
 // ==========================================
