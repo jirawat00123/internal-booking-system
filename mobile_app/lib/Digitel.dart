@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 
-// 🏢 ฟีเจอร์จองห้องประชุม (User) - อัปเดตตามโฟลเดอร์ล่าสุดที่คุณจัดกลุ่มไว้
+// 🏢 ฟีเจอร์จองห้องประชุม (User)
 import 'package:mobile_app/Booking_room/Room_list.dart';
 
 // 🚗 ฟีเจอร์จองยานพาหนะ (User)
 import 'package:mobile_app/Booking_vehicle/vehicle_list.dart';
 
-// 📦 ไฟล์แกนหลักที่อยู่ระดับเดียวกัน (Root Level)
+// 📦 ไฟล์แกนหลักและหน้าตั้งค่า
 import 'package:mobile_app/Book_history.dart';
 import 'package:mobile_app/Manage.dart';
 import 'package:mobile_app/Select.dart';
+import 'package:mobile_app/user_setting_page.dart';
 
 class UserMenuPage extends StatelessWidget {
-  const UserMenuPage({super.key});
+  // 🟢 รองรับการเข้าใช้งานในฐานะ Guest
+  final bool isGuest;
+
+  const UserMenuPage({super.key, this.isGuest = false});
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +42,7 @@ class UserMenuPage extends StatelessWidget {
           SafeArea(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 40.0),
+                padding: const EdgeInsets.symmetric(horizontal: 32.0),
                 child: Column(
                   children: [
                     const SizedBox(height: 40),
@@ -55,9 +59,9 @@ class UserMenuPage extends StatelessWidget {
                             ),
                             const SizedBox(height: 16),
                             Container(
-                              width: 320,
+                              width: 300,
                               height: 2,
-                              color: Colors.white,
+                              color: Colors.white.withOpacity(0.7),
                             ),
                             const SizedBox(height: 40),
                             const Text(
@@ -70,8 +74,11 @@ class UserMenuPage extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(height: 6),
+                            // 🟢 ข้อความต้อนรับปรับเปลี่ยนตามสถานะ Guest
                             Text(
-                              'โปรดเลือกรายการเข้าทำเพื่อดำเนินการต่อ',
+                              isGuest
+                                  ? 'โหมดผู้เยี่ยมชม (ดูได้อย่างเดียว)'
+                                  : 'โปรดเลือกรายการเข้าทำเพื่อดำเนินการต่อ',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: Colors.white.withOpacity(0.8),
@@ -85,32 +92,36 @@ class UserMenuPage extends StatelessWidget {
 
                     const SizedBox(height: 32),
 
-                    // เมนูที่ 1: ห้องประชุม
+                    // 🏢 เมนูที่ 1: ห้องประชุม
                     SelectionCard(
                       icon: Icons.groups_outlined,
                       title: 'ห้องประชุม',
-                      subtitle: 'จองห้องประชุม',
+                      subtitle: isGuest
+                          ? 'ตารางการใช้ห้องประชุม'
+                          : 'จองห้องประชุม',
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const RoomListScreen(),
+                            builder: (context) =>
+                                RoomListScreen(isGuest: isGuest),
                           ),
                         );
                       },
                     ),
                     const SizedBox(height: 16),
 
-                    // เมนูที่ 2: ยานพาหนะ
+                    // 🚗 เมนูที่ 2: ยานพาหนะ
                     SelectionCard(
                       icon: Icons.directions_car_filled_outlined,
                       title: 'ยานพาหนะ',
-                      subtitle: 'จองรถ',
+                      subtitle: isGuest ? 'ตารางการใช้ยานพาหนะ' : 'จองรถ',
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const VehicleBooking(),
+                            builder: (context) =>
+                                VehicleBooking(isGuest: isGuest),
                           ),
                         );
                       },
@@ -118,54 +129,57 @@ class UserMenuPage extends StatelessWidget {
 
                     const SizedBox(height: 24),
 
-                    // เมนูที่ 3: ประวัติการจอง (ปุ่มโปร่งแสง)
-                    Center(
-                      child: TextButton.icon(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const BookingHistoryScreen(),
-                            ),
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.history,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                        label: const Text(
-                          'ประวัติการจอง',
-                          style: TextStyle(
+                    // 📜 เมนูที่ 3: ประวัติการจอง (โชว์เฉพาะผู้ใช้งานปกติ)
+                    if (!isGuest) ...[
+                      Center(
+                        child: TextButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const BookingHistoryScreen(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.history,
                             color: Colors.white,
-                            fontSize: 14,
-                            fontFamily: 'Kanit',
+                            size: 18,
                           ),
-                        ),
-                        style: TextButton.styleFrom(
-                          backgroundColor: Colors.white.withOpacity(0.3),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 10,
+                          label: const Text(
+                            'ประวัติการจอง',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontFamily: 'Kanit',
+                            ),
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
+                          style: TextButton.styleFrom(
+                            backgroundColor: Colors.white.withOpacity(0.3),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-
-                    const SizedBox(height: 50),
+                      const SizedBox(height: 50),
+                    ] else ...[
+                      const SizedBox(height: 30),
+                    ],
 
                     // Footer
                     Center(
                       child: Column(
                         children: [
                           Container(
-                            height: 2,
+                            height: 1.5,
                             width: 300,
-                            color: Colors.white.withOpacity(0.9),
+                            color: Colors.white.withOpacity(0.4),
                           ),
                           const SizedBox(height: 16),
                           const Text(
@@ -189,25 +203,51 @@ class UserMenuPage extends StatelessWidget {
           ),
 
           // ==========================================
-          // Layer 3: Logout Button (Top Right)
+          // Layer 3: Top Right Actions (Setting & Logout)
           // ==========================================
           SafeArea(
             child: Align(
               alignment: Alignment.topRight,
               child: Padding(
-                padding: const EdgeInsets.only(right: 12.0, top: 8.0),
-                child: IconButton(
-                  icon: const Icon(Icons.logout, color: Colors.white, size: 26),
-                  onPressed: () {
-                    // ทำลายสแต็กและกลับไปหน้าเลือกสิทธิ์
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const LoginSelectionPage(),
+                padding: const EdgeInsets.only(right: 8.0, top: 8.0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ⚙️ ปุ่มตั้งค่า (โชว์เฉพาะผู้ใช้งานปกติ)
+                    if (!isGuest)
+                      IconButton(
+                        icon: const Icon(
+                          Icons.settings_outlined,
+                          color: Colors.white,
+                          size: 26,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const UserSettingPage(),
+                            ),
+                          );
+                        },
                       ),
-                      (route) => false,
-                    );
-                  },
+                    // 🚪 ปุ่ม Logout
+                    IconButton(
+                      icon: const Icon(
+                        Icons.logout,
+                        color: Colors.white,
+                        size: 26,
+                      ),
+                      onPressed: () {
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LoginSelectionPage(),
+                          ),
+                          (route) => false,
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
             ),

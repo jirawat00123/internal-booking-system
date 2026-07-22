@@ -9,7 +9,10 @@ import 'vehicle_bookingstep_a.dart';
 import '../../Booking_vehicle/Vehicle_model.dart';
 
 class VehicleBooking extends StatefulWidget {
-  const VehicleBooking({super.key});
+  final bool isGuest; // 🟢 1. ประกาศตัวแปรรับค่าตรงนี้[cite: 7]
+
+  // 🟢 2. เพิ่ม this.isGuest = false ในวงเล็บ[cite: 7]
+  const VehicleBooking({super.key, this.isGuest = false});
 
   @override
   State<VehicleBooking> createState() => _VehicleBookingStep1PageState();
@@ -533,16 +536,18 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton(
-                      onPressed: () {
-                        // 💡 เอาเงื่อนไข if (isAvailable) ออก เพื่อให้กดเข้าไปจองล่วงหน้าได้เสมอ
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) =>
-                                VehicleBookingStep2Page(vehicle: vehicle),
-                          ),
-                        );
-                      },
+                      // 🟢 ถ้าเป็น Guest ให้ปุ่มเป็น null (ปุ่มจะกลายเป็นสีเทาและกดไม่ได้)
+                      onPressed: widget.isGuest
+                          ? null
+                          : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      VehicleBookingStep2Page(vehicle: vehicle),
+                                ),
+                              );
+                            },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(
                           0xFF009CB4,

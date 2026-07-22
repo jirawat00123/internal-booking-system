@@ -162,6 +162,7 @@ class BookingHistory {
 }
 
 String globalCurrentUserName = "MMK";
+int globalRoomUserId = 0; // 🟢 เพิ่มบรรทัดนี้เข้ามาเพื่อรองรับค่า User ID ครับ
 
 final ValueNotifier<List<BookingHistory>> globalBookingHistory =
     ValueNotifier<List<BookingHistory>>([]);

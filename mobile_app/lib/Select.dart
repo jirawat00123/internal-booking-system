@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
-// 🟢 นำเข้าหน้าจอต่างๆ ตามที่ตั้งค่าไว้
+// 🟢 นำเข้าหน้าจอต่างๆ
 import 'Manage.dart';
-import 'Security/SecurityPin.dart'; // ตรวจสอบให้แน่ใจว่าโฟลเดอร์ Security มีไฟล์นี้
+import 'Security/SecurityPin.dart'; // หมายเหตุ: หากโฟลเดอร์ของคุณคือ Security ให้เปลี่ยนเป็น 'Security/SecurityPin.dart'
 import 'Admin_pin.dart';
-import 'main.dart'; // 💡 นำเข้า main.dart หรือไฟล์ที่มีหน้า WelcomeApp()
+import 'Digitel.dart'; // สำหรับ UserMenuPage
+import 'main.dart'; // 💡 นำเข้าสำหรับพากลับไปหน้า WelcomeApp()
 
 class LoginSelectionPage extends StatelessWidget {
   const LoginSelectionPage({super.key});
@@ -15,22 +16,20 @@ class LoginSelectionPage extends StatelessWidget {
       body: Stack(
         children: [
           // ==========================================
-          // Layer 1: Background Image (UI ใหม่ของเพื่อน)
+          // Layer 1: Background Image
           // ==========================================
           Container(
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
               image: DecorationImage(
-                image: AssetImage(
-                  'assets/images/bgmmk.png',
-                ), // 🚨 ต้องแน่ใจว่าใน pubspec.yaml มี assets/bg.png ประกาศไว้
+                image: AssetImage('assets/images/bgmmk.png'),
                 fit: BoxFit.cover,
               ),
             ),
           ),
 
           // ==========================================
-          // Layer 2: Main Content (UI ใหม่ของเพื่อน)
+          // Layer 2: Main Content
           // ==========================================
           SafeArea(
             child: LayoutBuilder(
@@ -41,9 +40,7 @@ class LoginSelectionPage extends StatelessWidget {
                       minHeight: constraints.maxHeight,
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 40.0,
-                      ), // ขยาย Padding เป็น 40
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -54,7 +51,7 @@ class LoginSelectionPage extends StatelessWidget {
                                 height: 70,
                               ), // เว้นที่ว่างหลบปุ่ม Back ด้านบน
                               Image.asset(
-                                'assets/images/MMK_logo.png', // 🚨 อย่าลืมเช็กใน pubspec.yaml
+                                'assets/images/MMK_logo.png',
                                 height: 100,
                                 fit: BoxFit.contain,
                               ),
@@ -64,22 +61,25 @@ class LoginSelectionPage extends StatelessWidget {
                                 height: 2,
                                 color: Colors.white.withOpacity(0.6),
                               ),
-                              const SizedBox(height: 20),
+                              const SizedBox(height: 32),
                               const Text(
                                 'ยินดีต้อนรับเข้าสู่ระบบ',
                                 style: TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w600,
                                   color: Colors.white,
+                                  fontFamily: 'Kanit',
                                 ),
                                 textAlign: TextAlign.left,
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 8),
+                              // 🟢 ข้อความอธิบายเพิ่มเติมจากเวอร์ชันที่สอง
                               Text(
                                 'โปรดเลือกระดับสิทธิ์การเข้าถึงเพื่อดำเนินการต่อ',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Colors.white.withOpacity(0.8),
+                                  fontFamily: 'Kanit',
                                 ),
                                 textAlign: TextAlign.left,
                               ),
@@ -87,14 +87,14 @@ class LoginSelectionPage extends StatelessWidget {
                           ),
 
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 80.0),
+                            padding: const EdgeInsets.symmetric(vertical: 20.0),
                             child: Column(
                               children: [
-                                // --- ปุ่มที่ 1: ผู้ใช้งาน ---
+                                // 📦 1. User
                                 SelectionCard(
                                   icon: Icons.people_alt_outlined,
-                                  title: 'ผู้ใช้งาน',
-                                  subtitle: 'การจัดการผู้ใช้งาน',
+                                  title: 'User',
+                                  subtitle: 'บัญชีผู้ใช้ในองค์กร',
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -107,11 +107,11 @@ class LoginSelectionPage extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 16),
 
-                                // --- ปุ่มที่ 2: ความปลอดภัย (รปภ) ---
+                                // 📦 2. Security
                                 SelectionCard(
-                                  icon: Icons.shield_outlined,
-                                  title: 'ความปลอดภัย (รปภ)',
-                                  subtitle: 'ตรวจสอบและบันทึกรถเข้า-ออก',
+                                  icon: Icons.verified_user_outlined,
+                                  title: 'Security',
+                                  subtitle: 'พนักงานความปลอดภัย',
                                   onTap: () {
                                     Navigator.push(
                                       context,
@@ -124,17 +124,35 @@ class LoginSelectionPage extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 16),
 
-                                // --- ปุ่มที่ 3: ผู้ดูแลระบบ ---
+                                // 📦 3. Admin
                                 SelectionCard(
-                                  icon: Icons.person,
-                                  title: 'ผู้ดูแลระบบ',
-                                  subtitle: 'สิทธิ์การเข้าถึงระบบแบบเต็มรูปแบบ',
+                                  icon: Icons.support_agent,
+                                  title: 'Admin',
+                                  subtitle: 'แอดมินระบบ',
                                   onTap: () {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (context) =>
                                             const Admin_pinPage(),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+
+                                // 📦 4. Guest (เพิ่มเข้ามาใหม่จากเวอร์ชันแรก)
+                                SelectionCard(
+                                  icon: Icons.person,
+                                  title: 'Guest',
+                                  subtitle: 'ผู้ใช้งานทั่วไป',
+                                  onTap: () {
+                                    print("Guest user selected");
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const UserMenuPage(isGuest: true),
                                       ),
                                     );
                                   },
@@ -147,21 +165,23 @@ class LoginSelectionPage extends StatelessWidget {
                           Column(
                             children: [
                               Container(
-                                height: 1,
+                                height:
+                                    1, // ปรับความหนาให้ดูชัดเจนขึ้นนิดหน่อยแบบเวอร์ชันสอง
                                 width: 300,
-                                color: Colors.white,
+                                color: Colors.white.withOpacity(0.8),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 16),
                               const Text(
                                 'MENAM MECHANIKA © 2026',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   color: Colors.white,
                                   fontWeight: FontWeight.w500,
                                   letterSpacing: 0.8,
+                                  fontFamily: 'Kanit',
                                 ),
                               ),
-                              const SizedBox(height: 30),
+                              const SizedBox(height: 24),
                             ],
                           ),
                         ],
@@ -174,7 +194,7 @@ class LoginSelectionPage extends StatelessWidget {
           ),
 
           // ==========================================
-          // Layer 3: ปุ่มย้อนกลับ (UI ใหม่ของเพื่อน)
+          // Layer 3: ปุ่มย้อนกลับ (ดึงมาจากเวอร์ชันที่สอง)
           // ==========================================
           SafeArea(
             child: Align(
@@ -192,8 +212,7 @@ class LoginSelectionPage extends StatelessWidget {
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            const WelcomeApp(), // 🚨 ต้องมีคลาส WelcomeApp() อยู่ในโปรเจกต์
+                        builder: (context) => const WelcomeApp(),
                       ),
                     );
                   },
@@ -208,7 +227,7 @@ class LoginSelectionPage extends StatelessWidget {
 }
 
 // ==========================================
-// Widget คัสตอมของกล่องเมนู (คงโครงสร้างเดิมไว้)
+// Widget คัสตอมของกล่องเมนู (คงโครงสร้าง UI ที่จัด Kanit ไว้)
 // ==========================================
 class SelectionCard extends StatelessWidget {
   final IconData icon;
@@ -264,15 +283,20 @@ class SelectionCard extends StatelessWidget {
                       Text(
                         title,
                         style: const TextStyle(
-                          fontSize: 16,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Colors.black87,
+                          fontFamily: 'Kanit',
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 2),
                       Text(
                         subtitle,
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                          fontFamily: 'Kanit',
+                        ),
                       ),
                     ],
                   ),

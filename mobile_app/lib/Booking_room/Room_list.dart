@@ -7,7 +7,11 @@ import 'Room_model.dart';
 import 'Room_booking.dart';
 
 class RoomListScreen extends StatefulWidget {
-  const RoomListScreen({super.key});
+  final bool isGuest; // 🟢 เพิ่มตัวแปรเพื่อรับค่าสถานะ Guest
+  const RoomListScreen({
+    super.key,
+    this.isGuest = false,
+  }); // 🟢 กำหนดค่า Default
 
   @override
   State<RoomListScreen> createState() => _RoomListScreenState();
@@ -432,24 +436,26 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   width: double.infinity,
                   height: 46,
                   child: ElevatedButton(
-                    // 💡 ปลดล็อก! เอาเงื่อนไข isAvailable ออกไปเลย ให้กดเข้าได้ 100% เสมอ
-                    onPressed: () async {
-                      final result = await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => RoomBookingAScreen(room: room),
-                        ),
-                      );
+                    // 🟢 ถ้าเป็น Guest ให้ปุ่มเป็น null (กดไม่ได้) เพื่อรักษา Business Logic
+                    onPressed: widget.isGuest
+                        ? null
+                        : () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => RoomBookingAScreen(room: room),
+                              ),
+                            );
 
-                      // เมื่อกลับมาหน้านี้ ถ้า result เป็น true ให้ดึงข้อมูลใหม่
-                      if (result == true) {
-                        if (!mounted) return;
-                        setState(() {
-                          isLoading = true;
-                        });
-                        _fetchRoomsFromApi();
-                      }
-                    },
+                            // เมื่อกลับมาหน้านี้ ถ้า result เป็น true ให้ดึงข้อมูลใหม่
+                            if (result == true) {
+                              if (!mounted) return;
+                              setState(() {
+                                isLoading = true;
+                              });
+                              _fetchRoomsFromApi();
+                            }
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(
                         0xFF00A8CC,

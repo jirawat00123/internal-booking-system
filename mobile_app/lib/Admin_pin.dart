@@ -62,6 +62,10 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       // 💡 ข้อแนะนำ: ควรดึง URL จาก Config File แทนการ Hardcode
       final url = Uri.parse('http://localhost:3001/api/login-pin');
 
+      debugPrint(
+        '📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...',
+      ); // 💡 เพิ่ม Log จากไฟล์ 2
+
       final response = await http
           .post(
             url,
@@ -69,6 +73,10 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
             body: jsonEncode({'pin': pin, 'expectedRole': 'ADMIN'}),
           )
           .timeout(const Duration(seconds: 5));
+
+      debugPrint(
+        '📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}',
+      ); // 💡 เพิ่ม Log จากไฟล์ 2
 
       if (!mounted) return;
 
@@ -421,9 +429,9 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: numbers.map<Widget>((digit) {
-          return _buildNumButton(digit);
-        }).toList(),
+        children: numbers
+            .map((num) => _buildNumButton(num))
+            .toList(), // 💡 Refactor ให้กระชับขึ้น
       ),
     );
   }
@@ -433,13 +441,13 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       width: 60,
       height: 60,
       child: TextButton(
-        onPressed: () {
-          _addPin(number);
-        },
-        style: ButtonStyle(
-          shape: MaterialStateProperty.all(const CircleBorder()),
+        onPressed: () => _addPin(number),
+        style: TextButton.styleFrom(
+          shape:
+              const CircleBorder(), // 💡 ใช้ TextButton.styleFrom ตามไฟล์ 2 (อ่านง่ายกว่า)
         ),
         child: Text(
+          //...
           number,
           style: const TextStyle(
             fontSize: 24,
