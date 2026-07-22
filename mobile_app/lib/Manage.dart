@@ -412,20 +412,47 @@ class _ManagePageState extends State<ManagePage> {
                             bool hasPin = false;
                             bool resetRequired = false;
 
-                            if (_selectedEmployeeObj != null) {
-                              var userObj =
-                                  _selectedEmployeeObj!['users'] != null &&
-                                      (_selectedEmployeeObj!['users'] as List)
-                                          .isNotEmpty
-                                  ? _selectedEmployeeObj!['users'][0]
-                                  : (_selectedEmployeeObj!['user'] ??
-                                        _selectedEmployeeObj);
+                            // 🚀 4. ยิง API /login เพื่อขอ Token และตรวจสอบสถานะ PIN ที่แท้จริง
+                            try {
+                              final loginResponse = await http.post(
+                                Uri.parse('$baseUrl/login'),
+                                headers: {'Content-Type': 'application/json'},
+                                body: jsonEncode({
+                                  'employeeCode':
+                                      _selectedEmployeeObj!['employeeCode'],
+                                }),
+                              );
 
-                              if (userObj != null) {
-                                hasPin = userObj['pinInitialized'] == true;
-                                resetRequired =
-                                    userObj['pinResetRequired'] == true;
+                              if (loginResponse.statusCode == 200) {
+                                final loginData = jsonDecode(
+                                  loginResponse.body,
+                                );
+                                if (loginData['token'] != null) {
+                                  final String token = loginData['token']
+                                      .toString();
+
+                                  // 🟢 4.1 บันทึก Token ลงเครื่อง
+                                  await prefs.setString('token', token);
+
+                                  // 🟢 4.2 ยิง API /me เพื่อดึงสถานะ PIN ล่าสุดของ User จริงๆ (Source of Truth)
+                                  final meResponse = await http.get(
+                                    Uri.parse('$baseUrl/me'),
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': 'Bearer $token',
+                                    },
+                                  );
+
+                                  if (meResponse.statusCode == 200) {
+                                    final meData = jsonDecode(meResponse.body);
+                                    hasPin = meData['pinInitialized'] == true;
+                                    resetRequired =
+                                        meData['pinResetRequired'] == true;
+                                  }
+                                }
                               }
+                            } catch (e) {
+                              print('Login / Me API Error: $e');
                             }
 
                             setState(() => _isLoggingIn = false);

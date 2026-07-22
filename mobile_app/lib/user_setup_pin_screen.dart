@@ -148,16 +148,23 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
 
         try {
           final prefs = await SharedPreferences.getInstance();
-          final token = prefs.getString('jwt_token');
+          // 🟢 แก้ไข: ใช้ Key 'token' ให้ตรงกับตอนที่ Save หลัง Login สำเร็จ
+          final String? token = prefs.getString('token');
 
-          // ถ้ายังไม่มี Token จากหน้า Manage ให้ดึงจากข้อมูลผู้ใช้
+          // 🛡️ ป้องกันกรณี Token หายหรืออ่านไม่ได้ ให้โยน Exception หรือแจ้งเตือน แทนการส่ง null ไปให้ Backend พัง
+          if (token == null || token.isEmpty) {
+            print('Error: ไม่พบ Token ในระบบ กรุณา Login ใหม่');
+            // สามารถเพิ่มโค้ดเด้งกลับไปหน้า Login ได้ที่นี่
+            return;
+          }
+
           final response = await http.post(
             Uri.parse('http://localhost:3001/api/setup-pin'),
             headers: {
               'Content-Type': 'application/json',
-              if (token != null) 'Authorization': 'Bearer $token',
+              'Authorization': 'Bearer $token', // 🟢 ส่ง Token จริงได้สำเร็จ
             },
-            body: json.encode({'pin': pin}),
+            body: jsonEncode({'pin': pin}),
           );
 
           final data = json.decode(response.body);
