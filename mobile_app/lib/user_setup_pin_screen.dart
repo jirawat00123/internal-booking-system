@@ -148,13 +148,23 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
 
         try {
           final prefs = await SharedPreferences.getInstance();
-          // 🟢 แก้ไข: ใช้ Key 'token' ให้ตรงกับตอนที่ Save หลัง Login สำเร็จ
           final String? token = prefs.getString('token');
 
-          // 🛡️ ป้องกันกรณี Token หายหรืออ่านไม่ได้ ให้โยน Exception หรือแจ้งเตือน แทนการส่ง null ไปให้ Backend พัง
+          // 🛡️ 1. แก้ไข Infinite Loading: คืนค่า isLoading = false และแจ้งเตือนผู้ใช้หาก Token หาย
           if (token == null || token.isEmpty) {
-            print('Error: ไม่พบ Token ในระบบ กรุณา Login ใหม่');
-            // สามารถเพิ่มโค้ดเด้งกลับไปหน้า Login ได้ที่นี่
+            setState(() {
+              isLoading = false;
+            });
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'ไม่พบสิทธิ์การใช้งาน กรุณาเข้าสู่ระบบใหม่อีกครั้ง',
+                  style: TextStyle(fontFamily: 'Kanit'),
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
             return;
           }
 
@@ -162,7 +172,7 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
             Uri.parse('http://localhost:3001/api/setup-pin'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token', // 🟢 ส่ง Token จริงได้สำเร็จ
+              'Authorization': 'Bearer $token',
             },
             body: jsonEncode({'pin': pin}),
           );
@@ -171,12 +181,36 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
 
           if (!mounted) return;
 
+          // 🟢 2. หากตั้งค่า PIN สำเร็จ
           if (response.statusCode == 200 && data['success'] == true) {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const UserMenuPage()),
             );
-          } else {
+          }
+          // 🔴 3. หาก Session หลุด/หมดอายุ (401)
+          else if (response.statusCode == 401) {
+            await prefs.clear();
+            setState(() {
+              isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  data['error'] ?? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
+                  style: const TextStyle(fontFamily: 'Kanit'),
+                ),
+                backgroundColor: Colors.red,
+              ),
+            );
+            Navigator.pushNamedAndRemoveUntil(
+              context,
+              '/login',
+              (route) => false,
+            );
+          }
+          // ⚠️ 4. กรณี Error อื่นๆ เช่น 400 คุณได้ตั้งค่า PIN ไปแล้ว
+          else {
             setState(() {
               isLoading = false;
             });

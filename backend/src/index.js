@@ -16,27 +16,19 @@ const vehicleBookingsRouter = require('./routes/vehicleBookings');
 const securityRoutes = require('./routes/security');
 const attachmentRoutes = require('./routes/attachments');
 
-// 🚀 [เพิ่ม] นำเข้า Route จัดการ User และ Monitor
+// 🚀 นำเข้า Route จัดการ User และ Monitor
 const userRoutes = require('./routes/users');
 const monitorRoutes = require('./routes/monitor');
 
-// ==========================================
-// 🔌 เชื่อมต่อ Routes กลุ่มเดิมที่เหลือ
-// ==========================================
-app.use('/api', authRoutes);              
-app.use('/api/bookings', bookingRoutes);  
-app.use('/api/resources', resourceRoutes); 
-app.use('/api/rooms', roomRoutes);
-app.use('/api', employeeRoutes); 
-app.use('/api/vehicles', vehicleRoutes);
-app.use('/api/vehicle-bookings', vehicleBookingsRouter);
-app.use('/api/security', securityRoutes);
-app.use('/api/attachments', attachmentRoutes);
+const app = express();
+const prisma = new PrismaClient(); 
 
-// 🚀 [เพิ่ม] ผูก Route สำหรับ Users และ Monitor Mode
-app.use('/api/users', userRoutes);
-app.use('/api/admin/users', userRoutes); // รองรับทั้ง /api/users และ /api/admin/users
-app.use('/api/monitor', monitorRoutes);
+// ==========================================
+// 🛠️ ตั้งค่า Middleware พื้นฐาน (ต้องอยู่ก่อน Routes เสมอ)
+// ==========================================
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 const multer = require('multer');
 const storage = multer.diskStorage({
@@ -71,11 +63,6 @@ const upload = multer({ storage: storage });
 
 // 📖 นำเข้า Swagger
 const swaggerUi = require('swagger-ui-express');
-
-const app = express();
-const prisma = new PrismaClient(); 
-
-
 // ==========================================
 // 🛡️ ดักจับ Error ระดับ Process (ป้องกันเซิร์ฟเวอร์ดับเงียบ)
 // ==========================================
@@ -634,6 +621,11 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/vehicle-bookings', vehicleBookingsRouter);
 app.use('/api/security', securityRoutes);
 app.use('/api/attachments', attachmentRoutes);
+
+// 🚀 [เพิ่ม] ผูก Route สำหรับ Users และ Monitor Mode
+app.use('/api/users', userRoutes);
+app.use('/api/admin/users', userRoutes); // รองรับทั้ง /api/users และ /api/admin/users
+app.use('/api/monitor', monitorRoutes);
 
 // ==========================================
 // 🚨 Error Handlers

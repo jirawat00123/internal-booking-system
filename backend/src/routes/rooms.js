@@ -36,12 +36,17 @@ router.get('/monitor/rooms', authenticateToken, roomController.getAllRooms);
 router.get('/', authenticateToken, roomController.getAllRooms);
 // ✅ เพิ่ม requireRole(['ADMIN']) เข้าไปต่อจาก authenticateToken 
 // เพื่อบังคับให้ระบบเช็ค Role ก่อนเข้าไปถึง Controller
+// ดึงข้อมูลห้องตาม ID
+router.get('/:id', authenticateToken, roomController.getRoomById);
+
 router.post('/', authenticateToken, requireRole(['ADMIN']), upload.single('image'), roomController.createRoom);
 router.put('/:id', authenticateToken, requireRole(['ADMIN']), upload.single('image'), roomController.updateRoom);
-router.delete('/:id', authenticateToken, requireRole(['ADMIN']), roomController.deleteRoom);
 
-// 💡 บรรทัดนี้คือหัวใจ: ชี้ไปที่ฟังก์ชัน deleteRoom เท่านั้น
-router.delete('/:id', authenticateToken, roomController.deleteRoom);
+// อัปเดตเฉพาะสถานะของห้อง
+router.patch('/:id/status', authenticateToken, requireRole(['ADMIN']), roomController.updateRoomStatus);
+
+// ลบข้อมูลห้อง (Soft Delete)
+router.delete('/:id', authenticateToken, requireRole(['ADMIN']), roomController.deleteRoom);
 
 // 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง (เพื่อแก้ 404 และกันการจองซ้อน)
 // 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง

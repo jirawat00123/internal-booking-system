@@ -1,8 +1,9 @@
+import 'package:mobile_app/Admin/users/users_page.dart';
+import 'package:mobile_app/Admin/vehicle/vehicle_page.dart';
 import 'package:flutter/material.dart';
-import 'Admin/room/Admin_roompage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
+import '/Admin/room/Admin_roompage.dart';
 import 'Select.dart';
-import 'Admin/vehicle/vehicle_page.dart';
-import 'Book_history.dart'; // บรรทัดนี้ถูกต้องแล้ว (ถอยออกไปนอกสุดเพื่อหา Select.dart)
+import 'Book_history.dart'; // นำเข้าหน้า BookingHistoryScreen
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ
 
 class AdminGroupPage extends StatelessWidget {
@@ -29,7 +30,7 @@ class AdminGroupPage extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 40.0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, // จัดชิดซ้า
+                crossAxisAlignment: CrossAxisAlignment.start, // จัดชิดซ้าย
                 children: [
                   const SizedBox(height: 20),
 
@@ -158,7 +159,53 @@ class AdminGroupPage extends StatelessWidget {
                         AdminMenuCard(
                           icon: Icons.people_alt_outlined,
                           title: 'ระบบจัดการผู้ใช้',
-                          onTap: () {},
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const UsersPage(),
+                              ),
+                            );
+                          },
+                        ),
+
+                        // นำไปวางต่อจากปุ่มสุดท้าย (ก่อนถึงข้อความลิขสิทธิ์ด้านล่าง)
+                        Center(
+                          child: TextButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const BookingHistoryScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(
+                              Icons.history,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'ประวัติการจอง',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                              ),
+                            ),
+                            style: TextButton.styleFrom(
+                              backgroundColor: Colors.white.withValues(
+                                alpha: 0.3,
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                                vertical: 10,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),

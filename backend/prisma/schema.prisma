@@ -61,14 +61,17 @@ model User {
   id                      Int                     @id @default(autoincrement())
   employeeId              Int                     @map("employee_id")
   roleId                  Int                     @map("role_id")
-  pin                     String?                 @map("pin_hash") 
-  pinInitialized          Boolean                 @default(false) @map("pin_initialized")   
-  pinChangedAt            DateTime?               @map("pin_changed_at")                   
-  pinResetRequired        Boolean                 @default(false) @map("pin_reset_required") 
+  pin                     String?                 @map("pin_hash")
+  pinInitialized          Boolean                 @default(false) @map("pin_initialized")
+  pinChangedAt            DateTime?               @map("pin_changed_at")
+  pinResetRequired        Boolean                 @default(false) @map("pin_reset_required")
+  failedLoginAttempts     Int                     @default(0) @map("failed_login_attempts") // เก็บรอบที่ใส่ PIN ผิด
+  lockedUntil             DateTime?               @map("locked_until") // เวลาที่จะปลดล็อกบัญชี (ถ้าติดล็อก)
+  lastLoginAt             DateTime?               @map("last_login_at")
   active                  Boolean                 @default(true)
-  currentSessionId        String?                 @map("current_session_id") 
+  currentSessionId        String?                 @map("current_session_id")
   createdAt               DateTime                @default(now()) @map("created_at")
-  attachments             Attachment[]
+  updatedAt               DateTime                @default(now()) @updatedAt @map("updated_at")
   auditLogs               AuditLog[]
   roomBookingHistories    RoomBookingHistory[]    @relation("RoomHistoryByUser")
   roomBookings            RoomBooking[]
@@ -78,6 +81,7 @@ model User {
   vehicleBookings         VehicleBooking[]        @relation("BookingUser")
   vehicleLogsCheckOut     VehicleLog[]            @relation("CheckoutByUser")
   vehicleLogsReturn       VehicleLog[]            @relation("ReturnByUser")
+  attachments             Attachment[]
 
   @@index([employeeId])
   @@index([roleId])
@@ -179,25 +183,25 @@ model VehicleBooking {
 }
 
 model VehicleLog {
-  id                Int            @id @default(autoincrement())
-  vehicleBookingId  Int            @map("vehicle_booking_id")
-  checkoutById      Int            @map("checkout_by")
-  checkoutTime      DateTime       @map("checkout_time")
-  checkoutMileage   Int            @map("checkout_mileage")
-  checkoutFuelLevel Int            @map("checkout_fuel_level")
-  returnById        Int?           @map("return_by")
-  returnTime        DateTime?      @map("return_time")
-  returnMileage     Int?           @map("return_mileage")
-  returnFuelLevel   Int?           @map("return_fuel_level")
-  returnMileagePhoto String?       @map("return_mileage_photo")   // รูปเลขไมล์หลังใช้งาน
-  returnFrontPhoto   String?       @map("return_front_photo")     // รูปหน้ารถหลังใช้งาน
-  returnBackPhoto    String?       @map("return_back_photo")      // รูปหลังรถหลังใช้งาน
-  remark            String?
-  createdAt         DateTime       @default(now()) @map("created_at")
-  updatedAt         DateTime       @updatedAt @map("updated_at")
-  checkoutBy        User           @relation("CheckoutByUser", fields: [checkoutById], references: [id])
-  returnBy          User?          @relation("ReturnByUser", fields: [returnById], references: [id])
-  booking           VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
+  id                 Int            @id @default(autoincrement())
+  vehicleBookingId   Int            @map("vehicle_booking_id")
+  checkoutById       Int            @map("checkout_by")
+  checkoutTime       DateTime       @map("checkout_time")
+  checkoutMileage    Int            @map("checkout_mileage")
+  checkoutFuelLevel  Int            @map("checkout_fuel_level")
+  returnById         Int?           @map("return_by")
+  returnTime         DateTime?      @map("return_time")
+  returnMileage      Int?           @map("return_mileage")
+  returnFuelLevel    Int?           @map("return_fuel_level")
+  returnMileagePhoto String?        @map("return_mileage_photo") // รูปเลขไมล์หลังใช้งาน
+  returnFrontPhoto   String?        @map("return_front_photo") // รูปหน้ารถหลังใช้งาน
+  returnBackPhoto    String?        @map("return_back_photo") // รูปหลังรถหลังใช้งาน
+  remark             String?
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+  checkoutBy         User           @relation("CheckoutByUser", fields: [checkoutById], references: [id])
+  returnBy           User?          @relation("ReturnByUser", fields: [returnById], references: [id])
+  booking            VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
 
   @@index([vehicleBookingId])
   @@index([checkoutById])
@@ -267,14 +271,18 @@ model VehicleBookingHistory {
 
 enum RoomStatus {
   AVAILABLE
-  IN_USE    @map("IN USE")
+  IN_USE      @map("IN USE")
   RESERVED
+  MAINTENANCE
+  INACTIVE
 }
 
 enum VehicleStatus {
   AVAILABLE
-  IN_USE    @map("IN USE")
+  IN_USE      @map("IN USE")
   RESERVED
+  MAINTENANCE
+  INACTIVE
 }
 
 enum BookingStatus {
@@ -284,4 +292,5 @@ enum BookingStatus {
   CANCELLED
   COMPLETED
 }
+
 //vbvb

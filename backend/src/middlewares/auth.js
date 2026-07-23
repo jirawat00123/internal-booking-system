@@ -6,16 +6,26 @@ const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_default_secret_key';
 
 const authenticateToken = async (req, res, next) => {
+  // ยกเว้นการตรวจ Token และ Session สำหรับ Route ที่ใช้ Login
+  if (req.originalUrl.includes('/login-pin')) {
+    return next();
+  }
+
   const authHeader = req.headers['authorization'];
 
   // 🚨 [Requirement 3] LOG: ตรวจสอบ Authorization Header ที่ได้รับจริงจาก Client ก่อนทำการ verify
   console.log(`[EVIDENCE] 3. Incoming Authorization Header from Client: "${authHeader}"`);
 
-  const token = authHeader && authHeader.split(' ')[1];
+  // 🟢 ทำ Clean/Trim Token ป้องกันการติดอัญประกาศ " หรือ whitespace จาก Client
+  let token = authHeader && authHeader.split(' ')[1];
+  if (token) {
+    token = token.replace(/^"(.*)"$/, '$1').trim();
+  }
 
   if (!token) {
     // 🚨 [Requirement 7] LOG สาเหตุ 401: ไม่มี Token
     console.log('[EVIDENCE] 7. 401 Failure Cause: [NO_TOKEN] Token does not exist in request headers.');
+    console.log('[AUTH] Missing Token');
     return res.status(401).json({ success: false, error: "กรุณาเข้าสู่ระบบ" });
   }
 
@@ -37,6 +47,7 @@ const authenticateToken = async (req, res, next) => {
 
     if (!user) {
       console.log(`[EVIDENCE] 7. 401 Failure Cause: [USER_NOT_FOUND] User with ID "${decoded.userId}" was not found in Database.`);
+      console.log('[AUTH] User Not Found');
       return res.status(401).json({ success: false, error: "ไม่พบข้อมูลผู้ใช้งาน" });
     }
 
@@ -78,6 +89,7 @@ const authenticateToken = async (req, res, next) => {
     if (!isSessionValid) {
       // 🚨 [Requirement 7] LOG สาเหตุ 401: Session ไม่ตรงกัน (เกิด Mismatch)
       console.log('[EVIDENCE] 7. 401 Failure Cause: [SESSION_MISMATCH] Session IDs do not match (Current session may be stale or cleared).');
+      console.log(`[AUTH] Session Mismatch | Token Session: ${decoded.sessionId} | DB Session: ${user.currentSessionId}`);
       return res.status(401).json({ success: false, error: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" });
     }
 
@@ -97,6 +109,7 @@ const authenticateToken = async (req, res, next) => {
   } catch (error) {
     // 🚨 [Requirement 7] LOG สาเหตุ 401: การตรวจสอบด้วย jwt.verify ล้มเหลว
     console.log(`[EVIDENCE] 7. 401 Failure Cause: [JWT_VERIFICATION_FAILED] Error message: "${error.message}"`);
+    console.log('[AUTH] JWT Verify Failed');
     return res.status(401).json({ success: false, error: "สิทธิ์การเข้าใช้งานไม่ถูกต้อง" });
   }
 };

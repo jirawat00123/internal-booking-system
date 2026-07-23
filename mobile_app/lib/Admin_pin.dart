@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
-import 'package:shared_preferences/shared_preferences.dart'; // 💡 เพิ่มแพ็กเกจนี้เพื่อใช้เซฟ Token
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'PinError.dart';
 import 'AdminGroupPage.dart';
 import 'Booking_room/Room_model.dart';
+import 'package:flutter/foundation.dart'; // สำหรับ kIsWeb
+import 'dart:io' show Platform; // สำหรับ Platform.isAndroid
 
 class Admin_pinPage extends StatefulWidget {
   const Admin_pinPage({super.key});
@@ -16,7 +18,7 @@ class Admin_pinPage extends StatefulWidget {
 class _Admin_pinPageState extends State<Admin_pinPage> {
   String pin = "";
   bool isObscured = true;
-  bool isLoading = false; // 💡 เพิ่มตัวแปรเช็กสถานะกำลังโหลด
+  bool isLoading = false;
 
   void _addPin(String number) {
     if (pin.length < 6) {
@@ -34,7 +36,6 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
     }
   }
 
-  // ฟังก์ชันเรียก Popup แจ้งเตือนเมื่อรหัสผิด
   void _showErrorDialog() {
     showDialog(
       context: context,
@@ -43,7 +44,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
         return PinError(
           onRetry: () {
             setState(() {
-              pin = ""; // เคลียร์ PIN ให้ว่างเพื่อกดใหม่
+              pin = "";
             });
           },
         );
@@ -51,104 +52,143 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
     );
   }
 
-  // 🚀 ฟังก์ชันยิง API สำหรับแอดมิน
-  // 🚀 ฟังก์ชันยิง API สำหรับแอดมิน (ฉบับ Production Ready)
+  // 🚀 ฟังก์ชันยิง API สำหรับแอดมิน (ฉบับ Production Ready & Single Session Compliant)
   Future<void> _verifyPin() async {
     setState(() {
       isLoading = true;
     });
 
     try {
-      // 💡 ข้อแนะนำ: ควรดึง URL จาก Config File แทนการ Hardcode
-      final url = Uri.parse('http://localhost:3001/api/login-pin');
+      // 🟢 1. เลือก Base URL ให้ถูกต้องตาม Platform โดยอัตโนมัติ
+      String baseUrl = 'http://localhost:3001/api';
+      if (!kIsWeb && Platform.isAndroid) {
+        baseUrl = 'http://10.0.2.2:3001/api';
+      }
+      final url = Uri.parse('$baseUrl/login-pin');
 
-      debugPrint(
-        '📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...',
-      ); // 💡 เพิ่ม Log จากไฟล์ 2
+      debugPrint('📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน ($url)...');
 
+      // 🟢 2. อ่าน SharedPreferences และ Token (ประกาศจุดนี้จุดเดียว)
+      final prefs = await SharedPreferences.getInstance();
+      final String? existingToken = prefs.getString('token');
+
+      // 🟢 3. ตรวจสอบว่ามี Token ในเซสชันก่อนยิง API
+
+      // 🟢 4. ยิง API ยืนยัน PIN
       final response = await http
           .post(
             url,
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              // แนบ Header เฉพาะกรณีที่มี Token เท่านั้น
+              if (existingToken != null && existingToken.isNotEmpty)
+                'Authorization': 'Bearer $existingToken',
+            },
             body: jsonEncode({'pin': pin, 'expectedRole': 'ADMIN'}),
           )
           .timeout(const Duration(seconds: 5));
 
-      debugPrint(
-        '📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}',
-      ); // 💡 เพิ่ม Log จากไฟล์ 2
+      debugPrint('📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}');
 
       if (!mounted) return;
 
       if (response.statusCode == 200) {
         try {
           final responseData = jsonDecode(response.body);
+          final role =
+              responseData['role'] ??
+              (responseData['user'] != null
+                  ? responseData['user']['role']
+                  : null);
 
-          if (responseData['role'] == 'ADMIN') {
-            final token = responseData['token'] ?? '';
+          if (role == 'ADMIN') {
+            // 🟢 5. อัปเดต Token ใหม่ล่าสุดลง prefs
+            // ป้องกันกรณีที่ทั้ง Backend ไม่ส่ง Token มา และ existingToken ก็เป็น null
+            final String? newToken = responseData['token'] ?? existingToken;
+            if (newToken != null && newToken.isNotEmpty) {
+              await prefs.setString('token', newToken);
+            }
 
-            // [EVIDENCE_FLUTTER] 1. ตรวจสอบโครงสร้างดิบที่ Backend ตอบกลับมาจริง ๆ
-            debugPrint(
-              '[EVIDENCE_FLUTTER] 1. Raw Response Body from Login API: ${response.body}',
-            );
-            // [EVIDENCE_FLUTTER] 2. ตรวจสอบว่าแกะตัวแปรออกมาได้ค่าอะไร และมีความยาวเท่าไหร่
-            debugPrint(
-              '[EVIDENCE_FLUTTER] 2. Extracted Token Value: "$token" (Length: ${token.length})',
-            );
-
-            // 💡 1. เซฟ Token อย่างปลอดภัย (ควรใช้ flutter_secure_storage ในอนาคต)
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString('token', token);
-
-            // [EVIDENCE_FLUTTER] 3. ตรวจสอบเพื่อรีเช็คว่า SharedPreferences บันทึกข้อมูลเข้าดิสก์สำเร็จจริงหรือไม่
-            final doubleCheckToken = prefs.getString('token');
-            debugPrint(
-              '[EVIDENCE_FLUTTER] 3. Double Check Token from SharedPreferences right after save: "$doubleCheckToken"',
-            );
-
-            // 💡 2. เช็ค mounted อีกครั้งหลังมี await
             if (!mounted) return;
-            // 🟢 รหัสถูก สิทธิ์ถูกต้อง พาเข้าหน้า AdminGroupPage
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const AdminGroupPage()),
             );
           } else {
-            _handleErrorState(); // เรียกใช้ฟังก์ชันที่ยุบรวมแล้ว
+            setState(() {
+              isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'สิทธิ์การใช้งานของคุณไม่ใช่ผู้ดูแลระบบ (Role: $role)',
+                  style: const TextStyle(fontFamily: 'Kanit'),
+                ),
+                backgroundColor: Colors.orange,
+              ),
+            );
+            _handleErrorState();
           }
         } catch (e) {
           debugPrint("JSON Parse Error: $e");
           _handleErrorState();
         }
       } else if (response.statusCode == 401) {
-        if (mounted) {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.clear();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'บัญชีนี้ถูกเข้าสู่ระบบจากอุปกรณ์อื่น กรุณาเข้าสู่ระบบใหม่',
-                style: TextStyle(fontFamily: 'Kanit'),
-              ),
-              backgroundColor: Colors.red,
+        // 🟢 6. กรณี PIN ไม่ถูกต้อง หรือบัญชีถูกระงับ (อ่าน message จริงจาก Backend)
+        String errorMessage = 'รหัส PIN ไม่ถูกต้อง';
+        try {
+          final errorData = jsonDecode(response.body);
+          errorMessage =
+              errorData['message'] ?? errorData['error'] ?? errorMessage;
+        } catch (_) {}
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              errorMessage,
+              style: const TextStyle(fontFamily: 'Kanit'),
             ),
-          );
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/login',
-            (route) => false,
-          );
-        }
+            backgroundColor: Colors.red,
+          ),
+        );
+        _handleErrorState();
       } else {
+        setState(() {
+          isLoading = false;
+        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Error ${response.statusCode}: ${response.body}',
+              style: const TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
         _handleErrorState();
       }
     } catch (error) {
       debugPrint("API Error: $error");
+      setState(() {
+        isLoading = false;
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'ไม่สามารถเชื่อมต่อ Server ได้: $error',
+            style: const TextStyle(fontFamily: 'Kanit'),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
       _handleErrorState();
     }
   }
 
-  // 🔥 ฟังก์ชันยุบรวมสำหรับจัดการ Error State เพื่อลด Duplicate Code
   void _handleErrorState() {
     if (mounted) {
       setState(() {
@@ -163,7 +203,6 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
     return Scaffold(
       body: Stack(
         children: [
-          // พื้นหลัง
           Container(
             decoration: const BoxDecoration(
               color: Color(0xFF00529B),
@@ -173,11 +212,9 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
               ),
             ),
           ),
-
           SafeArea(
             child: Column(
               children: [
-                // ส่วนหัว (AppBar)
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 16.0,
@@ -208,10 +245,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 10),
-
-                // การ์ดสีขาวด้านล่าง
                 Expanded(
                   child: Container(
                     width: 375,
@@ -234,10 +268,10 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                               Icons.shield_outlined,
                               size: 30,
                               color: Color(0xFF00529B),
-                            ), // 👈 ไอคอนโล่ รปภ.
+                            ),
                             SizedBox(width: 8),
                             Text(
-                              'ผู้ดูแลระบบ', // 👈 เปลี่ยนข้อความ
+                              'ผู้ดูแลระบบ',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -248,7 +282,6 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                           ],
                         ),
                         const SizedBox(height: 24),
-
                         const Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
@@ -261,8 +294,6 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                           ),
                         ),
                         const SizedBox(height: 8),
-
-                        // กล่องใส่รหัส 6 หลัก
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: List.generate(6, (index) {
@@ -295,10 +326,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                             );
                           }),
                         ),
-
                         const SizedBox(height: 40),
-
-                        // ปุ่มเปิด/ปิดตา (ดูรหัส)
                         GestureDetector(
                           onTap: () {
                             setState(() {
@@ -313,10 +341,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                             size: 28,
                           ),
                         ),
-
                         const Spacer(flex: 1),
-
-                        // แป้นตัวเลข Numpad
                         _buildNumpadRow(['1', '2', '3']),
                         _buildNumpadRow(['4', '5', '6']),
                         _buildNumpadRow(['7', '8', '9']),
@@ -339,10 +364,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                             ),
                           ],
                         ),
-
                         const Spacer(flex: 2),
-
-                        // 🚀 ปุ่ม "ดำเนินการต่อ"
                         SizedBox(
                           width: 375 - 48,
                           height: 50,
@@ -395,9 +417,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                                   ),
                           ),
                         ),
-
                         const SizedBox(height: 24),
-
                         Container(
                           height: 1,
                           width: 250,
@@ -429,9 +449,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: numbers
-            .map((num) => _buildNumButton(num))
-            .toList(), // 💡 Refactor ให้กระชับขึ้น
+        children: numbers.map((num) => _buildNumButton(num)).toList(),
       ),
     );
   }
@@ -442,12 +460,8 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       height: 60,
       child: TextButton(
         onPressed: () => _addPin(number),
-        style: TextButton.styleFrom(
-          shape:
-              const CircleBorder(), // 💡 ใช้ TextButton.styleFrom ตามไฟล์ 2 (อ่านง่ายกว่า)
-        ),
+        style: TextButton.styleFrom(shape: const CircleBorder()),
         child: Text(
-          //...
           number,
           style: const TextStyle(
             fontSize: 24,
