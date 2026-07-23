@@ -118,7 +118,9 @@ class ResetPinDialog extends StatelessWidget {
                     showDialog(
                       context: context,
                       barrierColor: Colors.black.withOpacity(0.3),
-                      builder: (context) => const ConfirmResetPinDialog(),
+                      // ✅ ดึง employee.id มาแปลงเป็น int เพื่อส่งต่อไปยัง ConfirmResetPinDialog
+                      builder: (context) =>
+                          ConfirmResetPinDialog(userId: int.parse(employee.id)),
                     );
                   },
                   style: ElevatedButton.styleFrom(

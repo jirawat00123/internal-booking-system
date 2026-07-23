@@ -73,7 +73,8 @@ const changePin = async (req, res) => {
     }
 
     // 2. ตรวจสอบ PIN เดิม
-    const isOldPinValid = await verifyPin(oldPin, user.pin);
+    // 🟢 แก้ไข: สลับลำดับ Parameter ให้ตรงกับ pinService เป็น (Hash ใน DB, รหัสที่รับมา)
+    const isOldPinValid = await verifyPin(user.pin, oldPin);
     if (!isOldPinValid) {
       return res.status(401).json({ success: false, error: "รหัส PIN เดิมไม่ถูกต้อง" });
     }

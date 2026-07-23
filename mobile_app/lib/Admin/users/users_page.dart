@@ -2,12 +2,13 @@ import 'package:flutter/material.dart';
 import 'dart:ui'; // สำหรับทำภาพเบลอ (BackdropFilter)
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-// 🔗 Import ไฟล์ที่เราแยกไว้
+
+// 🔗 Import ไฟล์ที่แยกไว้
 import 'add_user_page.dart';
 import 'edit_user_page.dart';
 import 'employee_model.dart';
-import 'reset_pin.dart'; // 🟢 ดึงไฟล์ Popup ตัวแรกมา (ตามชื่อที่พี่ตั้งไว้)
-import 'delete_user_success_page.dart'; // 🟢 ดึงหน้าลบสำเร็จมาใช้
+import 'reset_pin.dart';
+import 'delete_user_success_page.dart';
 
 class UsersPage extends StatefulWidget {
   const UsersPage({super.key});
@@ -17,22 +18,39 @@ class UsersPage extends StatefulWidget {
 }
 
 class _UsersPageState extends State<UsersPage> {
-  // 🟢 1. สร้าง State สำหรับเก็บข้อมูลจาก API จริง
+  // 🟢 1. State สำหรับเก็บข้อมูลจริงจาก API
   List<Employee> _employees = [];
+  List<String> _departments = ['ทั้งหมด']; // เริ่มต้นด้วยตัวเลือกทั้งหมด
   bool _isLoading = true;
+  bool _isDeleting = false;
+
+  final String _baseUrl = 'http://localhost:3001';
 
   @override
   void initState() {
     super.initState();
-    _fetchEmployees(); // 🟢 สั่งดึงข้อมูลเมื่อเปิดหน้า
+    _loadAllData();
   }
 
-  // 🟢 ฟังก์ชันเชื่อมต่อกับ Node.js / Prisma Backend
+  // 🔄 โหลดข้อมูลทั้งพนักงานและแผนกพร้อมกัน
+  Future<void> _loadAllData() async {
+    setState(() => _isLoading = true);
+    await Future.wait([_fetchEmployees(), _fetchDepartments()]);
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // 🟢 2. GET /api/employees จาก Backend
   Future<void> _fetchEmployees() async {
     try {
-      final response = await http.get(
-        Uri.parse('http://localhost:3001/api/employees'),
-      );
+      final response = await http.get(Uri.parse('$_baseUrl/api/employees'));
+
+      // 🚨 [STEP 8 EVIDENCE LOG - FLUTTER]
+      print("[Employee API] GET /api/employees");
+      print(response.statusCode);
+      print(response.body);
+
       if (response.statusCode == 200) {
         final body = json.decode(response.body);
         if (body['success'] == true && body['data'] != null) {
@@ -40,23 +58,43 @@ class _UsersPageState extends State<UsersPage> {
             _employees = (body['data'] as List)
                 .map((json) => Employee.fromJson(json))
                 .toList();
-            _isLoading = false;
           });
         }
       }
     } catch (e) {
-      setState(() => _isLoading = false);
-      debugPrint('Error: $e');
+      debugPrint('Error fetching employees: $e');
     }
   }
 
-  final List<String> departments = [
-    'ทั้งหมด',
-    'ไอที (IT)',
-    'บุคคล (HR)',
-    'แมคคาทรอนิกส์',
-    'ผู้บริหาร',
-  ];
+  // 🟢 3. GET /api/departments จาก Backend (ไม่ใช้ Hardcode)
+  Future<void> _fetchDepartments() async {
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/api/departments'));
+
+      // 🚨 [STEP 8 EVIDENCE LOG - FLUTTER]
+      print("[Department API] GET /api/departments");
+      print(response.statusCode);
+      print(response.body);
+
+      if (response.statusCode == 200) {
+        final body = json.decode(response.body);
+        if (body['success'] == true && body['data'] != null) {
+          List<String> deptList = ['ทั้งหมด'];
+          for (var item in body['data']) {
+            if (item['departmentName'] != null) {
+              deptList.add(item['departmentName']);
+            }
+          }
+          setState(() {
+            _departments = deptList;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching departments: $e');
+    }
+  }
+
   String selectedDepartment = 'ทั้งหมด';
   String searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -68,7 +106,7 @@ class _UsersPageState extends State<UsersPage> {
   }
 
   // ==========================================
-  // 🗑️ ฟังก์ชัน Popup ยืนยันการลบพนักงาน
+  // 🗑️ ฟังก์ชัน Popup ยืนยันการลบพนักงาน (ยิง API จริง)
   // ==========================================
   void _showDeleteConfirmDialog(Employee emp) {
     showDialog(
@@ -76,7 +114,7 @@ class _UsersPageState extends State<UsersPage> {
       barrierColor: Colors.black.withOpacity(0.3),
       builder: (context) {
         return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5), // เบลอฉากหลัง
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
           child: Dialog(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
@@ -86,7 +124,6 @@ class _UsersPageState extends State<UsersPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 🔴 ไอคอนเครื่องหมายตกใจสีแดง
                   Container(
                     width: 60,
                     height: 60,
@@ -101,7 +138,6 @@ class _UsersPageState extends State<UsersPage> {
                     ),
                   ),
                   const SizedBox(height: 20),
-
                   const Text(
                     'ยืนยันการลบพนักงาน',
                     style: TextStyle(
@@ -112,9 +148,9 @@ class _UsersPageState extends State<UsersPage> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    'คุณต้องการลบพนักงานใช่หรือไม่?',
-                    style: TextStyle(
+                  Text(
+                    'คุณต้องการลบคุณ ${emp.fullName} ใช่หรือไม่?',
+                    style: const TextStyle(
                       fontSize: 14,
                       fontFamily: 'Kanit',
                       color: Colors.black87,
@@ -122,48 +158,69 @@ class _UsersPageState extends State<UsersPage> {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 32),
-
                   Row(
                     children: [
-                      // 🔘 ปุ่มตกลง (สีแดง)
                       Expanded(
                         child: SizedBox(
                           height: 46,
                           child: ElevatedButton(
-                            onPressed: () {
-                              // 🚀 สั่งลบข้อมูลผ่าน API จริง (ตัวอย่าง)
-                              // await http.delete(Uri.parse('http://10.0.2.2:3000/api/employees/${emp.id}'));
+                            onPressed: _isDeleting
+                                ? null
+                                : () async {
+                                    Navigator.pop(context); // ปิด Dialog
+                                    setState(() => _isLoading = true);
 
-                              setState(() {
-                                // 🟢 เปลี่ยนจาก globalEmployees เป็น List ของ State เราเอง
-                                _employees.removeWhere((e) => e.id == emp.id);
-                              });
-                              Navigator.pop(context); // ปิด Popup
-                              // เด้งไปหน้าสำเร็จ
-                              Navigator.push(
-                                context,
-                                PageRouteBuilder(
-                                  pageBuilder:
-                                      (
+                                    try {
+                                      // 🟢 สั่งลบข้อมูลผ่าน HTTP DELETE API จริง
+                                      final response = await http.delete(
+                                        Uri.parse(
+                                          '$_baseUrl/api/employees/${emp.id}',
+                                        ),
+                                      );
+
+                                      print(
+                                        "[DELETE Employee] Status: ${response.statusCode}",
+                                      );
+                                      print(
+                                        "[DELETE Employee] Body: ${response.body}",
+                                      );
+
+                                      // 🔄 รีเฟรชรายการจาก Server ใหม่ทุกครั้ง
+                                      await _fetchEmployees();
+
+                                      if (!mounted) return;
+
+                                      Navigator.push(
                                         context,
-                                        animation,
-                                        secondaryAnimation,
-                                      ) => const DeleteUserSuccessPage(),
-                                  transitionsBuilder:
-                                      (
-                                        context,
-                                        animation,
-                                        secondaryAnimation,
-                                        child,
-                                      ) {
-                                        return FadeTransition(
-                                          opacity: animation,
-                                          child: child,
-                                        );
-                                      },
-                                ),
-                              );
-                            },
+                                        PageRouteBuilder(
+                                          pageBuilder:
+                                              (
+                                                context,
+                                                animation,
+                                                secondaryAnimation,
+                                              ) =>
+                                                  const DeleteUserSuccessPage(),
+                                          transitionsBuilder:
+                                              (
+                                                context,
+                                                animation,
+                                                secondaryAnimation,
+                                                child,
+                                              ) {
+                                                return FadeTransition(
+                                                  opacity: animation,
+                                                  child: child,
+                                                );
+                                              },
+                                        ),
+                                      );
+                                    } catch (e) {
+                                      debugPrint("Delete error: $e");
+                                    } finally {
+                                      if (mounted)
+                                        setState(() => _isLoading = false);
+                                    }
+                                  },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFC60000),
                               shape: RoundedRectangleBorder(
@@ -184,7 +241,6 @@ class _UsersPageState extends State<UsersPage> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // 🔘 ปุ่มยกเลิก (สีฟ้าอมเขียว)
                       Expanded(
                         child: SizedBox(
                           height: 46,
@@ -222,15 +278,13 @@ class _UsersPageState extends State<UsersPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 🟢 เปลี่ยนจาก globalEmployees เป็น _employees
     List<Employee> filteredEmployees = _employees.where((emp) {
       bool matchesDept =
           selectedDepartment == 'ทั้งหมด' ||
-          emp.departmentName == selectedDepartment; // 🟢 แก้เป็น departmentName
-      bool matchesSearch = emp.fullName.toLowerCase().contains(
-        // 🟢 แก้เป็น fullName
-        searchQuery.toLowerCase(),
-      );
+          emp.departmentName == selectedDepartment;
+      bool matchesSearch =
+          emp.fullName.toLowerCase().contains(searchQuery.toLowerCase()) ||
+          emp.employeeCode.toLowerCase().contains(searchQuery.toLowerCase());
       return matchesDept && matchesSearch;
     }).toList();
 
@@ -260,7 +314,7 @@ class _UsersPageState extends State<UsersPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'แผนก (Department) / ตำแหน่ง',
+              'แผนก (Department)',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
@@ -278,13 +332,16 @@ class _UsersPageState extends State<UsersPage> {
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: selectedDepartment,
+                  value: _departments.contains(selectedDepartment)
+                      ? selectedDepartment
+                      : 'ทั้งหมด',
                   isExpanded: true,
                   icon: const Icon(
                     Icons.keyboard_arrow_down,
                     color: Color(0xFF004481),
                   ),
-                  items: departments.map((String dept) {
+                  // 🟢 รายการแผนกมาจาก PostgreSQL
+                  items: _departments.map((String dept) {
                     return DropdownMenuItem<String>(
                       value: dept,
                       child: Text(
@@ -298,8 +355,9 @@ class _UsersPageState extends State<UsersPage> {
                     );
                   }).toList(),
                   onChanged: (String? newValue) {
-                    if (newValue != null)
+                    if (newValue != null) {
                       setState(() => selectedDepartment = newValue);
+                    }
                   },
                 ),
               ),
@@ -322,7 +380,7 @@ class _UsersPageState extends State<UsersPage> {
                           ),
                         ).then(
                           (_) => _fetchEmployees(),
-                        ); // 🟢 บังคับโหลดจาก API ใหม่หลังทำรายการเสร็จ
+                        ); // 🟢 รีโหลดจาก API ใหม่หลังทำรายการเสร็จ
                       },
                       icon: const Icon(
                         Icons.add,
@@ -354,7 +412,8 @@ class _UsersPageState extends State<UsersPage> {
                   child: SizedBox(
                     height: 46,
                     child: ElevatedButton(
-                      onPressed: () {},
+                      onPressed: () =>
+                          _loadAllData(), // 🟢 สั่งรีเฟรชข้อมูลทั้งหมด
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF38BEC9),
                         elevation: 0,
@@ -363,7 +422,7 @@ class _UsersPageState extends State<UsersPage> {
                         ),
                       ),
                       child: const Text(
-                        'Filter',
+                        'รีเฟรช',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 14,
@@ -407,7 +466,6 @@ class _UsersPageState extends State<UsersPage> {
             ),
             const SizedBox(height: 16),
             Expanded(
-              // 🟢 เพิ่มเช็ก _isLoading
               child: _isLoading
                   ? const Center(
                       child: CircularProgressIndicator(
@@ -425,147 +483,144 @@ class _UsersPageState extends State<UsersPage> {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: filteredEmployees.length,
-                      itemBuilder: (context, index) {
-                        final emp = filteredEmployees[index];
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.08),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 16,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        emp.fullName, // 🟢 เปลี่ยน name เป็น fullName
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
-                                          color: Colors.black87,
-                                          fontFamily: 'Kanit',
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'รหัส: ${emp.employeeCode} | แผนก: ${emp.departmentName}\nตำแหน่ง: ${emp.positionName}', // 🟢 แสดงข้อมูลครบถ้วนจาก Database
-                                        style: TextStyle(
-                                          color: Colors.grey.shade600,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                          fontFamily: 'Kanit',
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                                // ✏️ ปุ่มแก้ไข (สีเหลือง)
-                                InkWell(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      PageRouteBuilder(
-                                        opaque: false,
-                                        pageBuilder: (context, _, __) =>
-                                            EditUserPage(
-                                              employee: emp,
-                                              index: index,
-                                            ),
-                                      ),
-                                    ).then(
-                                      (_) => _fetchEmployees(),
-                                    ); // 🟢 บังคับโหลดจาก API ใหม่หลังทำรายการเสร็จ
-                                  },
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    width: 38,
-                                    height: 38,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFD54F),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(
-                                      Icons.edit,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-
-                                // 🗑️ ปุ่มลบ (สีแดง) 🟢 เปลี่ยนมาเรียกฟังก์ชัน Popup แทนการลบทันที
-                                InkWell(
-                                  onTap: () {
-                                    _showDeleteConfirmDialog(emp);
-                                  },
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    width: 38,
-                                    height: 38,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF44336),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-
-                                // 🔒 ปุ่มรีเซ็ตรหัสผ่าน (สีน้ำเงินเข้ม)
-                                InkWell(
-                                  onTap: () {
-                                    showDialog(
-                                      context: context,
-                                      barrierColor: Colors.black.withOpacity(
-                                        0.3,
-                                      ),
-                                      builder: (context) =>
-                                          ResetPinDialog(employee: emp),
-                                    );
-                                  },
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Container(
-                                    width: 38,
-                                    height: 38,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF003E77),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(
-                                      Icons.lock,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ),
+                  : RefreshIndicator(
+                      onRefresh: _loadAllData,
+                      child: ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(
+                          parent: BouncingScrollPhysics(),
+                        ),
+                        itemCount: filteredEmployees.length,
+                        itemBuilder: (context, index) {
+                          final emp = filteredEmployees[index];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.08),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
-                          ),
-                        );
-                      },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                                vertical: 16,
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          emp.fullName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 16,
+                                            color: Colors.black87,
+                                            fontFamily: 'Kanit',
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'รหัส: ${emp.employeeCode}\nแผนก: ${emp.departmentName}',
+                                          style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                            fontFamily: 'Kanit',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  InkWell(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        PageRouteBuilder(
+                                          opaque: false,
+                                          pageBuilder: (context, _, __) =>
+                                              EditUserPage(
+                                                employee: emp,
+                                                index: index,
+                                              ),
+                                        ),
+                                      ).then(
+                                        (_) => _fetchEmployees(),
+                                      ); // 🟢 รีโหลดข้อมูลหลังแก้ไข
+                                    },
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFD54F),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.edit,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  InkWell(
+                                    onTap: () => _showDeleteConfirmDialog(emp),
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF44336),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  InkWell(
+                                    onTap: () {
+                                      showDialog(
+                                        context: context,
+                                        barrierColor: Colors.black.withOpacity(
+                                          0.3,
+                                        ),
+                                        builder: (context) =>
+                                            ResetPinDialog(employee: emp),
+                                      );
+                                    },
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      width: 38,
+                                      height: 38,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF003E77),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.lock,
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
             ),
           ],

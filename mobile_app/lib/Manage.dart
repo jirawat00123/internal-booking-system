@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'digitel.dart';
-import '/Booking_room/Room_model.dart';
+import 'package:mobile_app/Booking_room/Room_model.dart';
 import 'Booking_vehicle/Vehicle_model.dart' as v_model;
 import 'user_setup_pin_screen.dart';
 import 'user_login_pin_screen.dart';
@@ -120,8 +120,19 @@ class _ManagePageState extends State<ManagePage> {
       if (response.statusCode == 200) {
         final body = json.decode(response.body);
         if (!mounted) return;
+
+        List<dynamic> fetchedData = body['data'] ?? [];
+
+        // 🟢 Safety Filter: กรองซ้ำที่ Client เพื่อความแม่นยำ 100%
+        List<dynamic> filteredData = fetchedData.where((emp) {
+          if (emp['departmentId'] != null) {
+            return emp['departmentId'].toString() == departmentId.toString();
+          }
+          return true; // หากโครงสร้างเดิมไม่มี departmentId ให้ใช้ข้อมูลที่ได้จาก API
+        }).toList();
+
         setState(() {
-          _names = List<Map<String, dynamic>>.from(body['data'] ?? []);
+          _names = List<Map<String, dynamic>>.from(filteredData);
           _isLoadingEmployees = false;
         });
       } else if (response.statusCode == 401) {
@@ -129,15 +140,6 @@ class _ManagePageState extends State<ManagePage> {
         if (mounted) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.clear();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'กรุณาเข้าสู่ระบบใหม่',
-                style: TextStyle(fontFamily: 'Kanit'),
-              ),
-              backgroundColor: Colors.red,
-            ),
-          );
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/login',

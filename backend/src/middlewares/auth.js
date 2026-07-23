@@ -6,8 +6,9 @@ const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_default_secret_key';
 
 const authenticateToken = async (req, res, next) => {
-  // ยกเว้นการตรวจ Token และ Session สำหรับ Route ที่ใช้ Login
-  if (req.originalUrl.includes('/login-pin')) {
+  // ยกเว้นการตรวจ Token และ Session สำหรับ Route ที่ใช้ Login ทุกรูปแบบ
+  // เปลี่ยนเป็น /login เพื่อให้ครอบคลุมทั้ง /login และ /login-pin
+  if (req.originalUrl.includes('/login')) {
     return next();
   }
 
@@ -62,8 +63,8 @@ const authenticateToken = async (req, res, next) => {
 
     // 🔒 [Security Feature]: บังคับตั้งค่า PIN ใหม่ หากถูก Admin สั่งรีเซ็ต หรือเป็นการเข้าใช้งานครั้งแรก
     if (user.pinResetRequired) {
-      // อนุญาตให้ผ่านได้เฉพาะ API ที่ใช้สำหรับจัดการ PIN และ Logout เท่านั้น
-      const allowedPaths = ['/setup-pin', '/change-pin', '/logout'];
+      // 🟢 เพิ่ม '/me' เข้าไป เพื่อให้แอป Flutter ดึงชื่อผู้ใช้ไปแสดงบนหน้าตั้งค่า PIN ได้
+      const allowedPaths = ['/setup-pin', '/change-pin', '/logout', '/me'];
       const isAllowed = allowedPaths.some(path => req.originalUrl.includes(path));
       
       if (!isAllowed) {

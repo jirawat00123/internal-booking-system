@@ -143,11 +143,26 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
         return;
       }
 
+      final url = 'http://localhost:3001/api/login-pin';
+      final headers = {'Content-Type': 'application/json'};
+      final requestBody = {
+        'employeeCode': employeeCode.trim(),
+        'pin': pin.trim(),
+      };
+
+      // 🚨 [STEP 2 EVIDENCE LOGS - FLUTTER]
+      print("[LOGIN-PIN] URL = $url");
+      print("[LOGIN-PIN] Headers = $headers");
+      print("[LOGIN-PIN] Body = ${json.encode(requestBody)}");
+
       final response = await http.post(
-        Uri.parse('http://localhost:3001/api/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'employeeCode': employeeCode, 'pin': pin}),
+        Uri.parse(url),
+        headers: headers,
+        body: json.encode(requestBody),
       );
+
+      print("[LOGIN-PIN] Response Status = ${response.statusCode}");
+      print("[LOGIN-PIN] Response Body = ${response.body}");
 
       final data = json.decode(response.body);
 
@@ -167,7 +182,7 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
           isLoading = false;
         });
         _showErrorDialog(
-          data['error'] ?? data['message'] ?? 'รหัส PIN ไม่ถูกต้อง',
+          data['message'] ?? data['error'] ?? 'รหัส PIN ไม่ถูกต้อง',
         );
       }
     } catch (e) {

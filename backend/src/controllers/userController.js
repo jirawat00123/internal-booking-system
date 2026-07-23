@@ -1,35 +1,37 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// 🔒 Helper Function: เซ็นเซอร์ PIN
+const sanitizeUser = (user) => {
+  if (!user) return null;
+  const { pin, ...userWithoutPin } = user;
+  return userWithoutPin;
+};
+
 // ==========================================
 // 📋 1. ดึงข้อมูลผู้ใช้งานทั้งหมด พร้อมระบบค้นหาและฟิลเตอร์ (GET)
 // ==========================================
 exports.getAllUsers = async (req, res) => {
   try {
     const { search, role, active } = req.query;
-
-    // สร้างเงื่อนไขการค้นหา (Dynamic Where Clause)
     let whereCondition = {};
 
     if (search) {
       whereCondition.employee = {
         OR: [
-          { employeeCode: { contains: search } },
-          { fullName: { contains: search } }
+          { employeeCode: { contains: search, mode: 'insensitive' } },
+          { fullName: { contains: search, mode: 'insensitive' } }
         ]
       };
     }
     
-    // ถ้าหน้าบ้านส่ง filter role มา
     if (role) {
-      // รองรับทั้งกรณีที่คุณใช้เป็น String (roles) หรือ Relation (role.name)
       whereCondition.OR = [
         { roles: role },
         { role: { name: role } }
       ];
     }
 
-    // ถ้าหน้าบ้านส่ง filter active (true/false) มา
     if (active !== undefined) {
       whereCondition.active = active === 'true';
     }
@@ -44,23 +46,13 @@ exports.getAllUsers = async (req, res) => {
           }
         }
       },
-      orderBy: { id: 'desc' } // เรียงลำดับจากใหม่ไปเก่า
+      orderBy: { id: 'desc' } 
     });
 
-    // Format ข้อมูลก่อนส่งกลับให้หน้าบ้าน (เพื่อไม่ให้ส่ง Hash PIN หลุดไปเด็ดขาด)
-    const formattedUsers = users.map(user => ({
-      id: user.id,
-      employeeCode: user.employee?.employeeCode,
-      fullName: user.employee?.fullName,
-      department: user.employee?.position?.department?.departmentName || '-',
-      role: user.role ? user.role.name : (user.roles || 'USER'),
-      active: user.active,
-      pinInitialized: user.pinInitialized,
-      pinResetRequired: user.pinResetRequired,
-      createdAt: user.createdAt
-    }));
+    // 🟢 แก้ไข: ใช้ sanitizeUser แทนการทำ Flatten ป้องกัน Flutter หาฟิลด์ไม่เจอ
+    const safeUsers = users.map(u => sanitizeUser(u));
 
-    return res.status(200).json({ success: true, data: formattedUsers });
+    return res.status(200).json({ success: true, data: safeUsers });
   } catch (error) {
     console.error('Get Users Error:', error);
     return res.status(500).json({ success: false, error: "ไม่สามารถดึงข้อมูลผู้ใช้งานได้" });
@@ -72,40 +64,53 @@ exports.getAllUsers = async (req, res) => {
 // ==========================================
 exports.createUser = async (req, res) => {
   try {
-    const { employeeCode, roleId, roles, active } = req.body; // รับ roleId (ตาราง relation) หรือ roles (string enum)
+    // 🟢 แก้ไข: รองรับทั้ง employeeId (จาก Flutter) และ employeeCode 
+    const { employeeId, employeeCode, roleId, roles, active } = req.body; 
 
-    if (!employeeCode) {
-      return res.status(400).json({ success: false, error: "กรุณาระบุรหัสพนักงาน" });
+    if (!employeeId && !employeeCode) {
+      return res.status(400).json({ success: false, error: "กรุณาระบุ employeeId หรือ employeeCode" });
     }
 
-    // ตรวจสอบว่าพนักงานมีอยู่จริงไหม
-    const employee = await prisma.employee.findUnique({
-      where: { employeeCode: String(employeeCode).trim() },
-      include: { users: true }
-    });
+    // 🟢 ค้นหาพนักงานตามข้อมูลที่ส่งมา
+    let employee;
+    if (employeeId) {
+      employee = await prisma.employee.findUnique({
+        where: { id: parseInt(employeeId, 10) },
+        include: { users: true }
+      });
+    } else {
+      employee = await prisma.employee.findUnique({
+        where: { employeeCode: String(employeeCode).trim() },
+        include: { users: true }
+      });
+    }
 
     if (!employee) {
-      return res.status(404).json({ success: false, error: "ไม่พบข้อมูลพนักงานรหัสนี้ในระบบ" });
+      return res.status(404).json({ success: false, error: "ไม่พบข้อมูลพนักงานในระบบ" });
     }
 
-    // ตรวจสอบว่าพนักงานคนนี้มีบัญชีอยู่แล้วหรือยัง
     if (employee.users && employee.users.length > 0) {
       return res.status(400).json({ success: false, error: "พนักงานท่านนี้มีบัญชีผู้ใช้งานในระบบอยู่แล้ว" });
     }
 
-    // สร้างบัญชีใหม่
     const newUser = await prisma.user.create({
       data: {
         employeeId: employee.id,
-        roleId: roleId || null,
-        roles: roles || 'USER', // กำหนดค่าเริ่มต้นเป็น USER
-        active: active !== undefined ? active : true,
-        pinInitialized: false, // บังคับให้เป็น false เสมอเพื่อบังคับตั้ง PIN ครั้งแรก
+        roleId: roleId ? parseInt(roleId, 10) : null,
+        roles: roles || 'USER', 
+        active: active !== undefined ? Boolean(active) : true,
+        pin: null, // เผื่อไว้ป้องกันกรณี DB บังคับ
+        pinInitialized: false, 
         pinResetRequired: false
-      }
+      },
+      include: { role: true, employee: true }
     });
 
-    return res.status(201).json({ success: true, message: "สร้างบัญชีผู้ใช้งานสำเร็จ", data: { id: newUser.id } });
+    return res.status(201).json({ 
+      success: true, 
+      message: "สร้างบัญชีผู้ใช้งานสำเร็จ", 
+      data: sanitizeUser(newUser) 
+    });
   } catch (error) {
     console.error('Create User Error:', error);
     return res.status(500).json({ success: false, error: "ไม่สามารถสร้างบัญชีผู้ใช้งานได้" });
@@ -125,23 +130,26 @@ exports.updateUser = async (req, res) => {
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลบัญชีผู้ใช้งาน" });
     }
 
-    // กรณีที่ Admin สั่งระงับบัญชี (active = false) เราควรเตะ Session ออกด้วย
-    const dataToUpdate = {
-      roleId: roleId !== undefined ? roleId : user.roleId,
-      roles: roles !== undefined ? roles : user.roles,
-      active: active !== undefined ? active : user.active
-    };
+    const dataToUpdate = {};
+    if (roleId !== undefined) dataToUpdate.roleId = parseInt(roleId, 10);
+    if (roles !== undefined) dataToUpdate.roles = roles;
+    if (active !== undefined) dataToUpdate.active = Boolean(active);
 
     if (active === false) {
-      dataToUpdate.currentSessionId = null; // บังคับ Logout ทันทีเมื่อถูกระงับ
+      dataToUpdate.currentSessionId = null; 
     }
 
-    await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: parseInt(id) },
-      data: dataToUpdate
+      data: dataToUpdate,
+      include: { role: true, employee: true }
     });
 
-    return res.status(200).json({ success: true, message: "อัปเดตข้อมูลบัญชีผู้ใช้งานสำเร็จ" });
+    return res.status(200).json({ 
+      success: true, 
+      message: "อัปเดตข้อมูลบัญชีผู้ใช้งานสำเร็จ",
+      data: sanitizeUser(updatedUser)
+    });
   } catch (error) {
     console.error('Update User Error:', error);
     return res.status(500).json({ success: false, error: "ไม่สามารถอัปเดตข้อมูลได้" });
@@ -160,7 +168,6 @@ exports.deleteUser = async (req, res) => {
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลบัญชีผู้ใช้งาน" });
     }
 
-    // ลบข้อมูล (Hard Delete)
     await prisma.user.delete({
       where: { id: parseInt(id) }
     });
@@ -168,7 +175,6 @@ exports.deleteUser = async (req, res) => {
     return res.status(200).json({ success: true, message: "ลบบัญชีผู้ใช้งานสำเร็จ" });
   } catch (error) {
     console.error('Delete User Error:', error);
-    // หากติด Constraint อาจจะต้องแจ้งให้ Soft Delete (เปลี่ยน active = false) แทน
-    return res.status(500).json({ success: false, error: "ไม่สามารถลบบัญชีได้ (อาจมีข้อมูลอ้างอิงถึงบัญชีนี้อยู่)" });
+    return res.status(500).json({ success: false, error: "ไม่สามารถลบบัญชีได้ (อาจมีข้อมูลอ้างอิงอยู่)" });
   }
 };
