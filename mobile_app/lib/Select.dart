@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'Manage.dart';
 import 'Security/SecurityPin.dart'; // หมายเหตุ: หากโฟลเดอร์ของคุณคือ Security ให้เปลี่ยนเป็น 'Security/SecurityPin.dart'
 import 'Admin_pin.dart';
-import 'Digitel.dart'; // สำหรับ UserMenuPage
+import 'package:mobile_app/Digitel.dart';
 import 'main.dart'; // 💡 นำเข้าสำหรับพากลับไปหน้า WelcomeApp()
 
 class LoginSelectionPage extends StatelessWidget {

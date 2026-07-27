@@ -37,7 +37,6 @@ class _ManagePageState extends State<ManagePage> {
     _fetchDepartments();
   }
 
-  // 🟢 ใช้โครงสร้างดึงข้อมูลแบบเสถียรจากเวอร์ชันเดิม (รองรับ 401 และ JSON หลายรูปแบบ)
   Future<void> _fetchDepartments() async {
     try {
       final response = await http.get(Uri.parse('$baseUrl/departments'));
@@ -123,12 +122,11 @@ class _ManagePageState extends State<ManagePage> {
 
         List<dynamic> fetchedData = body['data'] ?? [];
 
-        // 🟢 Safety Filter: กรองซ้ำที่ Client เพื่อความแม่นยำ 100%
         List<dynamic> filteredData = fetchedData.where((emp) {
           if (emp['departmentId'] != null) {
             return emp['departmentId'].toString() == departmentId.toString();
           }
-          return true; // หากโครงสร้างเดิมไม่มี departmentId ให้ใช้ข้อมูลที่ได้จาก API
+          return true;
         }).toList();
 
         setState(() {
@@ -369,7 +367,7 @@ class _ManagePageState extends State<ManagePage> {
                       height: 46,
                       child: ElevatedButton(
                         onPressed: () async {
-                          if (_isLoggingIn) return; // 🟢 ป้องกันการกดปุ่มรัวๆ
+                          if (_isLoggingIn) return;
 
                           if (_selectedEmployeeText != null &&
                               _selectedEmployeeText!.isNotEmpty) {
@@ -389,7 +387,6 @@ class _ManagePageState extends State<ManagePage> {
                               }
                             }
 
-                            // กำหนดค่า Global Variables
                             globalCurrentUserName = _selectedEmployeeText!;
                             globalRoomUserId = selectedId;
 
@@ -410,11 +407,11 @@ class _ManagePageState extends State<ManagePage> {
                               );
                             }
 
-                            // 🟢 4. ตรวจสอบสถานะ PIN จาก Database จริงผ่านข้อมูลพนักงาน
-                            bool hasPin = false;
+                            // 🟢 แก้ไข: ใช้ Logic ใหม่ที่สั้นลงและดักจับ 400
+                            bool hasPin =
+                                true; // เซ็ตเป็น true ไว้ก่อนเผื่อกรณี Admin
                             bool resetRequired = false;
 
-                            // 🚀 4. ยิง API /login เพื่อขอ Token และตรวจสอบสถานะ PIN ที่แท้จริง
                             try {
                               final loginResponse = await http.post(
                                 Uri.parse('$baseUrl/login'),
@@ -429,39 +426,23 @@ class _ManagePageState extends State<ManagePage> {
                                 final loginData = jsonDecode(
                                   loginResponse.body,
                                 );
-                                if (loginData['token'] != null) {
-                                  final String token = loginData['token']
-                                      .toString();
-
-                                  // 🟢 4.1 บันทึก Token ลงเครื่อง
-                                  await prefs.setString('token', token);
-
-                                  // 🟢 4.2 ยิง API /me เพื่อดึงสถานะ PIN ล่าสุดของ User จริงๆ (Source of Truth)
-                                  final meResponse = await http.get(
-                                    Uri.parse('$baseUrl/me'),
-                                    headers: {
-                                      'Content-Type': 'application/json',
-                                      'Authorization': 'Bearer $token',
-                                    },
-                                  );
-
-                                  if (meResponse.statusCode == 200) {
-                                    final meData = jsonDecode(meResponse.body);
-                                    hasPin = meData['pinInitialized'] == true;
-                                    resetRequired =
-                                        meData['pinResetRequired'] == true;
-                                  }
-                                }
+                                hasPin = loginData['pinInitialized'] == true;
+                                resetRequired =
+                                    loginData['pinResetRequired'] == true;
+                              } else if (loginResponse.statusCode == 400) {
+                                // 🟢 ถ้าเจอ 400 (Missing PIN) หมายถึงมีสิทธิ์ระดับสูงและต้องใส่ PIN
+                                hasPin = true;
+                                resetRequired = false;
                               }
                             } catch (e) {
-                              print('Login / Me API Error: $e');
+                              print('Login Check Error: $e');
                             }
 
                             setState(() => _isLoggingIn = false);
                             if (!mounted) return;
                             Navigator.pop(context); // ปิด Dialog ก่อนย้ายหน้า
 
-                            // 🚀 5. ถ้าเคยตั้งแล้วและไม่ได้ถูกบังคับรีเซ็ต ให้ไปหน้าใส่ PIN, ถ้ายังให้ไปหน้าตั้งค่า PIN
+                            // 🚀 นำทางไปยังหน้าจอที่ถูกต้อง
                             if (hasPin && !resetRequired) {
                               Navigator.push(
                                 context,
@@ -772,7 +753,6 @@ class _ManagePageState extends State<ManagePage> {
     required String labelKey,
     required ValueChanged<String?> onChanged,
   }) {
-    // 🟢 ใช้ .toSet() เพื่อป้องกัน Error หากมีข้อมูลแผนกหรือพนักงานชื่อซ้ำกันหลุดมาจาก Server
     final List<String> dropdownStrings = items
         .map((item) => item[labelKey].toString())
         .toSet()

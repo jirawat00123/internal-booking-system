@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'digitel.dart';
+import 'user_login_pin_screen.dart';
 
 class UserSetupPinScreen extends StatefulWidget {
   final Map<String, dynamic>? userData;
@@ -121,6 +122,7 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
   }
 
   // 🔄 ยิง API บันทึก PIN จริงไปยัง Backend
+  // 🔄 ยิง API บันทึก PIN จริงไปยัง Backend
   Future<void> _handleSubmit() async {
     if (pin.length != 6) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -147,19 +149,19 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
         });
 
         try {
-          final prefs = await SharedPreferences.getInstance();
-          final String? token = prefs.getString('token');
+          // 🟢 1. ดึง employeeCode มาใช้งาน (ไม่ต้องเช็ค Token แล้ว)
+          String? employeeCode;
+          if (widget.userData != null) {
+            employeeCode = widget.userData!['employeeCode'];
+          }
 
-          // 🛡️ 1. แก้ไข Infinite Loading: คืนค่า isLoading = false และแจ้งเตือนผู้ใช้หาก Token หาย
-          if (token == null || token.isEmpty) {
-            setState(() {
-              isLoading = false;
-            });
+          if (employeeCode == null) {
+            setState(() => isLoading = false);
             if (!mounted) return;
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
-                  'ไม่พบสิทธิ์การใช้งาน กรุณาเข้าสู่ระบบใหม่อีกครั้ง',
+                  'ไม่พบรหัสพนักงาน กรุณากลับไปเลือกชื่อใหม่อีกครั้ง',
                   style: TextStyle(fontFamily: 'Kanit'),
                 ),
                 backgroundColor: Colors.red,
@@ -168,56 +170,61 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
             return;
           }
 
+          // 🟢 2. ยิง API ตั้งค่ารหัส PIN โดยส่ง employeeCode แทน Token
+          final prefs = await SharedPreferences.getInstance();
+          final token = prefs.getString('token'); // ดึง Token ที่เคยบันทึกไว้
+
           final response = await http.post(
             Uri.parse('http://localhost:3001/api/setup-pin'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
+              // ❌ ลบบรรทัด 'Authorization': 'Bearer $token' ทิ้งไปเลย
             },
-            body: jsonEncode({'pin': pin}),
+            body: jsonEncode({
+              'employeeCode': employeeCode?.trim(), // ส่งรหัสพนักงานไปแทน
+              'pin': pin,
+            }),
           );
 
           final data = json.decode(response.body);
 
           if (!mounted) return;
 
-          // 🟢 2. หากตั้งค่า PIN สำเร็จ
+          // 🟢 3. หากตั้งค่า PIN สำเร็จ ให้พาไปหน้าล็อคอินเพื่อรับ Token ที่ถูกต้อง
           if (response.statusCode == 200 && data['success'] == true) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const UserMenuPage()),
-            );
-          }
-          // 🔴 3. หาก Session หลุด/หมดอายุ (401)
-          else if (response.statusCode == 401) {
-            await prefs.clear();
-            setState(() {
-              isLoading = false;
-            });
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
+              const SnackBar(
                 content: Text(
-                  data['error'] ?? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
-                  style: const TextStyle(fontFamily: 'Kanit'),
+                  'ตั้งค่ารหัส PIN สำเร็จ! กรุณาเข้าสู่ระบบ',
+                  style: TextStyle(fontFamily: 'Kanit'),
                 ),
-                backgroundColor: Colors.red,
+                backgroundColor: Colors.green,
               ),
             );
-            Navigator.pushNamedAndRemoveUntil(
+
+            // พากลับไปหน้า Login พร้อมส่ง userData เดิมไปด้วย
+            Navigator.pushReplacement(
               context,
-              '/login',
-              (route) => false,
+              MaterialPageRoute(
+                builder: (context) =>
+                    UserLoginPinScreen(userData: widget.userData),
+              ),
             );
           }
-          // ⚠️ 4. กรณี Error อื่นๆ เช่น 400 คุณได้ตั้งค่า PIN ไปแล้ว
+          // ⚠️ 4. กรณี Error อื่นๆ
           else {
             setState(() {
               isLoading = false;
+              pin = "";
+              firstPin = "";
+              isConfirming = false;
             });
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(
-                  data['error'] ?? 'ไม่สามารถตั้งค่า PIN ได้',
+                  data['error'] ??
+                      data['message'] ??
+                      'ไม่สามารถตั้งค่า PIN ได้',
                   style: const TextStyle(fontFamily: 'Kanit'),
                 ),
                 backgroundColor: Colors.red,

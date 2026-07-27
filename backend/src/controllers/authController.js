@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const { v4: uuidv4 } = require('uuid');
 const { hashPin, verifyPin } = require('../services/pinService');
+const jwt = require('jsonwebtoken');
 
 const prisma = new PrismaClient();
 
@@ -9,39 +10,50 @@ const prisma = new PrismaClient();
 // ==========================================
 const setupPin = async (req, res) => {
   try {
-    const userId = req.user.userId; 
-    const { pin } = req.body;
+    const { employeeCode } = req.body;
+    
+    const rawPin = req.body.pin ?? req.body.newPin;
+    const pinStr = rawPin !== undefined && rawPin !== null ? String(rawPin).trim() : '';
 
-    // 1. Validation Input
-    if (!pin || !/^\d{6}$/.test(pin)) {
+    if (!employeeCode) {
+      return res.status(400).json({ success: false, error: "ไม่พบข้อมูลรหัสพนักงาน" });
+    }
+
+    if (!pinStr || !/^\d{6}$/.test(pinStr)) {
       return res.status(400).json({ success: false, error: "PIN ต้องเป็นตัวเลข 6 หลักเท่านั้น" });
     }
+    
+    const pin = pinStr;
 
-    // 2. เช็คข้อมูลผู้ใช้และสถานะการตั้ง PIN
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    // 🟢 แก้ไข: ใช้ users: true แทน user: true
+    const employee = await prisma.employee.findUnique({
+      where: { employeeCode: employeeCode },
+      include: { users: true }
+    });
     
-    if (!user) {
-      return res.status(404).json({ success: false, error: "ไม่พบผู้ใช้งาน" });
+    // 🟢 แก้ไข: ตรวจสอบความถูกต้องจาก Array users
+    if (!employee || !employee.users || employee.users.length === 0) {
+      return res.status(404).json({ success: false, error: "ไม่พบผู้ใช้งานในระบบ" });
     }
+
+    // 🟢 ดึงข้อมูลผู้ใช้จาก Index [0]
+    const user = employee.users[0];
     
-    // ถ้าตั้ง PIN ไปแล้ว และไม่ได้ถูก Admin สั่งให้บังคับเปลี่ยนใหม่
     if (user.pinInitialized && !user.pinResetRequired) {
       return res.status(400).json({ success: false, error: "คุณได้ตั้งค่า PIN ไปแล้ว" });
     }
 
-    // 3. นำ PIN ไป Hash
     const hashedPin = await hashPin(pin);
 
-    // 4. บันทึกลงฐานข้อมูล
     await prisma.user.update({
-      where: { id: userId },
+      where: { id: user.id },
       data: {
         pin: hashedPin,
         pinInitialized: true,
         pinResetRequired: false,
         pinChangedAt: new Date(),
-        failedLoginAttempts: 0, // ✅ คืนค่าการล็อคบัญชี (ถ้ามี)
-        lockedUntil: null       // ✅ ปลดล็อกบัญชี
+        failedLoginAttempts: 0, 
+        lockedUntil: null       
       }
     });
 
@@ -52,7 +64,6 @@ const setupPin = async (req, res) => {
     return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการตั้งค่า PIN" });
   }
 };
-
 // ==========================================
 // API 2: เปลี่ยน PIN (Change PIN)
 // ==========================================
@@ -163,8 +174,101 @@ const resetUserPin = async (req, res) => {
   }
 };
 
+
+// ==========================================
+// API 4: เข้าสู่ระบบ (Login) - New Flow
+// ==========================================
+const login = async (req, res) => {
+  try {
+    const { employeeCode, pin } = req.body;
+
+    if (!employeeCode || !pin) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "กรุณาระบุรหัสพนักงานและรหัส PIN" 
+      });
+    }
+
+    // 🟢 แก้ไข: ใช้ users สำหรับ Include Relation
+    const employee = await prisma.employee.findUnique({
+      where: { employeeCode: employeeCode },
+      include: {
+        users: {
+          include: { role: true }
+        }
+      }
+    });
+
+    // 🟢 แก้ไข: ตรวจสอบจาก Array users
+    if (!employee || !employee.users || employee.users.length === 0) {
+      return res.status(401).json({ success: false, error: "รหัสพนักงานหรือรหัส PIN ไม่ถูกต้อง" });
+    }
+
+    // 🟢 ดึงข้อมูลผู้ใช้จาก Index [0]
+    const user = employee.users[0];
+
+    if (!employee.isActive || !user.isActive) {
+      return res.status(403).json({ success: false, error: "บัญชีนี้ถูกระงับการใช้งาน" });
+    }
+
+    if (!user.pin || !user.pinInitialized) {
+      return res.status(403).json({ 
+        success: false, 
+        error: "บัญชีนี้ยังไม่ได้ตั้งรหัส PIN กรุณาตั้งค่ารหัส PIN ก่อนเข้าใช้งาน",
+        requireSetupPin: true 
+      });
+    }
+
+    const isPinValid = await verifyPin(user.pin, pin.toString());
+    if (!isPinValid) {
+      return res.status(401).json({ success: false, error: "รหัสพนักงานหรือรหัส PIN ไม่ถูกต้อง" });
+    }
+
+    const newSessionId = uuidv4(); 
+
+    const tokenPayload = {
+      userId: user.id,
+      employeeCode: employee.employeeCode,
+      role: user.role.name,
+      sessionId: newSessionId 
+    };
+
+    const token = jwt.sign(
+      tokenPayload, 
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        currentSessionId: newSessionId,
+        failedLoginAttempts: 0,
+        lockedUntil: null
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "เข้าสู่ระบบสำเร็จ",
+      token,
+      user: {
+        id: user.id,
+        employeeCode: employee.employeeCode,
+        fullName: employee.fullName,
+        role: user.role.name,
+        pinResetRequired: user.pinResetRequired
+      }
+    });
+
+  } catch (error) {
+    console.error("[Login Error]:", error);
+    return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการเข้าสู่ระบบ" });
+  }
+};
 // 💡 แก้ไข: รวบรวมฟังก์ชันทั้งหมดมา Export ที่จุดเดียว เพื่อป้องกัน Bug ฟังก์ชันหาย
 module.exports = {
+  login,
   setupPin,
   changePin,
   resetUserPin

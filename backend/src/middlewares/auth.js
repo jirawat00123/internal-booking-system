@@ -96,6 +96,7 @@ const authenticateToken = async (req, res, next) => {
 
     // ✅ ปรับการอ่านค่า Role ให้ปลอดภัย รองรับทั้งจากตาราง Role Relation และฟิลด์ roles Enum 
     req.user.role = user.role?.name || user.roles || decoded.role || 'USER';
+    req.user.employeeCode = decoded.employeeCode;
 
     // 💡 [Requirement Week 13] Guest Mode Validation
     // ดักจับ Role GUEST ไม่ให้ทำการเขียน/แก้ไขข้อมูลใดๆ ผ่าน API

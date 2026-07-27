@@ -63,7 +63,10 @@ router.post('/login', async (req, res) => {
     const isSecurityRole = ['ADMIN', 'SECURITY', 'GUARD'].includes(role);
     const hasPinInput = pin !== undefined && pin !== null && String(pin).trim() !== '';
 
-    if (isSecurityRole || hasPinInput) {
+    // 🔥 FIX: ข้ามการตรวจสอบ PIN หากผู้ใช้งานรายนี้อยู่ในสภาวะที่ถูกบังคับให้ตั้งค่า PIN ใหม่ (Reset State)
+    const requirePinCheck = (isSecurityRole || hasPinInput) && !userAccount.pinResetRequired;
+
+    if (requirePinCheck) {
       if (!pin) {
         console.log("[LOGIN] Validation Error: Missing required PIN field for role:", role);
         return res.status(400).json({ success: false, error: `กรุณากรอกรหัส PIN เพื่อยืนยันตัวตน` });
@@ -126,7 +129,16 @@ router.post('/login', async (req, res) => {
       { expiresIn: '1d' }
     );
     
-    return res.status(200).json({ success: true, message: "เข้าสู่ระบบสำเร็จ", token: token, role: role });
+// 🔥 FIX: เพิ่ม pinInitialized และ pinResetRequired ส่งกลับไปให้ Flutter
+    return res.status(200).json({ 
+      success: true, 
+      message: "เข้าสู่ระบบสำเร็จ", 
+      token: token, 
+      role: role,
+      // ถ้า false แต่มีรหัส PIN อยู่แล้ว ให้ปรับเป็น true อัตโนมัติ
+      pinInitialized: userAccount.pinInitialized || (userAccount.pin ? true : false),
+      pinResetRequired: userAccount.pinResetRequired
+    });
 
   } catch (error) {
     console.error('Login Error:', error);
@@ -363,7 +375,8 @@ router.get('/me', authenticateToken, async (req, res) => {
       departmentName: dept ? dept.departmentName : "ไม่ระบุแผนก",
       role: user.role ? user.role.name : (user.roles || 'USER'),
       active: user.active,
-      pinInitialized: user.pinInitialized,
+      // เหมือนกันครับ ถ้ามีรหัสแล้วให้มองว่า Initialize แล้ว
+      pinInitialized: user.pinInitialized || (user.pin ? true : false),
       pinResetRequired: user.pinResetRequired
     });
 
@@ -403,7 +416,7 @@ router.post('/logout', authenticateToken, async (req, res) => {
 // ==========================================
 // 🔐 API 6 & 7: PIN Management
 // ==========================================
-router.post('/setup-pin', authenticateToken, authController.setupPin);
+router.post('/setup-pin', authController.setupPin);
 router.post('/change-pin', authenticateToken, authController.changePin);
 router.post('/admin/users/:id/reset-pin', authenticateToken, isAdmin, authController.resetUserPin);
 

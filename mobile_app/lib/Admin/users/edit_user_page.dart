@@ -1,11 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:mobile_app/Admin/users/users_page.dart';
 import 'users_page.dart';
 import 'employee_model.dart';
-import 'edituser_successpage.dart'; // 🟢 ดึงหน้าสำเร็จมาใช้
-import 'package:http/http.dart' as http; // 🟢 เพิ่ม HTTP
-import 'dart:convert'; // 🟢 เพิ่ม Convert สำหรับ JSON
+import 'edituser_successpage.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 class EditUserPage extends StatefulWidget {
   final Employee employee;
@@ -19,29 +18,32 @@ class EditUserPage extends StatefulWidget {
 
 class _EditUserPageState extends State<EditUserPage> {
   late TextEditingController nameController;
-  String? selectedDepartment;
 
-  // 🟢 ลบคำว่า final ออกเพื่อให้ List สามารถดึงข้อมูลจาก API และแก้ไขค่าได้
+  String? selectedDepartment;
+  String? selectedRole;
+  late String selectedStatus;
+
   List<String> deptOptions = [
     'ผู้บริหาร',
     'ไอที (IT)',
     'บุคคล (HR)',
     'แมคคาทรอนิกส์',
   ];
-  // (ถ้ามีการโหลด API ให้ deptOptions.clear() ก่อน แล้วค่อย deptOptions.addAll(apiData) ตรงนี้)
+
+  final List<String> roleOptions = ['Admin', 'User', 'Security'];
+  final List<String> statusOptions = ['Active', 'Inactive'];
 
   @override
   void initState() {
     super.initState();
-    // 🟢 ดึงข้อมูลจาก Model ปัจจุบัน (Source of Truth)
     nameController = TextEditingController(text: widget.employee.fullName);
     selectedDepartment = widget.employee.departmentName;
 
-    // 🟢 1. กำจัดข้อมูลซ้ำ (กรณีดึง API หรือ addAll() เข้ามาเบิ้ล)
+    selectedRole = 'User';
+    selectedStatus = 'Active';
+
     deptOptions = deptOptions.toSet().toList();
 
-    // 🟢 2. ตรวจสอบว่า selectedDepartment ขาดหายไปจาก List หรือไม่
-    // ถ้าแผนกใหม่จาก Database จริง (เช่น 'วิศวกรรมสารสนเทศและเทคโนโลยี') ไม่มีใน List ให้บังคับเพิ่มเข้าไปเพื่อป้องกัน Crash
     if (selectedDepartment != null && selectedDepartment!.isNotEmpty) {
       if (!deptOptions.contains(selectedDepartment)) {
         deptOptions.add(selectedDepartment!);
@@ -55,9 +57,10 @@ class _EditUserPageState extends State<EditUserPage> {
     super.dispose();
   }
 
-  // 🔴 ฟังก์ชันแสดง Popup ยืนยัน
   void _showConfirmDialog(BuildContext context) {
-    if (selectedDepartment == null || nameController.text.trim().isEmpty) {
+    if (selectedDepartment == null ||
+        selectedRole == null ||
+        nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('กรุณากรอกข้อมูลให้ครบถ้วน'),
@@ -98,7 +101,7 @@ class _EditUserPageState extends State<EditUserPage> {
                         Icons.edit,
                         size: 24,
                         color: Color(0xFF003E75),
-                      ), // เปลี่ยนเป็นไอคอนดินสอ
+                      ),
                     ),
                   ],
                 ),
@@ -124,16 +127,19 @@ class _EditUserPageState extends State<EditUserPage> {
                       child: ElevatedButton(
                         onPressed: () async {
                           try {
-                            // 🟢 1. เตรียมข้อมูลที่จะส่งไปอัปเดตที่ Database จริง
+                            int roleId = 2; // Default User
+                            if (selectedRole == 'Admin') roleId = 1;
+                            if (selectedRole == 'Security') roleId = 3;
+
                             final bodyData = jsonEncode({
                               'fullName': nameController.text,
-                              // ฝั่ง Backend ต้องใช้ ID ของแผนกตาม Prisma (สมมติ ไอที = 1)
                               'departmentId': selectedDepartment == 'ไอที (IT)'
                                   ? 1
                                   : 2,
+                              'roleId': roleId,
+                              'active': selectedStatus == 'Active',
                             });
 
-                            // 🟢 2. ยิง API อัปเดตข้อมูลพนักงานไปที่ Backend
                             final response = await http.put(
                               Uri.parse(
                                 'http://localhost:3001/api/employees/${widget.employee.id}',
@@ -142,7 +148,6 @@ class _EditUserPageState extends State<EditUserPage> {
                               body: bodyData,
                             );
 
-                            // 🟢 3. ตรวจสอบสถานะการบันทึก
                             if (response.statusCode == 200 ||
                                 response.statusCode == 201) {
                               if (context.mounted) {
@@ -222,21 +227,16 @@ class _EditUserPageState extends State<EditUserPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, // 🟢 ทำให้โปร่งใส
+      backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 🌫️ 1. ตัวทำพื้นหลังเบลอ
+          // 🌫️ 1. เอา Filter เบลอออก แล้วใช้พื้นหลังสีดำโปร่งแสงแทน
           Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 6.0, sigmaY: 6.0),
-              child: GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(color: Colors.white.withOpacity(0.3)),
-              ),
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(color: Colors.black.withOpacity(0.4)),
             ),
           ),
-
-          // 📝 2. กล่องฟอร์มกรอกข้อมูล
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(20.0),
@@ -260,17 +260,36 @@ class _EditUserPageState extends State<EditUserPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'แก้ไขข้อมูลพนักงาน',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1B2B48),
-                      ),
+                    // ❌ 2. เพิ่มปุ่มกากบาทตรงหัวข้อ
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'แก้ไขข้อมูลพนักงาน',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1B2B48),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(
+                            Icons.close,
+                            color: Colors.grey,
+                            size: 28,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 24),
 
-                    // 📦 กล่อง 1: แผนก
+                    // 📦 กล่อง 1: แผนกและสิทธิ
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -295,8 +314,9 @@ class _EditUserPageState extends State<EditUserPage> {
                               thickness: 1,
                             ),
                           ),
+
                           const Text(
-                            'แผนก (Department) / ตำแหน่ง',
+                            'แผนก (Department)',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -328,27 +348,83 @@ class _EditUserPageState extends State<EditUserPage> {
                               Icons.keyboard_arrow_down,
                               color: Color(0xFF009CB4),
                             ),
-                            items: deptOptions.map((String value) {
-                              return DropdownMenuItem<String>(
-                                value: value,
-                                child: Text(
-                                  value,
-                                  style: const TextStyle(fontSize: 14),
+                            items: deptOptions
+                                .map(
+                                  (String value) => DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(
+                                      value,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (newValue) =>
+                                setState(() => selectedDepartment = newValue),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          const Text(
+                            'สิทธิ์การใช้งาน (Role)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: selectedRole,
+                            decoration: InputDecoration(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
                                 ),
-                              );
-                            }).toList(),
-                            onChanged: (newValue) {
-                              setState(() {
-                                selectedDepartment = newValue;
-                              });
-                            },
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                            ),
+                            hint: const Text(
+                              'เลือกสิทธิ์การใช้งาน',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
+                              ),
+                            ),
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Color(0xFF009CB4),
+                            ),
+                            items: roleOptions
+                                .map(
+                                  (String value) => DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(
+                                      value,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (newValue) =>
+                                setState(() => selectedRole = newValue),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 16),
 
-                    // 📦 กล่อง 2: ข้อมูลพนักงาน
+                    // 📦 กล่อง 2: ข้อมูลพนักงานและสถานะ
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -373,6 +449,7 @@ class _EditUserPageState extends State<EditUserPage> {
                               thickness: 1,
                             ),
                           ),
+
                           const Text(
                             'ชื่อ-นามสกุล (ชื่อเล่น)',
                             style: TextStyle(
@@ -403,12 +480,61 @@ class _EditUserPageState extends State<EditUserPage> {
                               ),
                             ),
                           ),
+
+                          const SizedBox(height: 16),
+
+                          const Text(
+                            'สถานะ (Status)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          DropdownButtonFormField<String>(
+                            value: selectedStatus,
+                            decoration: InputDecoration(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                            ),
+                            icon: const Icon(
+                              Icons.keyboard_arrow_down,
+                              color: Color(0xFF009CB4),
+                            ),
+                            items: statusOptions
+                                .map(
+                                  (String value) => DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(
+                                      value,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (newValue) =>
+                                setState(() => selectedStatus = newValue!),
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 32),
 
-                    // 🔘 ปุ่มบันทึก
                     SizedBox(
                       width: double.infinity,
                       height: 50,

@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_app/Select.dart';
 import 'Manage.dart';
-import 'Digitel.dart';
-import 'Booking_room/Room_Completed.dart';
+import 'package:mobile_app/Digitel.dart';
 // 👈 เพิ่มชิ้นนี้ (ปรับชื่อไฟล์ .dart ให้ตรงกับชื่อไฟล์จริงของคุณนะครับ เช่น digitel.dart)
 
 void main() {

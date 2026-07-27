@@ -4,6 +4,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'digitel.dart';
+import 'AdminGroupPage.dart';
+import '../Security/SecurityGroupPage.dart';
+import 'user_setup_pin_screen.dart'; // สำหรับกรณีที่ต้องบังคับตั้ง PIN
 
 class UserLoginPinScreen extends StatefulWidget {
   final Map<String, dynamic>? userData;
@@ -124,6 +127,7 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
   }
 
   // 🔄 ยิง API ตรวจสอบ PIN จริงกับ Backend
+  // 🔄 ยิง API ตรวจสอบ PIN จริงกับ Backend (อัปเดตใหม่รองรับทุก Role)
   Future<void> _verifyPin() async {
     setState(() {
       isLoading = true;
@@ -143,17 +147,16 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
         return;
       }
 
-      final url = 'http://localhost:3001/api/login-pin';
+      // 🟢 เปลี่ยน Endpoint เป็น /api/login ตาม Flow ใหม่
+      final url = 'http://localhost:3001/api/login';
       final headers = {'Content-Type': 'application/json'};
       final requestBody = {
         'employeeCode': employeeCode.trim(),
         'pin': pin.trim(),
       };
 
-      // 🚨 [STEP 2 EVIDENCE LOGS - FLUTTER]
-      print("[LOGIN-PIN] URL = $url");
-      print("[LOGIN-PIN] Headers = $headers");
-      print("[LOGIN-PIN] Body = ${json.encode(requestBody)}");
+      print("[LOGIN] URL = $url");
+      print("[LOGIN] Body = ${json.encode(requestBody)}");
 
       final response = await http.post(
         Uri.parse(url),
@@ -161,23 +164,69 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
         body: json.encode(requestBody),
       );
 
-      print("[LOGIN-PIN] Response Status = ${response.statusCode}");
-      print("[LOGIN-PIN] Response Body = ${response.body}");
+      print("[LOGIN] Response Status = ${response.statusCode}");
+      print("[LOGIN] Response Body = ${response.body}");
 
       final data = json.decode(response.body);
 
       if (!mounted) return;
 
+      // ✅ กรณี Login สำเร็จ
+      // ✅ กรณี Login สำเร็จ
+      // ✅ กรณี Login สำเร็จ
       if (response.statusCode == 200 && data['success'] == true) {
-        // บันทึก Token ลง SharedPreferences
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('jwt_token', data['token']);
+
+        // 🟢 แก้ไข: บันทึกด้วย key 'token' (และบันทึกข้อมูลอื่นที่จำเป็นลงไปด้วย)
+        if (data['token'] != null) {
+          await prefs.setString('token', data['token']);
+          // หากแอปคุณต้องการใช้ key 'jwt_token' ด้วย ให้บันทึกคู่กันไปเลยเพื่อความชัวร์
+          await prefs.setString('jwt_token', data['token']);
+        }
+
+        // 🟢 แก้ไข: ดึงข้อมูลจาก Object 'user' ที่ Backend ส่งมา
+        // โครงสร้าง Backend: { user: { id: ..., role: ... } }
+        final Map<String, dynamic>? userObj = data['user'];
+
+        // อ่านค่า role
+        final String role = (userObj != null && userObj['role'] != null)
+            ? userObj['role']
+            : 'USER';
+        await prefs.setString(
+          'role',
+          role,
+        ); // บันทึกสิทธิ์การใช้งานลง SharedPreferences ด้วย
+
+        // อ่านค่า userId
+        if (userObj != null && userObj['id'] != null) {
+          await prefs.setInt('userId', userObj['id']);
+        }
+
+        Widget nextPage;
+        if (role == 'ADMIN') {
+          nextPage = const AdminGroupPage();
+        } else if (role == 'SECURITY' || role == 'GUARD') {
+          nextPage = const SecurityGroupPage();
+        } else {
+          nextPage = const UserMenuPage();
+        }
 
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => const UserMenuPage()),
+          MaterialPageRoute(builder: (context) => nextPage),
         );
-      } else {
+      }
+      // 🔒 กรณีต้องตั้งค่า PIN ใหม่ (Backend ส่ง requireSetupPin มา)
+      else if (response.statusCode == 403 && data['requireSetupPin'] == true) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const UserSetupPinScreen(),
+          ), // พาไปหน้าตั้งรหัสผ่าน
+        );
+      }
+      // ❌ กรณี Error อื่นๆ เช่น PIN ผิด, บัญชีถูกระงับ
+      else {
         setState(() {
           isLoading = false;
         });
