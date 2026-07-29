@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-
-// 🟢 นำเข้าหน้าจอต่างๆ
-import 'Manage.dart';
-import 'Security/SecurityPin.dart'; // หมายเหตุ: หากโฟลเดอร์ของคุณคือ Security ให้เปลี่ยนเป็น 'Security/SecurityPin.dart'
-import 'Admin_pin.dart';
+import 'package:mobile_app/Manage.dart';
+import 'package:mobile_app/Security/SecurityPin.dart';
+import 'package:mobile_app/Admin_pin.dart';
 import 'package:mobile_app/Digitel.dart';
-import 'main.dart'; // 💡 นำเข้าสำหรับพากลับไปหน้า WelcomeApp()
+import 'package:mobile_app/main.dart';
 
 class LoginSelectionPage extends StatelessWidget {
   const LoginSelectionPage({super.key});

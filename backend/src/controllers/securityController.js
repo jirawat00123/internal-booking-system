@@ -80,7 +80,6 @@ exports.getInUseVehicles = async (req, res, next) => {
 // =========================================================================
 exports.checkOut = async (req, res, next) => {
   try {
-    // ✅ นำตัวแปร images ออกจากการรับค่า เพราะ frontend จะแยกไปยิงที่ /api/attachments/upload แล้ว
     const { vehicleBookingId, checkoutMileage, checkoutFuelLevel } = req.body;
     const guardId = req.user ? req.user.userId : null;
 
@@ -102,9 +101,7 @@ exports.checkOut = async (req, res, next) => {
       });
     }
 
-    // ทำงานภายใต้ Prisma Transaction เพื่อความปลอดภัยและป้องกัน Race Condition
     await prisma.$transaction(async (tx) => {
-      // 1. ตรวจสอบว่าใบจองรถยนต์นี้มีอยู่ในระบบจริงหรือไม่
       const booking = await tx.vehicleBooking.findUnique({
         where: { id: bookingId }
       });
@@ -113,8 +110,6 @@ exports.checkOut = async (req, res, next) => {
         throw new Error('BOOKING_NOT_FOUND');
       }
 
-      // 2 & 3. เปลี่ยนสถานะรถยนต์ (RESERVED -> IN_USE) 
-      // ป้องกัน Race Condition: เจาะจงเงื่อนไขว่า status ใน db ต้องเป็น RESERVED เท่านั้น ณ วินาทีที่เขียนลงฐานข้อมูล
       try {
         await tx.vehicle.update({
           where: {
@@ -129,7 +124,6 @@ exports.checkOut = async (req, res, next) => {
         throw new Error('VEHICLE_NOT_READY');
       }
 
-      // อัปเดตสถานะของรายการจองรถยนต์เป็น In Progress
       await tx.vehicleBooking.update({
         where: { id: bookingId },
         data: {
@@ -137,7 +131,6 @@ exports.checkOut = async (req, res, next) => {
         }
       });
 
-      // 4. บันทึกข้อมูลการตรวจสอบออกลงใน VehicleLog
       const log = await tx.vehicleLog.create({
         data: {
           vehicleBookingId: bookingId,
@@ -148,7 +141,6 @@ exports.checkOut = async (req, res, next) => {
         }
       });
 
-      // บันทึก Timeline ประวัติความเคลื่อนไหวลงในตารางหลักตาม Pattern
       await tx.vehicleBookingHistory.create({
         data: {
           vehicleBookingId: bookingId,
@@ -158,9 +150,21 @@ exports.checkOut = async (req, res, next) => {
           remark: 'เจ้าหน้าที่รักษาความปลอดภัยทำรายการปล่อยรถยนต์ออกจากบริษัทเรียบร้อย'
         }
       });
-
-      // ✅ ลบบล็อก tx.attachment.create(images) ออกเรียบร้อยแล้ว
     });
+
+// 🟢 บันทึก AuditLog เมื่อทำรายการ Check-Out สำเร็จ
+    if (guardId) {
+      await prisma.auditLog.create({
+        data: {
+          action: "CHECK_OUT_VEHICLE",
+          module: "VEHICLE_SECURITY",
+          entityId: bookingId,
+          entityType: "VEHICLE_BOOKING",
+          userId: parseInt(guardId, 10),
+          details: `Security Guard ID ${guardId} checked out vehicle for booking ID ${bookingId}`
+        }
+      }).catch(err => console.error("AuditLog Error [CHECK_OUT_VEHICLE]:", err.message));
+    }
 
     return res.status(200).json({
       success: true,
@@ -183,9 +187,7 @@ exports.checkOut = async (req, res, next) => {
 // =========================================================================
 exports.checkIn = async (req, res, next) => {
   try {
-    // ✅ 1. นำตัวแปร images ออกจากการรับค่า
     const { vehicleBookingId, returnMileage, returnFuelLevel } = req.body;
-    // ✅ 2. เปลี่ยนมาใช้ req.user.userId ให้ตรงกับ JWT Payload
     const guardId = req.user ? req.user.userId : null;
 
     if (!vehicleBookingId || returnMileage === undefined || returnFuelLevel === undefined) {
@@ -207,7 +209,6 @@ exports.checkIn = async (req, res, next) => {
     }
 
     await prisma.$transaction(async (tx) => {
-      // 1. ตรวจสอบใบจองรถยนต์ในฐานข้อมูล
       const booking = await tx.vehicleBooking.findUnique({
         where: { id: bookingId }
       });
@@ -216,7 +217,6 @@ exports.checkIn = async (req, res, next) => {
         throw new Error('BOOKING_NOT_FOUND');
       }
 
-      // 2. ดึงข้อมูลบันทึกประวัติ VehicleLog ล่าสุดขานำออกเพื่อทำการอัปเดตข้อมูลรับคืน
       const existingLog = await tx.vehicleLog.findFirst({
         where: { vehicleBookingId: bookingId },
         orderBy: { createdAt: 'desc' }
@@ -226,7 +226,6 @@ exports.checkIn = async (req, res, next) => {
         throw new Error('LOG_NOT_FOUND');
       }
 
-      // 4. เปลี่ยนสถานะรถกลับเป็น AVAILABLE โดยต้องมั่นใจว่าสถานะปัจจุบันเป็น IN_USE
       try {
         await tx.vehicle.update({
           where: {
@@ -241,7 +240,6 @@ exports.checkIn = async (req, res, next) => {
         throw new Error('VEHICLE_NOT_IN_USE');
       }
 
-      // 3. ปรับปรุงข้อมูลบันทึกขากลับเข้าในตารางประวัติ VehicleLog
       await tx.vehicleLog.update({
         where: { id: existingLog.id },
         data: {
@@ -252,7 +250,6 @@ exports.checkIn = async (req, res, next) => {
         }
       });
 
-      // 5. ปรับเปลี่ยนสถานะเอกสารการจองให้เป็นแบบเสร็จสมบูรณ์เสร็จสิ้นภารกิจ (Completed)
       await tx.vehicleBooking.update({
         where: { id: bookingId },
         data: {
@@ -260,7 +257,6 @@ exports.checkIn = async (req, res, next) => {
         }
       });
 
-      // สร้างประวัติ Audit ย้อนหลังในกลุ่ม History
       await tx.vehicleBookingHistory.create({
         data: {
           vehicleBookingId: bookingId,
@@ -270,11 +266,22 @@ exports.checkIn = async (req, res, next) => {
           remark: 'เจ้าหน้าที่รักษาความปลอดภัยทำการรับรถคืนเข้าคลังและตรวจสอบความเรียบร้อยแล้ว'
         }
       });
-
-      // ✅ 3. ลบบล็อกที่ทำหน้าที่บันทึก Attachment ซ้ำซ้อนออกเรียบร้อยแล้ว
     });
 
-    // ... โค้ดส่วนท้ายของฟังก์ชัน checkIn ...
+// 🟢 บันทึก AuditLog เมื่อทำรายการ Check-In สำเร็จ
+    if (guardId) {
+      await prisma.auditLog.create({
+        data: {
+          action: "CHECK_IN_VEHICLE",
+          module: "VEHICLE_SECURITY",
+          entityId: bookingId,
+          entityType: "VEHICLE_BOOKING",
+          userId: parseInt(guardId, 10),
+          details: `Security Guard ID ${guardId} checked in vehicle for booking ID ${bookingId}`
+        }
+      }).catch(err => console.error("AuditLog Error [CHECK_IN_VEHICLE]:", err.message));
+    }
+
     return res.status(200).json({
       success: true,
       message: 'ทำรายการ Check-In รับรถยนต์คืนคลังสำเร็จเรียบร้อย'

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'SecurityVehicleList.dart'; // โยงไปหน้าถ่ายรูปปล่อยรถ
 
 class SecurityGroupPage extends StatelessWidget {
   const SecurityGroupPage({super.key});
@@ -113,7 +114,13 @@ class SecurityGroupPage extends StatelessWidget {
                           title:
                               'ระบบจัดการรถ\nเข้า-ออก', // ตัดขึ้นบรรทัดใหม่ให้ตรงตามดีไซน์
                           onTap: () {
-                            // TODO: ลิงก์ไปหน้าระบบจัดการรถ รปภ.
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const SecurityVehicleListScreen(),
+                              ),
+                            );
                           },
                         ),
                       ],

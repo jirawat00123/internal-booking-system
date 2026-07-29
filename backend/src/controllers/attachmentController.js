@@ -1,12 +1,14 @@
 const path = require('path');
 const attachmentService = require('../services/attachmentService');
+// 🟢 นำเข้า PrismaClient สำหรับบันทึก AuditLog
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
 /**
  * Handle File Upload
  */
 const uploadFile = async (req, res) => {
   try {
-
     console.log('[AttachmentController Debug] req.file:', req.file);
     // 1. Validate Middleware Input
     if (!req.file) {
@@ -28,6 +30,18 @@ const uploadFile = async (req, res) => {
       entityId,
       userId
     );
+
+    // 🟢 เพิ่มการบันทึก AuditLog เมื่ออัปโหลดไฟล์สำเร็จ (Non-blocking)
+await prisma.auditLog.create({
+      data: {
+        action: "UPLOAD_ATTACHMENT",
+        module: "ATTACHMENT",
+        entityId: attachment.id,
+        entityType: "ATTACHMENT",
+        userId: parseInt(userId, 10),
+        details: `User ${userId} uploaded file ${attachment.fileName} for ${entityType} ${entityId}`
+      }
+    }).catch(err => console.error("AuditLog Error [UPLOAD_ATTACHMENT]:", err.message));
 
     return res.status(201).json({
       message: 'File uploaded successfully',
@@ -117,6 +131,18 @@ const deleteFile = async (req, res) => {
     const roleId = req.user.roleId;
 
     await attachmentService.deleteAttachmentById(id, userId, roleId);
+
+    // 🟢 เพิ่มการบันทึก AuditLog เมื่อลบไฟล์สำเร็จ (Non-blocking)
+await prisma.auditLog.create({
+      data: {
+        action: "DELETE_ATTACHMENT",
+        module: "ATTACHMENT",
+        entityId: parseInt(id, 10),
+        entityType: "ATTACHMENT",
+        userId: parseInt(userId, 10),
+        details: `User ${userId} deleted attachment ID ${id}`
+      }
+    }).catch(err => console.error("AuditLog Error [DELETE_ATTACHMENT]:", err.message));
 
     return res.status(200).json({
       success: true,

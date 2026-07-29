@@ -6,6 +6,8 @@ const prisma = new PrismaClient();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+// นำเข้า Controller ที่เราเพิ่งสร้าง
+const { releaseVehicle, completeVehicleBooking } = require('../controllers/vehicleBookingController');
 
 // ==========================================
 // 📂 ตั้งค่าระบบจัดการไฟล์ (Multer Configuration)
@@ -27,13 +29,19 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|pdf/;
+  
+  // ตรวจสอบนามสกุลไฟล์ (สำคัญสุด)
   const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  const mimetype = allowedTypes.test(file.mimetype);
+  
+  // 💡 ตรวจสอบ MimeType และอนุโลมให้ 'application/octet-stream' ผ่านได้ 
+  // เพราะแอป Flutter หรือ Mobile มักจะส่ง Generic MimeType นี้มาเมื่อไม่ได้ระบุเจาะจง
+  const mimetype = allowedTypes.test(file.mimetype) || file.mimetype === 'application/octet-stream';
 
   if (extname && mimetype) {
     return cb(null, true);
   } else {
-    cb(new Error("รองรับเฉพาะไฟล์ PDF, PNG และ JPG เท่านั้น!"));
+    // โยน Error เดิมกลับไป แต่คราวนี้ไฟล์ .jpg จาก Flutter จะไม่หลุดเข้ามาติดบล็อกนี้แล้ว
+    cb(new Error("รองรับเฉพาะไฟล์ PDF, PNG และ JPG เท่านั้น! (หรือประเภทไฟล์ที่คุณอัปโหลดไม่รองรับ)"));
   }
 };
 
@@ -119,7 +127,6 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
           startDatetime: new Date(startDatetime),
           endDatetime: new Date(endDatetime),
           purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
-          driverType: driverType || 'ขับขี่เอง',
           status: 'Pending'
         }
       });
@@ -300,4 +307,98 @@ router.patch('/:id/cancel', authenticateToken, async (req, res) => {
     return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการยกเลิกรายการจอง" });
   }
 });
+
+// ==========================================
+// 🚙 บันทึกการปล่อยรถออก (PUT /:id/release) - รปภ. ถ่ายรูปหน้ารถและเลขไมล์
+// ==========================================
+router.put('/:id/release', 
+  authenticateToken, 
+  // 📍 1️⃣ ดักก่อนเข้า Multer (ดูว่า Auth ผ่านจริงไหม)
+  (req, res, next) => {
+    console.log('\n===== [1] RELEASE START: After Auth, Entering Multer =====');
+    next();
+  },
+  upload.fields([
+    { name: 'frontImage', maxCount: 1 },
+    { name: 'plateImage', maxCount: 1 }
+  ]), 
+  // 📍 2️⃣ ดักหลังออกจาก Multer (ดูว่าไฟล์ติดปัญหาไหม หรือ Hang อยู่ที่ Busboy)
+  (req, res, next) => {
+    console.log('===== [2] After Upload: Multer Processed Successfully =====');
+    console.log('Files received:', req.files ? Object.keys(req.files) : 'No files');
+    console.log('Body received:', req.body);
+    next();
+  },
+  async (req, res) => {
+  try {
+    console.log("===== [3] Entering Route Logic =====");
+    const bookingId = parseInt(req.params.id, 10);
+    console.log(`===== [4] After Validation: bookingId = ${bookingId} =====`);
+
+    if (isNaN(bookingId)) {
+      return res.status(400).json({ success: false, error: "รหัสการจองไม่ถูกต้อง" });
+    }
+
+    const { status, parkingSlot } = req.body;
+
+    console.log("===== [5] Prisma Query: findUnique =====");
+    // 1. ตรวจสอบว่ามีรายการจองนี้อยู่จริง
+    const bookingExists = await prisma.vehicleBooking.findUnique({
+      where: { id: bookingId }
+    });
+
+    if (!bookingExists) {
+      console.log("===== [STOP] Booking Not Found =====");
+      return res.status(404).json({ success: false, error: `ไม่พบรายการจองรหัส #${bookingId} ในระบบ` });
+    }
+
+    console.log("===== [6] Booking Found =====");
+    console.log("===== [7] Updating Booking =====");
+    // 2. อัปเดตสถานะเป็น In_Use (ตามที่ Flutter ส่งมา)
+    const updatedBooking = await prisma.vehicleBooking.update({
+      where: { id: bookingId },
+      data: { status: status || 'In_Use' }
+      // หมายเหตุ: หาก schema ในฐานข้อมูลของคุณมีฟิลด์ parkingSlot ให้เพิ่ม `parkingSlot: parkingSlot` เข้าไปใน data ด้วย
+    });
+
+    console.log("===== [8] Updating Attachments (if any) =====");
+    // 3. บันทึกรูปภาพลงฐานข้อมูล Attachment
+    if (req.files) {
+      const imagesToSave = [];
+      if (req.files['frontImage']) imagesToSave.push(req.files['frontImage'][0]);
+      if (req.files['plateImage']) imagesToSave.push(req.files['plateImage'][0]);
+
+      for (const file of imagesToSave) {
+        await prisma.attachment.create({
+          data: {
+            entityType: "VEHICLE_RELEASE_IMAGE", // สร้าง Type เพื่อแยกออกจากไฟล์เอกสารตอนจอง
+            entityId: bookingId,
+            fileName: file.originalname,
+            filePath: file.path,
+            fileType: file.mimetype,
+            uploadedBy: { connect: { id: req.user.userId } },
+            bookingVehicle: { connect: { id: bookingId } }
+          }
+        });
+      }
+    }
+
+console.log("===== [9] Commit Success: Sending Response =====");
+    return res.status(200).json({
+      success: true,
+      message: "อัปเดตการปล่อยรถและบันทึกรูปภาพสำเร็จ",
+      data: updatedBooking
+    });
+
+  } catch (error) {
+    console.error("===== [ERROR] Route Logic Crashed =====", error);
+    return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการบันทึกข้อมูลปล่อยรถ" });
+  }
+});
+
+// ==========================================
+// 🏁 บันทึกการเสร็จสิ้นการใช้งานรถ (PUT /:id/complete)
+// ==========================================
+router.put('/:id/complete', authenticateToken, completeVehicleBooking);
+
 module.exports = router;

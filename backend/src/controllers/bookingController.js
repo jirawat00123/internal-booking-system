@@ -21,8 +21,6 @@ const checkOverlapping = async (roomId, start, end) => {
   const duplicate = await prisma.roomBooking.findFirst({
     where: {
       roomId: parseInt(roomId),
-      // 🔥 มองข้ามคิวที่ยกเลิกไปแล้ว หรือ คืนห้องเสร็จสิ้นแล้ว
-      // 🔥 มองข้ามคิวที่ยกเลิกไปแล้ว หรือ คืนห้องเสร็จสิ้นแล้ว
       status: { 
         notIn: [BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.REJECTED] 
       },
@@ -142,13 +140,25 @@ exports.createBooking = async (req, res, next) => {
           roomBookingId: booking.id,
           changedById: userId,
           action: 'CREATED',
-          statusSnapshot: BookingStatus.PENDING, // ✅ ใช้ Enum ป้องกัน Error ตัวพิมพ์
+          statusSnapshot: BookingStatus.PENDING,
           remark: 'สร้างการจองห้องประชุมใหม่'
         }
       });
 
       return booking;
     });
+
+// 🟢 บันทึก AuditLog เมื่อสร้างการจองสำเร็จ (Non-blocking)
+    await prisma.auditLog.create({
+      data: {
+        action: "CREATE_ROOM_BOOKING",
+        module: "ROOM_BOOKING",
+        entityId: newBooking.id,
+        entityType: "ROOM_BOOKING",
+        userId: userId,
+        details: `User ${userId} created room booking ID ${newBooking.id} for Room ${roomId}`
+      }
+    }).catch(err => console.error("AuditLog Error [CREATE_ROOM_BOOKING]:", err.message));
 
     return res.status(201).json({
       success: true,
@@ -175,8 +185,6 @@ exports.getBookingHistory = async (req, res, next) => {
     let rawUserId = req.query?.userId || req.query?.user_id || req.user?.userId || req.user?.id;
     let whereClause = {};
 
-    // ✅ แก้ไข: เอาเงื่อนไขการบังคับ override userId ออก เพื่อให้ USER เห็นของทุกคน
-    // (แต่ถ้าระบบส่ง userId มาเพื่อต้องการ "ค้นหาเฉพาะคน" ก็ยังทำได้)
     if (rawUserId && rawUserId !== 'null' && rawUserId !== 'undefined') {
       const parsedUserId = parseInt(rawUserId, 10);
       if (!isNaN(parsedUserId) && req.query.filterByUser === 'true') { 
@@ -217,8 +225,6 @@ exports.getBookingHistory = async (req, res, next) => {
   } catch (error) {
     console.error("❌ GET /api/bookings Error: ", error);
 
-    // ✅ เพิ่มการตรวจสอบสิทธิ์การส่ง Header (Minimal Change)
-    // ถ้าเกิด Error หลังส่งข้อมูลไปแล้ว ให้โยนข้ามไปให้ Global Error Handler ใน index.js จัดการแทนเพื่อไม่ให้แอปล่ม
     if (res.headersSent) {
       return next(error);
     }
@@ -232,7 +238,7 @@ exports.getBookingHistory = async (req, res, next) => {
 };
 
 // =========================================================================
-// [PATCH] /api/bookings/:id/cancel - API ยกเลิกการจอง (จุดที่ 1 🔐 FIX IDOR)
+// [PATCH] /api/bookings/:id/cancel - API ยกเลิกการจอง
 // =========================================================================
 exports.cancelBooking = async (req, res, next) => {
   try {
@@ -243,7 +249,6 @@ exports.cancelBooking = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'รหัสรายการจองไม่ถูกต้อง' });
     }
 
-    // ค้นหารายการจองในระบบก่อน
     const existingBooking = await prisma.roomBooking.findUnique({
       where: { id: bookingId }
     });
@@ -252,21 +257,16 @@ exports.cancelBooking = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลการจองนี้ในระบบ' });
     }
 
-    // ✅ [จุดแก้ไข 1 - FIX IDOR]: อนุญาตเฉพาะ ADMIN หรือ "เจ้าของรายการจองตัวจริง" เท่านั้น
-    // ✅ แก้ไข: Logic ตรวจสอบสิทธิ์ที่ชัดเจนขึ้น
     if (req.user.role === 'ADMIN') {
-      // อนุญาต: ADMIN ทำได้ทุกอย่าง
+      // อนุญาต: ADMIN
     } else if (req.user.role === 'USER' && existingBooking.userId === parseInt(req.user.userId, 10)) {
-      // อนุญาต: USER แก้ไขได้เฉพาะรายการที่ตัวเองเป็นเจ้าของเท่านั้น
+      // อนุญาต: Owner USER
     } else {
-      // ดีดออก: GUARD, SECURITY หรือ USER ที่พยายามยกเลิกของคนอื่น จะถูกบล็อกที่นี่ทั้งหมด
       return res.status(403).json({ 
         success: false, 
         message: 'คุณไม่มีสิทธิ์แก้ไขหรือยกเลิกการจองของผู้อื่น' 
       });
     }
-    // หมายเหตุ: ADMIN ผ่านเงื่อนไขนี้ไปได้เลย (เพราะไม่ใช่ USER) 
-    // ส่วน GUARD เข้าไม่ถึงฟังก์ชันนี้เพราะถูกบล็อคตั้งแต่ Route แล้ว
 
     const updatedBooking = await prisma.$transaction(async (tx) => {
       const booking = await tx.roomBooking.update({
@@ -282,15 +282,27 @@ exports.cancelBooking = async (req, res, next) => {
       await tx.roomBookingHistory.create({
         data: {
           roomBookingId: bookingId,
-          changedById: parseInt(req.user.userId), 
+          changedById: parseInt(req.user.userId, 10), 
           action: 'CANCELLED',
-          statusSnapshot: BookingStatus.CANCELLED, // ✅ ใช้ Enum
+          statusSnapshot: BookingStatus.CANCELLED,
           remark: cancelRemark
         }
       });
 
       return booking;
     });
+
+// 🟢 บันทึก AuditLog เมื่อยกเลิกการจองสำเร็จ (Non-blocking)
+    await prisma.auditLog.create({
+      data: {
+        action: "CANCEL_ROOM_BOOKING",
+        module: "ROOM_BOOKING",
+        entityId: bookingId,
+        entityType: "ROOM_BOOKING",
+        userId: parseInt(req.user.userId, 10),
+        details: `User ${req.user.userId} cancelled room booking ID ${bookingId}`
+      }
+    }).catch(err => console.error("AuditLog Error [CANCEL_ROOM_BOOKING]:", err.message));
 
     return res.status(200).json({
       success: true,
@@ -304,7 +316,7 @@ exports.cancelBooking = async (req, res, next) => {
 };
 
 // =========================================================================
-// 🚀 [PUT] /api/bookings/:id - API อัปเดตสถานะต่างๆ (จุดที่ 2 🔐 FIX ACCESS CONTROL)
+// [PUT] /api/bookings/:id - API อัปเดตสถานะต่างๆ
 // =========================================================================
 exports.updateBookingStatus = async (req, res, next) => {
   try {
@@ -319,7 +331,6 @@ exports.updateBookingStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'ข้อมูลสำหรับอัปเดตสถานะไม่ครบถ้วน' });
     }
 
-    // ค้นหารายการจองเดิมในระบบ
     const existingBooking = await prisma.roomBooking.findUnique({
       where: { id: bookingId }
     });
@@ -328,22 +339,16 @@ exports.updateBookingStatus = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'ไม่พบรายการจองนี้ในระบบ' });
     }
 
-    // ✅ [จุดแก้ไข 2 - FIX ACCESS CONTROL]: บล็อกผู้ใช้ทั่วไปไม่ให้แอบเปลี่ยนสถานะข้ามสิทธิ์
-    // อนุญาตให้เฉพาะเจ้าหน้าที่ระดับ ADMIN, SECURITY หรือ GUARD เท่านั้น
-    // 🛡️ เช็กสิทธิ์ข้อ 1: GUARD ไม่มีสิทธิ์อัปเดต/ยกเลิก
-    // 🛡️ ตรวจสอบสิทธิ์ (Authorization & IDOR Check)
     if (req.user.role === 'ADMIN') {
-      // อนุญาต: ADMIN ทำได้ทุกอย่าง
+      // อนุญาต: ADMIN
     } else if (req.user.role === 'USER' && existingBooking.userId === parseInt(req.user.userId, 10)) {
-      // อนุญาต: USER แก้ไขได้เฉพาะรายการที่ตัวเองเป็นเจ้าของเท่านั้น
+      // อนุญาต: Owner USER
     } else {
-      // ดีดออก: GUARD, SECURITY หรือ USER ที่พยายามแก้ไขของคนอื่น จะถูกบล็อกที่นี่ทั้งหมด
       return res.status(403).json({ 
         success: false, 
         message: 'คุณไม่มีสิทธิ์แก้ไขหรือยกเลิกการจองของผู้อื่น' 
       });
     }
-    // 💡 ADMIN จะผ่านเงื่อนไขด้านบนมาได้ทั้งหมด ทำให้จัดการของใครก็ได้ตาม Requirement
 
     const validStatus = BookingStatus[status?.toUpperCase()];
     
@@ -351,9 +356,7 @@ exports.updateBookingStatus = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'สถานะไม่ถูกต้องตามระบบ' });
     }
 
-    // ใช้ Transaction เพื่ออัปเดตตารางที่เกี่ยวข้องทั้งหมดพร้อมกันอย่างปลอดภัย
     const updatedBooking = await prisma.$transaction(async (tx) => {
-      
       const booking = await tx.roomBooking.update({
         where: { id: bookingId },
         data: { status: validStatus }
@@ -369,15 +372,28 @@ exports.updateBookingStatus = async (req, res, next) => {
       await tx.roomBookingHistory.create({
         data: {
           roomBookingId: bookingId,
-          changedById: parseInt(req.user.userId), 
-          action: validStatus === BookingStatus.COMPLETED ? 'COMPLETED' : 'STATUS_CHANGED', // ✅ ตรวจสอบจาก validStatus
-          statusSnapshot: validStatus, // ✅ ใช้ validStatus ที่แปลงและผ่านการยืนยันแล้ว
+          changedById: parseInt(req.user.userId, 10), 
+          action: validStatus === BookingStatus.COMPLETED ? 'COMPLETED' : 'STATUS_CHANGED',
+          statusSnapshot: validStatus,
           remark: remark || `อัปเดตสถานะเป็น ${validStatus}`
         }
       });
 
       return booking;
     });
+
+// 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะการจองสำเร็จ (Non-blocking)
+    const auditAction = validStatus === BookingStatus.APPROVED ? "APPROVE_ROOM_BOOKING" : "UPDATE_ROOM_BOOKING";
+    await prisma.auditLog.create({
+      data: {
+        action: auditAction,
+        module: "ROOM_BOOKING",
+        entityId: bookingId,
+        entityType: "ROOM_BOOKING",
+        userId: parseInt(req.user.userId, 10),
+        details: `User ${req.user.userId} updated room booking ID ${bookingId} status to ${validStatus}`
+      }
+    }).catch(err => console.error(`AuditLog Error [${auditAction}]:`, err.message));
 
     return res.status(200).json({ 
       success: true, 

@@ -35,7 +35,7 @@ router.post('/login', async (req, res) => {
       where: { employeeCode: String(employeeCode).trim() },
       include: {
         users: { include: { role: true } },
-        position: true
+        position: { include: { department: true } } // ✅ ดึงข้อมูลแผนกมาด้วย
       }
     });
 
@@ -129,7 +129,26 @@ router.post('/login', async (req, res) => {
       { expiresIn: '1d' }
     );
     
-// 🔥 FIX: เพิ่ม pinInitialized และ pinResetRequired ส่งกลับไปให้ Flutter
+// 🟢 [แก้ไขใหม่] บันทึก AuditLog ให้แสดงรูปแบบเหมือนเส้น /login-pin
+    try {
+      const deptName = employee.position?.department?.departmentName || "ไม่ระบุแผนก";
+      
+      await prisma.auditLog.create({
+        data: {
+          userId: parseInt(userAccount.id, 10),
+          action: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${role}, แผนก: ${deptName}, ชื่อ: ${employee.fullName})`,
+          module: "LOGIN_SYSTEM",
+          entityId: parseInt(userAccount.id, 10),
+          entityType: "USER",
+          details: "เข้าสู่ระบบผ่านหน้าล็อกอินหลัก"
+        }
+      });
+      console.log("✅ [LOGIN] AuditLog Saved Successfully");
+    } catch (logError) {
+      console.error("❌ [LOGIN] AuditLog Error:", logError.message);
+    }
+
+    // 🔥 FIX: เพิ่ม pinInitialized และ pinResetRequired ส่งกลับไปให้ Flutter
     return res.status(200).json({ 
       success: true, 
       message: "เข้าสู่ระบบสำเร็จ", 

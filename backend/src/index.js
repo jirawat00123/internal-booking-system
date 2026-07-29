@@ -651,6 +651,22 @@ app.use((err, req, res, next) => {
     developerMessage: err.message
   });
 });
+
+app.use((err, req, res, next) => {
+  console.error('\n===== [ERROR] Centralized Error Handler Caught Something! =====');
+  console.error('Error Message:', err.message);
+  console.error('Stack Trace:', err.stack);
+  console.error('=============================================================\n');
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  res.status(err.status || 500).json({
+    error: "เกิดข้อผิดพลาดภายในระบบหลังบ้าน กรุณาแจ้งผู้ดูแลระบบ",
+    developerMessage: err.message
+  });
+});
 // ==========================================
 // 🚀 เริ่มต้นทำงาน Server พร้อมจัดการสถานะพอร์ต
 // ==========================================

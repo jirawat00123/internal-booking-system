@@ -170,20 +170,39 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      String token = prefs.getString('token') ?? '';
+
+      // 🎯 1. ตรวจสอบ Key ให้ตรงกับตอน Login (แก้ไขเป็น 'token' หาก auth_service ใช้คำนี้)
+      String token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+
+      if (token.isEmpty) {
+        Navigator.pop(context);
+        _showErrorDialog(
+          'ไม่พบข้อมูลการเข้าสู่ระบบ (Token สูญหาย) กรุณาเข้าสู่ระบบใหม่',
+        );
+        return;
+      }
+
+      // 🎯 2. ใช้ IP Address สำหรับทดสอบแทน localhost เพื่อให้ Emulator/มือถือ มองเห็น Backend
+      // (เปลี่ยน 10.0.2.2 เป็น IP ของคอมคุณ เช่น 192.168.1.X ถ้าใช้มือถือจริงเทสต์)
+      String baseUrl = kIsWeb
+          ? 'http://localhost:3001'
+          : 'http://10.0.2.2:3001';
 
       var request = http.MultipartRequest(
         'PUT',
-        Uri.parse(
-          'http://localhost:3001/api/vehicle-bookings/${widget.bookingId}/release',
-        ),
+        Uri.parse('$baseUrl/api/vehicle-bookings/${widget.bookingId}/release'),
       );
-      request.headers['Authorization'] = 'Bearer $token';
+
+      // 🎯 3. แนบ Header ให้ครบถ้วน
+      request.headers.addAll({
+        'Authorization': 'Bearer $token',
+        // ไม่ต้องใส่ Content-Type: multipart/form-data เอง ปล่อยให้ http.MultipartRequest จัดการ Boundary ให้
+      });
 
       request.fields['status'] = 'In_Use';
       request.fields['parkingSlot'] = slotController.text;
 
-      // 💡 3. แก้ไขการส่งไฟล์ให้รองรับ Web (ใช้ fromBytes แทน fromPath)
       request.files.add(
         http.MultipartFile.fromBytes(
           'frontImage',
@@ -210,10 +229,15 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
           ),
         );
       } else {
-        _showErrorDialog('อัปโหลดรูปภาพไม่สำเร็จ โปรดลองอีกครั้ง');
+        // หากล้มเหลว ให้ลองปริ้นท์ status code ออกมาดูใน Console ด้วย
+        print('Upload failed with status: ${response.statusCode}');
+        _showErrorDialog(
+          'อัปโหลดรูปภาพไม่สำเร็จ (รหัส: ${response.statusCode})',
+        );
       }
     } catch (e) {
       Navigator.pop(context);
+      print('Network Error: $e');
       _showErrorDialog('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
     }
   }

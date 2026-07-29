@@ -21,13 +21,13 @@ exports.getAllRooms = async (req, res, next) => {
   try {
     // ใช้ Prisma ดึงข้อมูลจากตาราง rooms ทั้งหมด
     const rooms = await prisma.room.findMany({
-  where: {
-    isDeleted: false,
-  },
-  orderBy: {
-    id: 'asc',
-  },
-});
+      where: {
+        isDeleted: false,
+      },
+      orderBy: {
+        id: 'asc',
+      },
+    });
 
     // ส่งข้อมูลกลับไปให้ Frontend ในรูปแบบ JSON
     return res.status(200).json({
@@ -68,14 +68,13 @@ exports.getRoomById = async (req, res, next) => {
 };
 
 // =========================================================================
-// [POST] /api/rooms - สร้างห้องประชุมใหม่ (เพิ่มฟังก์ชันนี้เพื่อแก้บั๊กข้อมูลหาย)
+// [POST] /api/rooms - สร้างห้องประชุมใหม่
 // =========================================================================
 exports.createRoom = async (req, res, next) => {
   try {
     const { roomName, capacity, location, status } = req.body;
-    let uploadUrl = null; // 💡 1. เพิ่มตัวแปรสำหรับเก็บ path รูปภาพ
+    let uploadUrl = null; 
 
-    // 💡 2. ตรวจสอบว่ามีการแนบไฟล์มาด้วยหรือไม่
     if (req.file) {
       uploadUrl = `/uploads/${req.file.filename}`;
     }
@@ -104,9 +103,24 @@ exports.createRoom = async (req, res, next) => {
         capacity: parseInt(capacity),
         location: location ? location.toString() : null,
         status: status || 'AVAILABLE',
-        uploadUrl: uploadUrl, // 💡 3. บันทึก path รูปภาพลงฐานข้อมูล
+        uploadUrl: uploadUrl, 
       },
     });
+
+    // 🟢 บันทึก AuditLog เมื่อสร้างห้องประชุมสำเร็จ
+    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (userId) {
+      await prisma.auditLog.create({
+        data: {
+          action: "CREATE_ROOM",
+          module: "ROOM",
+          entityId: newRoom.id,
+          entityType: "ROOM",
+          userId: userId,
+          details: `User ${userId} created room: ${newRoom.roomName}`
+        }
+      }).catch(err => console.error("AuditLog Error [CREATE_ROOM]:", err.message));
+    }
 
     return res.status(201).json({
       success: true,
@@ -125,7 +139,7 @@ exports.createRoom = async (req, res, next) => {
 };
 
 // =========================================================================
-// [PUT] /api/rooms/:id - อัปเดตข้อมูลห้องประชุมพร้อมรองรับการอัปโหลดไฟล์รูปภาพใหม่
+// [PUT] /api/rooms/:id - อัปเดตข้อมูลห้องประชุม
 // =========================================================================
 exports.updateRoom = async (req, res, next) => {
   try {
@@ -133,16 +147,13 @@ exports.updateRoom = async (req, res, next) => {
     const { roomName, location, capacity, status } = req.body;
     let uploadUrl;
 
-    // หากมีการส่งไฟล์ภาพใหม่ผ่าน MultipartRequest มาให้ทำการบันทึกพาธลงตัวแปร
     if (req.file) {
       uploadUrl = `/uploads/${req.file.filename}`;
     }
 
-// ตรวจสอบฟิลด์และเตรียมข้อมูลสำหรับทำการอัปเดตแบบ Dynamic
     const updateData = {};
     
     if (roomName) {
-      // Validation: เช็คชื่อห้องซ้ำ (ยกเว้นห้องตัวเอง)
       const existingRoom = await prisma.room.findFirst({
         where: { 
           roomName: roomName.toString(), 
@@ -160,7 +171,6 @@ exports.updateRoom = async (req, res, next) => {
     if (capacity) updateData.capacity = parseInt(capacity);
     
     if (status) {
-      // Business Logic: ตรวจสอบก่อนเปลี่ยนสถานะเป็นปิดการใช้งาน
       if (status === 'MAINTENANCE' || status === 'INACTIVE') {
         const hasFutureBookings = await checkFutureRoomBookings(id);
         if (hasFutureBookings) {
@@ -179,6 +189,21 @@ exports.updateRoom = async (req, res, next) => {
       where: { id: parseInt(id) },
       data: updateData,
     });
+
+    // 🟢 บันทึก AuditLog เมื่ออัปเดตข้อมูลห้องประชุมสำเร็จ
+    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (userId) {
+      await prisma.auditLog.create({
+        data: {
+          action: "UPDATE_ROOM",
+          module: "ROOM",
+          entityId: updatedRoom.id,
+          entityType: "ROOM",
+          userId: userId,
+          details: `User ${userId} updated data for room ID ${updatedRoom.id}`
+        }
+      }).catch(err => console.error("AuditLog Error [UPDATE_ROOM]:", err.message));
+    }
 
     return res.status(200).json({
       success: true,
@@ -227,6 +252,21 @@ exports.updateRoomStatus = async (req, res, next) => {
       data: { status }
     });
 
+    // 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะสำเร็จ
+    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (userId) {
+      await prisma.auditLog.create({
+        data: {
+          action: "UPDATE_ROOM_STATUS",
+          module: "ROOM",
+          entityId: updatedRoom.id,
+          entityType: "ROOM",
+          userId: userId,
+          details: `User ${userId} updated room ID ${updatedRoom.id} status to ${status}`
+        }
+      }).catch(err => console.error("AuditLog Error [UPDATE_ROOM_STATUS]:", err.message));
+    }
+
     return res.status(200).json({ success: true, message: 'อัปเดตสถานะสำเร็จ', data: updatedRoom });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'เกิดข้อผิดพลาด', error: error.message });
@@ -234,22 +274,19 @@ exports.updateRoomStatus = async (req, res, next) => {
 };
 
 // =========================================================================
-// [DELETE] /api/rooms/:id - ลบห้องประชุมออกจากฐานข้อมูลถาวร (เพิ่มใหม่ 🔥)
+// [DELETE] /api/rooms/:id - ลบห้องประชุมออกจากฐานข้อมูลถาวร (Soft Delete)
 // =========================================================================
 exports.deleteRoom = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-// 💡 ฝัง Log ไว้ดูตอนลบ
     console.log(`\n🚨กำลังทำ SOFT DELETE ห้องหมายเลข: ${id}🚨\n`);
 
-    // ตรวจสอบว่าห้องมีอยู่จริง
     const room = await prisma.room.findFirst({ where: { id: parseInt(id, 10), isDeleted: false } });
     if (!room) {
       return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลห้องประชุมที่ต้องการลบในระบบ' });
     }
 
-    // Business Logic: ห้ามลบหากมีการจองล่วงหน้า
     const hasFutureBookings = await checkFutureRoomBookings(id);
     if (hasFutureBookings) {
       return res.status(409).json({
@@ -258,15 +295,29 @@ exports.deleteRoom = async (req, res, next) => {
       });
     }
 
-    // 🔥 บรรทัดนี้ต้องเป็น .update เท่านั้น ห้ามเป็น .delete
     const deletedRoom = await prisma.room.update({
       where: {
         id: parseInt(id, 10),
       },
       data: {
-        isDeleted: true, // ซ่อนข้อมูลเฉยๆ
+        isDeleted: true, 
       },
     });
+
+    // 🟢 บันทึก AuditLog เมื่อ Soft Delete สำเร็จ
+    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (userId) {
+      await prisma.auditLog.create({
+        data: {
+          action: "DELETE_ROOM",
+          module: "ROOM",
+          entityId: deletedRoom.id,
+          entityType: "ROOM",
+          userId: userId,
+          details: `User ${userId} soft deleted room ID ${deletedRoom.id}`
+        }
+      }).catch(err => console.error("AuditLog Error [DELETE_ROOM]:", err.message));
+    }
 
     return res.status(200).json({
       success: true,

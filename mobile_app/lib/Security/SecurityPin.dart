@@ -74,11 +74,10 @@ class _Security_PinpageState extends State<Security_Pinpage> {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'pin': pin,
-              'expectedRole':
-                  'GUARD', // 👈 กระซิบบอกหลังบ้านว่า นี่คือหน้าจอของ รปภ. นะ!
+              'expectedRole': 'SECURITY', // ✅ เปลี่ยนให้ตรงกับ Backend
             }),
           )
-          .timeout(const Duration(seconds: 5)); // ให้เวลารอแค่ 5 วิ
+          .timeout(const Duration(seconds: 5));
 
       print(
         '📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}',
@@ -90,7 +89,8 @@ class _Security_PinpageState extends State<Security_Pinpage> {
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
 
-        if (responseData['role'] == 'GUARD') {
+        // ✅ แก้ไข: เปลี่ยนจาก 'GUARD' เป็น 'SECURITY' ให้ตรงกับที่ Backend ตอบกลับมา
+        if (responseData['role'] == 'SECURITY') {
           // 🟢 1. บันทึก JWT Token ลง Storage เพื่อให้หน้าถัดไปนำไปใช้เรียก API ต่อได้
           final prefs = await SharedPreferences.getInstance();
 

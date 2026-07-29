@@ -1,7 +1,9 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-
+// =======================================================
+// 1. สร้างรายการจองรถยนต์ (POST)
+// =======================================================
 exports.createBooking = async (req, res) => {
     try {
         // 💡 1. ดักรับตัวแปรเผื่อไว้หลายๆ ชื่อ (เพิ่ม passengers และ userId)
@@ -59,18 +61,12 @@ exports.createBooking = async (req, res) => {
                 throw new Error('VEHICLE_NOT_FOUND');
             }
 
-            // 🚨 [Validation 4] จัดการสถานะตัวรถแบบ Dynamic (Dynamic Vehicle Status Toggle)
-            // หากการจองนี้ระบุให้เริ่มต้นใช้งานทันที (กำหนด Buffer ไว้เผื่อเวลาเลื่อนในแอปหน้าบ้าน 15 นาที)
-            // ระบบจะทำการเปลี่ยนสถานะรถคันนี้เป็น RESERVED ทันทีเพื่อให้ไปแสดงผลที่หน้าป้อมยามของ SECURITY
-
             // 🚨 [Validation 4] ปรับปรุงการล็อกสถานะรถยนต์ทันทีกดจอง (Immediate Vehicle Lock)
-            // ตรวจสอบว่ารถคันนี้ต้องอยู่ในสถานะ AVAILABLE ณ วินาทีที่กดจอง
             if (vehicle.status !== 'AVAILABLE') {
                 throw new Error('VEHICLE_NOT_AVAILABLE');
             }
             
-            // สั่งอัปเดตสถานะของตัวรถยนต์จาก AVAILABLE -> RESERVED ทันที ไม่ว่าจะจองช่วงเวลาใดก็ตาม
-            // เพื่อให้หน้าจัดการรถของแอดมิน และหน้าจองธรรมดา ซิงค์สถานะตรงกันว่ารถคันนี้ติดคิวจองแล้ว
+            // สั่งอัปเดตสถานะของตัวรถยนต์จาก AVAILABLE -> RESERVED ทันที
             await tx.vehicle.update({
                 where: { id: vehicle.id },
                 data: { status: 'RESERVED' }
@@ -90,6 +86,21 @@ exports.createBooking = async (req, res) => {
                 }
             });
         });
+
+        // 🟢 บันทึก AuditLog เมื่อสร้างรายการจองรถสำเร็จ
+        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : finalUserId;
+if (actionUserId) {
+            await prisma.auditLog.create({
+                data: {
+                    action: "CREATE_VEHICLE_BOOKING",
+                    module: "VEHICLE_BOOKING",
+                    entityId: newBooking.id,
+                    entityType: "VEHICLE_BOOKING",
+                    userId: actionUserId,
+                    details: `User ${actionUserId} created vehicle booking ID ${newBooking.id} for vehicle ID ${vehicleId}`
+                }
+            }).catch(err => console.error("AuditLog Error [CREATE_VEHICLE_BOOKING]:", err.message));
+        }
 
         return res.status(201).json({ success: true, data: newBooking, message: "จองรถสำเร็จและบันทึกคิวเรียบร้อย" });
 
@@ -116,16 +127,15 @@ exports.getBookings = async (req, res) => {
         const bookings = await prisma.vehicleBooking.findMany({
             orderBy: { createdAt: 'desc' },
             include: {
-                vehicle: true, // 💡 ดึงข้อมูลรถพ่วงมาด้วย
+                vehicle: true,
                 user: {
                     include: {
-                        employee: true // 💡 ดึงข้อมูล employee เพื่อเอาชื่อผู้ทำรายการไปโชว์
+                        employee: true
                     }
                 }
             }
         });
 
-        // 💡 ส่งข้อมูลกลับไปให้ Flutter ในก้อน 'data'
         res.status(200).json({ success: true, data: bookings });
     } catch (error) {
         console.error("Get Vehicle Bookings Error:", error);
@@ -139,7 +149,7 @@ exports.getBookings = async (req, res) => {
 exports.updateBookingStatus = async (req, res) => {
     try {
         const bookingId = parseInt(req.params.id);
-        const { status } = req.body; // รับสถานะภาษาไทยมาจากแอป Flutter
+        const { status } = req.body;
 
         if (isNaN(bookingId) || !status) {
             return res.status(400).json({ success: false, error: "ข้อมูลไม่ถูกต้อง" });
@@ -153,21 +163,18 @@ exports.updateBookingStatus = async (req, res) => {
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจองนี้" });
         }
 
-        // ✅ 1. ย้ายบล็อกตรวจสอบสิทธิ์เข้ามาอยู่ภายในฟังก์ชัน (ใต้จุดที่ดึงข้อมูลสำเร็จ)
         // 🛡️ ตรวจสอบสิทธิ์ (Authorization & IDOR Check)
         if (req.user.role === 'ADMIN') {
             // อนุญาต: ADMIN ทำได้ทุกอย่าง
         } else if (req.user.role === 'USER' && existingBooking.userId === parseInt(req.user.userId, 10)) {
             // อนุญาต: USER แก้ไขได้เฉพาะรายการที่ตัวเองเป็นเจ้าของเท่านั้น
         } else {
-            // ดีดออก: GUARD, SECURITY หรือ Role อื่นๆ รวมถึง USER ที่พยายามแก้ของคนอื่น
             return res.status(403).json({ 
                 success: false, 
                 error: 'คุณไม่มีสิทธิ์แก้ไขหรือยกเลิกการจองของผู้อื่น' 
             });
         }
 
-        // 💡 แปลงสถานะภาษาไทยจากแอป ให้ตรงกับ Enum ภาษาอังกฤษในฐานข้อมูล (Prisma)
         let dbStatus = status;
         if (status === 'ยกเลิกแล้ว') dbStatus = 'Cancelled';
         if (status === 'เสร็จสิ้น') dbStatus = 'Completed';
@@ -180,6 +187,21 @@ exports.updateBookingStatus = async (req, res) => {
             data: { status: dbStatus }
         });
 
+        // 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะการจองรถสำเร็จ
+        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+        if (actionUserId) {
+            await prisma.auditLog.create({
+                data: {
+                    action: 'UPDATE_VEHICLE_BOOKING_STATUS',
+                    module: 'VEHICLE_BOOKING',
+                    userId: actionUserId,
+                    entityId: bookingId,
+                    entityType: 'VEHICLE_BOOKING',
+                    details: `User ${actionUserId} updated vehicle booking ID ${bookingId} status to ${dbStatus}`
+                }
+            }).catch(err => console.error("AuditLog Error [updateBookingStatus]:", err.message));
+        }
+
         res.status(200).json({ success: true, data: updatedBooking, message: "อัปเดตสถานะสำเร็จ" });
     } catch (error) {
         console.error("Update Booking Status Error:", error);
@@ -187,5 +209,152 @@ exports.updateBookingStatus = async (req, res) => {
     }
 };
 
-// ✅ วางการ Export ไว้ท้ายสุดของฟังก์ชันอย่างถูกต้อง
+// =======================================================
+// 4. บันทึกการปล่อยรถออก (PUT /:id/release) - รับรูปถ่ายหน้ารถและป้ายทะเบียน
+// =======================================================
+exports.releaseVehicle = async (req, res) => {
+    console.log("\n===== [3] Entering Controller: releaseVehicle =====");
+    try {
+        const bookingId = parseInt(req.params.id, 10);
+        console.log(`===== [4] After Validation: bookingId = ${bookingId} =====`);
+        
+        if (isNaN(bookingId)) {
+            console.log("===== [STOP] Invalid bookingId =====");
+            return res.status(400).json({ success: false, error: "รหัสการจองไม่ถูกต้อง" });
+        }
+
+        const { status, parkingSlot } = req.body;
+        console.log(`===== [4.1] Request Body Status: ${status} =====`);
+
+        console.log("===== [5] Prisma Query: findUnique Booking =====");
+        const bookingExists = await prisma.vehicleBooking.findUnique({
+            where: { id: bookingId }
+        });
+
+        if (!bookingExists) {
+            console.log("===== [STOP] Booking Not Found in DB =====");
+            return res.status(404).json({ success: false, error: `ไม่พบรายการจองรหัส #${bookingId} ในระบบ` });
+        }
+
+        console.log("===== [6] Booking Found, Proceeding to Update =====");
+        const updatedBooking = await prisma.vehicleBooking.update({
+            where: { id: bookingId },
+            data: { 
+                status: status || 'In_Use'
+            }
+        });
+        console.log("===== [7] Prisma Update: Booking Status Updated =====");
+
+        console.log("===== [8] Checking req.files for Attachments =====");
+        if (req.files && Object.keys(req.files).length > 0) {
+            console.log(`===== [8.1] Files Detected: ${Object.keys(req.files).join(', ')} =====`);
+            const imagesToSave = [];
+            if (req.files['frontImage']) imagesToSave.push(req.files['frontImage'][0]);
+            if (req.files['plateImage']) imagesToSave.push(req.files['plateImage'][0]);
+
+            for (const file of imagesToSave) {
+                console.log(`===== [8.2] Prisma Create: Saving Attachment ${file.originalname} =====`);
+                await prisma.attachment.create({
+                    data: {
+                        entityType: "VEHICLE_RELEASE_IMAGE",
+                        entityId: bookingId,
+                        fileName: file.originalname,
+                        filePath: file.path,
+                        fileType: file.mimetype,
+                        uploadedBy: { connect: { id: parseInt(req.user.userId, 10) } },
+                        bookingVehicle: { connect: { id: bookingId } }
+                    }
+                });
+            }
+            console.log("===== [8.3] All Attachments Saved Successfully =====");
+        } else {
+            console.log("===== [8.1] No Files Attached. Skipping Attachment Creation =====");
+        }
+
+        // 🟢 บันทึก AuditLog เมื่อปล่อยรถสำเร็จ
+        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+        if (actionUserId) {
+            await prisma.auditLog.create({
+                data: {
+                    action: 'RELEASE_VEHICLE',
+                    module: 'VEHICLE_BOOKING',
+                    userId: actionUserId,
+                    entityId: bookingId,
+                    entityType: 'VEHICLE_BOOKING',
+                    details: `User ${actionUserId} released vehicle for booking ID ${bookingId}`
+                }
+            }).catch(err => console.error("AuditLog Error [releaseVehicle]:", err.message));
+        }
+
+        console.log("===== [9] Commit Success: Sending Response =====");
+        return res.status(200).json({
+            success: true,
+            message: "อัปเดตการปล่อยรถและบันทึกรูปภาพสำเร็จ",
+            data: updatedBooking
+        });
+
+    } catch (error) {
+        console.error("===== [ERROR] 🔴 Controller Crashed =====", error);
+        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการบันทึกข้อมูลปล่อยรถ" });
+    }
+};
+
+// =======================================================
+// 5. เสร็จสิ้นการใช้งานรถ (PUT /:id/complete)
+// =======================================================
+exports.completeVehicleBooking = async (req, res) => {
+    try {
+        const bookingId = parseInt(req.params.id, 10);
+        const reqUserId = parseInt(req.user.userId, 10);
+        const userRole = req.user.role;
+
+        const booking = await prisma.vehicleBooking.findUnique({
+            where: { id: bookingId }
+        });
+
+        if (!booking) {
+            return res.status(404).json({ success: false, message: "ไม่พบรายการจอง" });
+        }
+
+        if (userRole !== 'ADMIN' && booking.userId !== reqUserId) {
+            return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์ทำรายการนี้" });
+        }
+
+        await prisma.$transaction(async (tx) => {
+            // 1. อัปเดตสถานะใบจอง
+            await tx.vehicleBooking.update({
+                where: { id: bookingId },
+                data: { status: 'Completed' }
+            });
+
+            // 2. คืนสถานะรถยนต์
+            await tx.vehicle.update({
+                where: { id: booking.vehicleId },
+                data: { status: 'AVAILABLE' }
+            });
+
+            // 3. บันทึก Audit Log ตรงตาม Schema ใหม่
+            await tx.auditLog.create({
+                data: {
+                    action: 'COMPLETE_VEHICLE_BOOKING',
+                    module: 'VEHICLE_BOOKING',
+                    entityId: bookingId,
+                    entityType: 'VEHICLE_BOOKING',
+                    userId: reqUserId,
+                    details: `User ${reqUserId} completed vehicle booking ${bookingId} and released vehicle ${booking.vehicleId}`
+                }
+            });
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Vehicle booking completed successfully."
+        });
+
+    } catch (error) {
+        console.error("Complete Booking Error:", error);
+        return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดของระบบ" });
+    }
+};
+
 exports.getHistory = exports.getBookings;

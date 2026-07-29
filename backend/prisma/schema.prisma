@@ -89,14 +89,25 @@ model User {
 }
 
 model AuditLog {
-  id        Int      @id @default(autoincrement())
-  userId    Int?     @map("user_id")
-  action    String
-  module    String
-  createdAt DateTime @default(now()) @map("created_at")
-  user      User?    @relation(fields: [userId], references: [id])
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  action     String
+  module     String
+
+  entityId   Int?     @map("entity_id")
+  entityType String?  @map("entity_type")
+  details    String?  @db.Text
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
 
   @@index([userId])
+  @@index([module])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+
   @@map("audit_logs")
 }
 

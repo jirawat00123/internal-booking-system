@@ -25,13 +25,13 @@ const setupPin = async (req, res) => {
     
     const pin = pinStr;
 
-    // 🟢 แก้ไข: ใช้ users: true แทน user: true
+    // 🟢 ใช้ users: true สำหรับ Include Relation
     const employee = await prisma.employee.findUnique({
       where: { employeeCode: employeeCode },
       include: { users: true }
     });
     
-    // 🟢 แก้ไข: ตรวจสอบความถูกต้องจาก Array users
+    // 🟢 ตรวจสอบความถูกต้องจาก Array users
     if (!employee || !employee.users || employee.users.length === 0) {
       return res.status(404).json({ success: false, error: "ไม่พบผู้ใช้งานในระบบ" });
     }
@@ -57,6 +57,18 @@ const setupPin = async (req, res) => {
       }
     });
 
+    // 🟢 เพิ่ม AuditLog เมื่อตั้งค่า PIN ครั้งแรกสำเร็จ
+await prisma.auditLog.create({
+      data: {
+        action: "SETUP_PIN",
+        module: "AUTH",
+        entityId: parseInt(user.id, 10),
+        entityType: "USER",
+        userId: parseInt(user.id, 10),
+        details: `User ${user.id} initialized their PIN`
+      }
+    }).catch(err => console.error("AuditLog Error [SETUP_PIN]:", err.message));
+
     return res.status(200).json({ success: true, message: "ตั้งค่า PIN สำเร็จ" });
 
   } catch (error) {
@@ -64,6 +76,7 @@ const setupPin = async (req, res) => {
     return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการตั้งค่า PIN" });
   }
 };
+
 // ==========================================
 // API 2: เปลี่ยน PIN (Change PIN)
 // ==========================================
@@ -84,7 +97,6 @@ const changePin = async (req, res) => {
     }
 
     // 2. ตรวจสอบ PIN เดิม
-    // 🟢 แก้ไข: สลับลำดับ Parameter ให้ตรงกับ pinService เป็น (Hash ใน DB, รหัสที่รับมา)
     const isOldPinValid = await verifyPin(user.pin, oldPin);
     if (!isOldPinValid) {
       return res.status(401).json({ success: false, error: "รหัส PIN เดิมไม่ถูกต้อง" });
@@ -109,6 +121,18 @@ const changePin = async (req, res) => {
       }
     });
 
+    // 🟢 เพิ่ม AuditLog เมื่อเปลี่ยน PIN สำเร็จ
+    await prisma.auditLog.create({
+      data: {
+        action: 'CHANGE_PIN',
+        module: 'AUTH',
+        userId: userId,
+        entityId: userId,
+        entityType: 'USER',
+        details: `User ${userId} changed their PIN`
+      }
+    }).catch(err => console.error("AuditLog Error [changePin]:", err.message));
+
     return res.status(200).json({ 
       success: true, 
       message: "เปลี่ยน PIN สำเร็จ ระบบจะบังคับให้ออกจากระบบ กรุณาเข้าสู่ระบบใหม่" 
@@ -123,7 +147,6 @@ const changePin = async (req, res) => {
 // ==========================================
 // 🛠️ API 3: แอดมินรีเซ็ตรหัส PIN (Admin Reset PIN)
 // ==========================================
-// 💡 แก้ไข: เปลี่ยนจาก exports.resetUserPin เป็น const เพื่อให้ Export พร้อมกันตอนท้ายไฟล์
 const resetUserPin = async (req, res) => {
   try {
     const { id } = req.params; 
@@ -138,7 +161,6 @@ const resetUserPin = async (req, res) => {
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลผู้ใช้งานในระบบ" });
     }
 
-    // 💡 แก้ไข: เพิ่มฟิลด์ปลดล็อกบัญชี (failedLoginAttempts, lockedUntil)
     await prisma.user.update({
       where: { id: parseInt(id) },
       data: {
@@ -146,22 +168,22 @@ const resetUserPin = async (req, res) => {
         pinInitialized: false, 
         pinResetRequired: true, 
         currentSessionId: null, 
-        failedLoginAttempts: 0, // ✅ ปลดล็อกบัญชีให้พนักงาน
-        lockedUntil: null       // ✅ ปลดล็อกบัญชีให้พนักงาน
+        failedLoginAttempts: 0, 
+        lockedUntil: null       
       }
     });
 
-    try {
-      await prisma.auditLog.create({
-        data: {
-          userId: adminId,
-          action: `รีเซ็ตรหัส PIN ให้กับผู้ใช้งาน: ${targetUser.employee?.fullName || 'ไม่ทราบชื่อ'} (User ID: ${targetUser.id})`,
-          module: 'ADMIN_SYSTEM'
-        }
-      });
-    } catch (logError) {
-      console.error("⚠️ ไม่สามารถบันทึก Log การรีเซ็ต PIN ได้:", logError.message);
-    }
+    // 🟢 ปรับเปลี่ยนให้ส่งครบทุก Field ตาม Schema ใหม่ (action, module, userId, entityId, entityType, details)
+await prisma.auditLog.create({
+      data: {
+        action: "RESET_PIN",
+        module: "USER",
+        entityId: parseInt(targetUser.id, 10),
+        entityType: "USER",
+        userId: parseInt(adminId, 10),
+        details: `Admin ${adminId} reset PIN for User ${targetUser.id} (${targetUser.employee?.fullName || 'Unknown'})`
+      }
+    }).catch(err => console.error("AuditLog Error [RESET_PIN]:", err.message));
 
     return res.status(200).json({
       success: true,
@@ -173,7 +195,6 @@ const resetUserPin = async (req, res) => {
     return res.status(500).json({ success: false, error: "ระบบขัดข้อง ไม่สามารถรีเซ็ตรหัส PIN ได้" });
   }
 };
-
 
 // ==========================================
 // API 4: เข้าสู่ระบบ (Login) - New Flow
@@ -189,7 +210,6 @@ const login = async (req, res) => {
       });
     }
 
-    // 🟢 แก้ไข: ใช้ users สำหรับ Include Relation
     const employee = await prisma.employee.findUnique({
       where: { employeeCode: employeeCode },
       include: {
@@ -199,12 +219,10 @@ const login = async (req, res) => {
       }
     });
 
-    // 🟢 แก้ไข: ตรวจสอบจาก Array users
     if (!employee || !employee.users || employee.users.length === 0) {
       return res.status(401).json({ success: false, error: "รหัสพนักงานหรือรหัส PIN ไม่ถูกต้อง" });
     }
 
-    // 🟢 ดึงข้อมูลผู้ใช้จาก Index [0]
     const user = employee.users[0];
 
     if (!employee.isActive || !user.isActive) {
@@ -248,6 +266,24 @@ const login = async (req, res) => {
       }
     });
 
+// 🟢 เพิ่ม AuditLog เมื่อเข้าสู่ระบบสำเร็จ
+console.log("▶️ กำลังจะบันทึก AuditLog สำหรับ User ID:", user.id, "Role:", user.role.name); // <--- เพิ่มบรรทัดนี้
+
+    await prisma.auditLog.create({
+      data: {
+        action: "LOGIN_SYSTEM", 
+        module: "AUTH",
+        entityId: parseInt(user.id, 10),
+        entityType: "USER",
+        userId: parseInt(user.id, 10),
+        details: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${user.role.name})` // แนะนำให้เติมเครื่องหมาย : กลับเข้าไป
+      }
+    }).catch(err => {
+      console.error("❌ AuditLog Error [LOGIN_SYSTEM]:", err.message); // <--- ถ้ามี Error จะโชว์ตรงนี้
+    });
+
+    console.log("✅ AuditLog บันทึกสำเร็จ หรือผ่านจุดดักจับแล้ว"); // <--- เพิ่มบรรทัดนี้
+
     return res.status(200).json({
       success: true,
       message: "เข้าสู่ระบบสำเร็จ",
@@ -266,7 +302,7 @@ const login = async (req, res) => {
     return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการเข้าสู่ระบบ" });
   }
 };
-// 💡 แก้ไข: รวบรวมฟังก์ชันทั้งหมดมา Export ที่จุดเดียว เพื่อป้องกัน Bug ฟังก์ชันหาย
+
 module.exports = {
   login,
   setupPin,

@@ -71,6 +71,21 @@ exports.createVehicle = async (req, res) => {
             }
         });
 
+        // 🟢 บันทึก AuditLog เมื่อเพิ่มรถยนต์สำเร็จ
+        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+if (actionUserId) {
+            await prisma.auditLog.create({
+                data: {
+                    action: "CREATE_VEHICLE",
+                    module: "VEHICLE",
+                    entityId: newVehicle.id,
+                    entityType: "VEHICLE",
+                    userId: actionUserId,
+                    details: `User ${actionUserId} created vehicle ID ${newVehicle.id} (${newVehicle.plateNumber})`
+                }
+            }).catch(err => console.error("AuditLog Error [CREATE_VEHICLE]:", err.message));
+        }
+
         return res.status(201).json({ success: true, data: newVehicle, message: 'เพิ่มรถยนต์สำเร็จ' });
     } catch (error) {
         if (req.file) await safeDeleteFile(req.file.path);
@@ -99,6 +114,7 @@ exports.getVehicleById = async (req, res) => {
         return res.status(500).json({ success: false, error: "ระบบขัดข้องในการดึงข้อมูลรถ" });
     }
 };
+
 // 4. แก้ไขข้อมูลรถยนต์
 exports.updateVehicle = async (req, res) => {
     try {
@@ -149,6 +165,21 @@ exports.updateVehicle = async (req, res) => {
             }
         });
 
+        // 🟢 บันทึก AuditLog เมื่อแก้ไขข้อมูลรถยนต์สำเร็จ
+        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+        if (actionUserId) {
+            await prisma.auditLog.create({
+                data: {
+                    action: 'UPDATE_VEHICLE',
+                    module: 'VEHICLE',
+                    userId: actionUserId,
+                    entityId: vehicleId,
+                    entityType: 'VEHICLE',
+                    details: `User ${actionUserId} updated details for vehicle ID ${vehicleId}`
+                }
+            }).catch(err => console.error("AuditLog Error [updateVehicle]:", err.message));
+        }
+
         return res.status(200).json({ success: true, data: updatedVehicle, message: "แก้ไขข้อมูลรถสำเร็จ" });
     } catch (error) {
         if (req.file) await safeDeleteFile(req.file.path);
@@ -187,9 +218,24 @@ exports.deleteVehicle = async (req, res) => {
         }
 
         await prisma.vehicle.update({
-        where: {id: parseInt(req.params.id)},
-        data: {isDeleted: true}
-    });
+            where: {id: parseInt(req.params.id)},
+            data: {isDeleted: true}
+        });
+
+        // 🟢 บันทึก AuditLog เมื่อลบข้อมูลรถยนต์สำเร็จ
+        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+        if (actionUserId) {
+            await prisma.auditLog.create({
+                data: {
+                    action: 'DELETE_VEHICLE',
+                    module: 'VEHICLE',
+                    userId: actionUserId,
+                    entityId: vehicleId,
+                    entityType: 'VEHICLE',
+                    details: `User ${actionUserId} soft deleted vehicle ID ${vehicleId}`
+                }
+            }).catch(err => console.error("AuditLog Error [deleteVehicle]:", err.message));
+        }
 
         return res.status(200).json({ success: true, message: "ลบข้อมูลรถออกจากระบบสำเร็จ (Soft Delete)" });
     } catch (error) {

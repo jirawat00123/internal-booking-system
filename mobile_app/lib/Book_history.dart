@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../digitel.dart';
+import 'package:flutter/foundation.dart';
 
 // =========================================================
 // 📦 โมเดลประวัติการจอง (ใช้ร่วมกันทั้งจองรถและห้องประชุม)
@@ -195,7 +196,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               endTime: TimeOfDay(hour: end.hour, minute: end.minute),
               bookedBy: userName,
               bookerName: userName,
-              // 💡 เพิ่มการแปลง Type เป็น int อย่างปลอดภัย และเผื่อกรณี Backend ส่งมาใน item['user']['id']
               userId:
                   int.tryParse(
                     item['userId']?.toString() ??
@@ -205,6 +205,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   0,
               participantCount: 0,
               currentStatus: rawStatus,
+              // 💡 เพิ่มการดึงรูปภาพของห้องประชุม (ถ้า Database คุณใช้ชื่อฟิลด์อื่น ให้แก้ตามโครงสร้าง JSON จริง)
+              imageUrl:
+                  item['room']?['uploadUrl'] ?? item['room']?['imageUrl'] ?? '',
             ),
           );
         }
@@ -330,9 +333,18 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             'ยกเลิกแล้ว'; // บังคับเซ็ตค่ากลับเป็นภาษาไทยเพื่อโชว์บนหน้าจอ
       }
       // 💡 เงื่อนไขที่ 2: ถ้าเป็นการอัปเดตสถานะอื่นๆ ของรถ (เช่น คืนรถ)
+      // 💡 เงื่อนไขที่ 2: ถ้าเป็นการอัปเดตสถานะอื่นๆ ของรถ (เช่น คืนรถ)
+      // 1. ตรวจสอบว่ามี import ด้านบนสุดของไฟล์แล้วหรือยัง:
+      // import 'package:flutter/foundation.dart' show kIsWeb;
+      // ... ในฟังก์ชัน _updateStatus ...
       else if (booking.type == 'จองรถ') {
+        // 🎯 กำหนด baseUrl ตาม Platform ให้ถูกต้อง
+        String baseUrl = kIsWeb
+            ? 'http://localhost:3001'
+            : 'http://10.0.2.2:3001';
         String endpoint =
-            'http://localhost:3001/api/vehicle-bookings/${booking.id}';
+            '$baseUrl/api/vehicle-bookings/${booking.id}/complete';
+
         response = await http.put(
           Uri.parse(endpoint),
           headers: {
@@ -586,19 +598,25 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     height: 70,
                     color: Colors.grey[200],
                     child:
-                        booking.type == 'จองรถ' && booking.imageUrl.isNotEmpty
+                        booking
+                            .imageUrl
+                            .isNotEmpty // 💡 เอาเงื่อนไขจองรถออก เช็คแค่ว่ามีรูปหรือไม่
                         ? Image.network(
                             booking.imageUrl.startsWith('/uploads')
                                 ? 'http://localhost:3001${booking.imageUrl}'
                                 : booking.imageUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (c, e, s) => const Icon(
-                              Icons.directions_car,
+                            errorBuilder: (c, e, s) => Icon(
+                              // 💡 ถ้าโหลดรูปพัง ให้แยกไอคอนตามประเภท
+                              booking.type == 'ห้องประชุม'
+                                  ? Icons.meeting_room
+                                  : Icons.directions_car,
                               color: Colors.grey,
                               size: 30,
                             ),
                           )
                         : Icon(
+                            // 💡 ถ้าไม่มีรูปแต่แรก ให้แยกไอคอนตามประเภท
                             booking.type == 'ห้องประชุม'
                                 ? Icons.meeting_room
                                 : Icons.directions_car,

@@ -29,7 +29,14 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
     setState(() => isLoading = true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      String token = prefs.getString('token') ?? '';
+      // ✅ แก้ไข: เปลี่ยนคีย์เป็น 'jwt_token' ให้ตรงกับตอน Login
+      String token = prefs.getString('jwt_token') ?? '';
+
+      if (token.isEmpty) {
+        print("Error: No JWT Token found in SharedPreferences.");
+        setState(() => isLoading = false);
+        return; // หยุดการทำงานหากไม่มี Token
+      }
 
       // ดึงข้อมูลการจองรถทั้งหมด
       final response = await http.get(
@@ -60,6 +67,12 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
 
           isLoading = false;
         });
+      } else {
+        // ✅ เพิ่ม Error Handling หาก Backend ไม่ตอบ 200 จะได้รู้สาเหตุ
+        print(
+          "API Error: Status ${response.statusCode}, Body: ${response.body}",
+        );
+        setState(() => isLoading = false);
       }
     } catch (e) {
       print("Error fetching security list: $e");

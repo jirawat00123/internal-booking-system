@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_app/Admin/users/users_page.dart';
-import 'package:mobile_app/admin/users/employee_model.dart';
-import 'users_page.dart';
-import 'adduser_successpage.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'adduser_successpage.dart';
 
 class AddUserPage extends StatefulWidget {
   const AddUserPage({super.key});
@@ -15,20 +12,30 @@ class AddUserPage extends StatefulWidget {
 
 class _AddUserPageState extends State<AddUserPage> {
   final TextEditingController nameController = TextEditingController();
+  final String baseUrl =
+      'http://localhost:3001/api'; // ปรับเป็น URL ของเซิร์ฟเวอร์จริง
 
-  String? selectedDepartment;
-  String? selectedRole;
-  String selectedStatus = 'Active';
+  // ตัวแปรเก็บข้อมูลจาก API
+  List<dynamic> departments = [];
+  List<dynamic> positions = [];
+  List<dynamic> roles = [];
 
-  final List<String> deptOptions = [
-    'ผู้บริหาร',
-    'ไอที (IT)',
-    'บุคคล (HR)',
-    'แมคคาทรอนิกส์',
-  ];
+  // ตัวแปรเก็บค่าที่ถูกเลือก (เก็บเป็น ID)
+  int? selectedDepartmentId;
+  int? selectedPositionId;
+  int? selectedRoleId;
+  bool selectedStatus = true; // true = Active, false = Inactive
+  String generatedEmployeeCode = '';
 
-  final List<String> roleOptions = ['Admin', 'User', 'Security'];
-  final List<String> statusOptions = ['Active', 'Inactive'];
+  bool isLoadingData = true;
+  bool isPositionsLoading = false;
+  bool isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchInitialData();
+  }
 
   @override
   void dispose() {
@@ -36,9 +43,71 @@ class _AddUserPageState extends State<AddUserPage> {
     super.dispose();
   }
 
+  // 1️⃣ โหลด Departments, Roles และ Generate Code พร้อมกัน
+  Future<void> _fetchInitialData() async {
+    setState(() => isLoadingData = true);
+    try {
+      final responses = await Future.wait([
+        http.get(Uri.parse('$baseUrl/departments')),
+        http.get(Uri.parse('$baseUrl/roles')),
+        http.get(Uri.parse('$baseUrl/employees/generate-code')),
+      ]);
+
+      if (responses[0].statusCode == 200) {
+        final data = jsonDecode(responses[0].body);
+        departments = data['data'];
+      }
+      if (responses[1].statusCode == 200) {
+        final data = jsonDecode(responses[1].body);
+        roles = data['data'];
+      }
+      if (responses[2].statusCode == 200) {
+        final data = jsonDecode(responses[2].body);
+        generatedEmployeeCode = data['code'];
+      }
+    } catch (e) {
+      debugPrint("Error fetching initial data: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('เกิดข้อผิดพลาดในการโหลดข้อมูลเบื้องต้น'),
+          ),
+        );
+      }
+    } finally {
+      setState(() => isLoadingData = false);
+    }
+  }
+
+  // 2️⃣ โหลด Positions เมื่อมีการเลือกแผนก
+  Future<void> _fetchPositions(int departmentId) async {
+    setState(() {
+      isPositionsLoading = true;
+      selectedPositionId = null; // Reset ค่าตำแหน่งเมื่อเปลี่ยนแผนก
+      positions = [];
+    });
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/positions?departmentId=$departmentId'),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          positions = data['data'];
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching positions: $e");
+    } finally {
+      setState(() => isPositionsLoading = false);
+    }
+  }
+
+  // 3️⃣ ฟังก์ชันบันทึกข้อมูลและ Validation
   void _showConfirmDialog(BuildContext context) {
-    if (selectedDepartment == null ||
-        selectedRole == null ||
+    if (selectedDepartmentId == null ||
+        selectedPositionId == null ||
+        selectedRoleId == null ||
         nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -94,9 +163,12 @@ class _AddUserPageState extends State<AddUserPage> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'คุณต้องการเพิ่มพนักงานใช่หรือไม่?',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF003E75)),
+                Text(
+                  'รหัสพนักงาน: $generatedEmployeeCode\nคุณต้องการเพิ่มพนักงานใช่หรือไม่?',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF003E75),
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -105,56 +177,8 @@ class _AddUserPageState extends State<AddUserPage> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () async {
-                          try {
-                            int roleId = 2; // Default User
-                            if (selectedRole == 'Admin') roleId = 1;
-                            if (selectedRole == 'Security') roleId = 3;
-
-                            final bodyData = jsonEncode({
-                              'fullName': nameController.text,
-                              'departmentId': selectedDepartment == 'ไอที (IT)'
-                                  ? 1
-                                  : 2,
-                              'positionId': 1,
-                              'employeeCode':
-                                  'EMP-${DateTime.now().millisecondsSinceEpoch}',
-                              'roleId': roleId,
-                              'active': selectedStatus == 'Active',
-                            });
-
-                            final response = await http.post(
-                              Uri.parse('http://localhost:3001/api/employees'),
-                              headers: {'Content-Type': 'application/json'},
-                              body: bodyData,
-                            );
-
-                            if (response.statusCode == 200 ||
-                                response.statusCode == 201) {
-                              if (context.mounted) {
-                                Navigator.pop(dialogContext);
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) =>
-                                        const AddUserSuccessPage(),
-                                  ),
-                                );
-                              }
-                            } else {
-                              throw Exception('เพิ่มข้อมูลล้มเหลว');
-                            }
-                          } catch (e) {
-                            debugPrint('Error adding employee: $e');
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text(
-                                    'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์',
-                                  ),
-                                ),
-                              );
-                            }
-                          }
+                          Navigator.pop(dialogContext); // ปิด Dialog โหลดก่อน
+                          await _saveEmployeeData();
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF009CB4),
@@ -204,13 +228,67 @@ class _AddUserPageState extends State<AddUserPage> {
     );
   }
 
+  Future<void> _saveEmployeeData() async {
+    setState(() => isSaving = true);
+    try {
+      final bodyData = jsonEncode({
+        'employeeCode': generatedEmployeeCode,
+        'fullName': nameController.text.trim(),
+        'departmentId': selectedDepartmentId,
+        'positionId': selectedPositionId,
+        'roleId': selectedRoleId,
+        'active': selectedStatus,
+      });
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/employees'),
+        headers: {'Content-Type': 'application/json'},
+        body: bodyData,
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const AddUserSuccessPage()),
+          );
+        }
+      } else {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['error'] ?? 'เพิ่มข้อมูลล้มเหลว');
+      }
+    } catch (e) {
+      debugPrint('Error adding employee: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'เกิดข้อผิดพลาด: ${e.toString().replaceAll("Exception: ", "")}',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => isSaving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (isLoadingData) {
+      return const Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF009CB4)),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 🌫️ 1. เอา Filter เบลอออก แล้วใช้พื้นหลังสีดำโปร่งแสงแทน
           Positioned.fill(
             child: GestureDetector(
               onTap: () => Navigator.pop(context),
@@ -240,7 +318,6 @@ class _AddUserPageState extends State<AddUserPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ❌ 2. เพิ่มปุ่มกากบาทตรงหัวข้อ
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -281,7 +358,7 @@ class _AddUserPageState extends State<AddUserPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '1. แผนกและสิทธิการใช้งาน',
+                            '1. แผนก ตำแหน่ง และสิทธิ',
                             style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -296,35 +373,18 @@ class _AddUserPageState extends State<AddUserPage> {
                             ),
                           ),
 
+                          // --- Dropdown แผนก (ดึงจาก API) ---
                           const Text(
                             'แผนก (Department)',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Colors.black87,
                             ),
                           ),
                           const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            value: selectedDepartment,
-                            decoration: InputDecoration(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(
-                                  color: Colors.grey.shade300,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(
-                                  color: Colors.grey.shade300,
-                                ),
-                              ),
-                            ),
+                          DropdownButtonFormField<int>(
+                            value: selectedDepartmentId,
+                            decoration: _dropdownDecoration(),
                             hint: const Text(
                               'เลือกแผนก',
                               style: TextStyle(
@@ -336,52 +396,83 @@ class _AddUserPageState extends State<AddUserPage> {
                               Icons.keyboard_arrow_down,
                               color: Color(0xFF009CB4),
                             ),
-                            items: deptOptions
-                                .map(
-                                  (String value) => DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(
-                                      value,
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (newValue) =>
-                                setState(() => selectedDepartment = newValue),
+                            items: departments.map<DropdownMenuItem<int>>((
+                              dept,
+                            ) {
+                              return DropdownMenuItem<int>(
+                                value: dept['id'],
+                                child: Text(
+                                  dept['departmentName'],
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (newValue) {
+                              setState(() => selectedDepartmentId = newValue);
+                              if (newValue != null)
+                                _fetchPositions(newValue); // โหลดตำแหน่งตามแผนก
+                            },
                           ),
-
                           const SizedBox(height: 16),
 
+                          // --- Dropdown ตำแหน่ง (ดึงจาก API ตามแผนก) ---
+                          const Text(
+                            'ตำแหน่ง (Position)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          isPositionsLoading
+                              ? const Center(
+                                  child: LinearProgressIndicator(
+                                    color: Color(0xFF009CB4),
+                                  ),
+                                )
+                              : DropdownButtonFormField<int>(
+                                  value: selectedPositionId,
+                                  decoration: _dropdownDecoration(),
+                                  hint: const Text(
+                                    'เลือกตำแหน่ง',
+                                    style: TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down,
+                                    color: Color(0xFF009CB4),
+                                  ),
+                                  items: positions.map<DropdownMenuItem<int>>((
+                                    pos,
+                                  ) {
+                                    return DropdownMenuItem<int>(
+                                      value: pos['id'],
+                                      child: Text(
+                                        pos['positionName'],
+                                        style: const TextStyle(fontSize: 14),
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (newValue) => setState(
+                                    () => selectedPositionId = newValue,
+                                  ),
+                                ),
+                          const SizedBox(height: 16),
+
+                          // --- Dropdown Role (ดึงจาก API) ---
                           const Text(
                             'สิทธิ์การใช้งาน (Role)',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Colors.black87,
                             ),
                           ),
                           const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            value: selectedRole,
-                            decoration: InputDecoration(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(
-                                  color: Colors.grey.shade300,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(
-                                  color: Colors.grey.shade300,
-                                ),
-                              ),
-                            ),
+                          DropdownButtonFormField<int>(
+                            value: selectedRoleId,
+                            decoration: _dropdownDecoration(),
                             hint: const Text(
                               'เลือกสิทธิ์การใช้งาน',
                               style: TextStyle(
@@ -393,19 +484,17 @@ class _AddUserPageState extends State<AddUserPage> {
                               Icons.keyboard_arrow_down,
                               color: Color(0xFF009CB4),
                             ),
-                            items: roleOptions
-                                .map(
-                                  (String value) => DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(
-                                      value,
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
+                            items: roles.map<DropdownMenuItem<int>>((role) {
+                              return DropdownMenuItem<int>(
+                                value: role['id'],
+                                child: Text(
+                                  role['name'],
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
                             onChanged: (newValue) =>
-                                setState(() => selectedRole = newValue),
+                                setState(() => selectedRoleId = newValue),
                           ),
                         ],
                       ),
@@ -423,13 +512,26 @@ class _AddUserPageState extends State<AddUserPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '2. ระบุข้อมูลพนักงาน',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF009CB4),
-                            ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                '2. ระบุข้อมูลพนักงาน',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF009CB4),
+                                ),
+                              ),
+                              Text(
+                                generatedEmployeeCode,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
                           ),
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 8.0),
@@ -444,7 +546,6 @@ class _AddUserPageState extends State<AddUserPage> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Colors.black87,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -474,7 +575,6 @@ class _AddUserPageState extends State<AddUserPage> {
                               ),
                             ),
                           ),
-
                           const SizedBox(height: 16),
 
                           const Text(
@@ -482,45 +582,33 @@ class _AddUserPageState extends State<AddUserPage> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color: Colors.black87,
                             ),
                           ),
                           const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
+                          // Dropdown Status ใช้ค่าคงที่ได้เนื่องจาก Mapping กับค่า Boolean ในฐานข้อมูลตรงๆ
+                          DropdownButtonFormField<bool>(
                             value: selectedStatus,
-                            decoration: InputDecoration(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(
-                                  color: Colors.grey.shade300,
-                                ),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(
-                                  color: Colors.grey.shade300,
-                                ),
-                              ),
-                            ),
+                            decoration: _dropdownDecoration(),
                             icon: const Icon(
                               Icons.keyboard_arrow_down,
                               color: Color(0xFF009CB4),
                             ),
-                            items: statusOptions
-                                .map(
-                                  (String value) => DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(
-                                      value,
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
+                            items: const [
+                              DropdownMenuItem(
+                                value: true,
+                                child: Text(
+                                  'Active',
+                                  style: TextStyle(fontSize: 14),
+                                ),
+                              ),
+                              DropdownMenuItem(
+                                value: false,
+                                child: Text(
+                                  'Inactive',
+                                  style: TextStyle(fontSize: 14),
+                                ),
+                              ),
+                            ],
                             onChanged: (newValue) =>
                                 setState(() => selectedStatus = newValue!),
                           ),
@@ -533,21 +621,27 @@ class _AddUserPageState extends State<AddUserPage> {
                       width: double.infinity,
                       height: 50,
                       child: ElevatedButton(
-                        onPressed: () => _showConfirmDialog(context),
+                        onPressed: isSaving
+                            ? null
+                            : () => _showConfirmDialog(context),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF009CB4),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text(
-                          'บันทึกข้อมูล',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        child: isSaving
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text(
+                                'บันทึกข้อมูล',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
                   ],
@@ -556,6 +650,21 @@ class _AddUserPageState extends State<AddUserPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ฟังก์ชันช่วยจัดการดีไซน์กรอบ Dropdown เพื่อให้โค้ดสะอาดขึ้น
+  InputDecoration _dropdownDecoration() {
+    return InputDecoration(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.grey.shade300),
       ),
     );
   }

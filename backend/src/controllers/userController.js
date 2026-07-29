@@ -49,7 +49,6 @@ exports.getAllUsers = async (req, res) => {
       orderBy: { id: 'desc' } 
     });
 
-    // 🟢 แก้ไข: ใช้ sanitizeUser แทนการทำ Flatten ป้องกัน Flutter หาฟิลด์ไม่เจอ
     const safeUsers = users.map(u => sanitizeUser(u));
 
     return res.status(200).json({ success: true, data: safeUsers });
@@ -64,14 +63,12 @@ exports.getAllUsers = async (req, res) => {
 // ==========================================
 exports.createUser = async (req, res) => {
   try {
-    // 🟢 แก้ไข: รองรับทั้ง employeeId (จาก Flutter) และ employeeCode 
     const { employeeId, employeeCode, roleId, roles, active } = req.body; 
 
     if (!employeeId && !employeeCode) {
       return res.status(400).json({ success: false, error: "กรุณาระบุ employeeId หรือ employeeCode" });
     }
 
-    // 🟢 ค้นหาพนักงานตามข้อมูลที่ส่งมา
     let employee;
     if (employeeId) {
       employee = await prisma.employee.findUnique({
@@ -99,12 +96,27 @@ exports.createUser = async (req, res) => {
         roleId: roleId ? parseInt(roleId, 10) : null,
         roles: roles || 'USER', 
         active: active !== undefined ? Boolean(active) : true,
-        pin: null, // เผื่อไว้ป้องกันกรณี DB บังคับ
+        pin: null,
         pinInitialized: false, 
         pinResetRequired: false
       },
       include: { role: true, employee: true }
     });
+
+    // 🟢 บันทึก AuditLog เมื่อสร้างผู้ใช้งานสำเร็จ
+    const adminId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (adminId) {
+await prisma.auditLog.create({
+        data: {
+          action: "CREATE_USER",
+          module: "USER_MANAGEMENT",
+          entityId: newUser.id,
+          entityType: "USER",
+          userId: adminId,
+          details: `Admin ID ${adminId} created user ID ${newUser.id} for employee ID ${employee.id}`
+        }
+      }).catch(err => console.error("AuditLog Error [CREATE_USER]:", err.message));
+    }
 
     return res.status(201).json({ 
       success: true, 
@@ -145,6 +157,21 @@ exports.updateUser = async (req, res) => {
       include: { role: true, employee: true }
     });
 
+    // 🟢 บันทึก AuditLog เมื่ออัปเดตผู้ใช้งานสำเร็จ
+    const adminId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (adminId) {
+      await prisma.auditLog.create({
+        data: {
+          action: 'UPDATE_USER',
+          module: 'USER_MANAGEMENT',
+          userId: adminId,
+          entityId: updatedUser.id,
+          entityType: 'USER',
+          details: `Admin ID ${adminId} updated settings for user ID ${updatedUser.id}`
+        }
+      }).catch(err => console.error("AuditLog Error [updateUser]:", err.message));
+    }
+
     return res.status(200).json({ 
       success: true, 
       message: "อัปเดตข้อมูลบัญชีผู้ใช้งานสำเร็จ",
@@ -171,6 +198,21 @@ exports.deleteUser = async (req, res) => {
     await prisma.user.delete({
       where: { id: parseInt(id) }
     });
+
+    // 🟢 บันทึก AuditLog เมื่อลบผู้ใช้งานสำเร็จ
+    const adminId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (adminId) {
+      await prisma.auditLog.create({
+        data: {
+          action: 'DELETE_USER',
+          module: 'USER_MANAGEMENT',
+          userId: adminId,
+          entityId: parseInt(id),
+          entityType: 'USER',
+          details: `Admin ID ${adminId} deleted user ID ${id}`
+        }
+      }).catch(err => console.error("AuditLog Error [deleteUser]:", err.message));
+    }
 
     return res.status(200).json({ success: true, message: "ลบบัญชีผู้ใช้งานสำเร็จ" });
   } catch (error) {
