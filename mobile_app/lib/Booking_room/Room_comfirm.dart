@@ -32,15 +32,14 @@ class RoomConfirmScreen extends StatefulWidget {
 }
 
 class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
-  // 🟢 1. สร้างตัวแปรดักจับสถานะ Loading เพื่อล็อกปุ่ม
   bool isSubmitting = false;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF004AAD),
+        backgroundColor: const Color(0xFF004381),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -60,6 +59,24 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
       body: Column(
         children: [
           _buildStepIndicator(),
+          
+          // 🟢 แถบสีน้ำเงินหัวข้อ
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF004381),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: const Text(
+              'ตรวจสอบและยืนยัน',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Kanit',
+              ),
+            ),
+          ),
+
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(
@@ -71,26 +88,24 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                   _buildConfirmTicketCard(),
                   const SizedBox(height: 40),
 
-                  // ปุ่มยืนยันการจองห้อง
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF00A8CC),
-                        disabledBackgroundColor: Colors.grey, // สีปุ่มตอนโหลด
+                        disabledBackgroundColor: Colors.grey, 
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14.0),
                         ),
                         elevation: 4,
                         shadowColor: Colors.black26,
                       ),
-                      // 🟢 2. ปิดปุ่มถ้าระบบกำลังโหลดอยู่
                       onPressed: isSubmitting
                           ? null
                           : () async {
                               setState(() {
-                                isSubmitting = true; // เปิด Loading
+                                isSubmitting = true; 
                               });
 
                               try {
@@ -103,7 +118,6 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                 final String jwtToken =
                                     prefs.getString('token') ?? '';
 
-                                // 🟢 3. แปลงวันที่และเวลาให้เป็น DateTime เพื่อส่งให้ Prisma แบบ ISO-8601 (สำคัญมาก!)
                                 final dateParts = widget.formattedDate.split(
                                   '/',
                                 );
@@ -126,14 +140,11 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                   widget.endTime.minute,
                                 );
 
-                                // ใช้ .toIso8601String() เพื่อให้ Backend (Prisma) ยอมรับข้อมูล
                                 final String startDateTimeStr = startDateTime
                                     .toIso8601String();
                                 final String endDateTimeStr = endDateTime
                                     .toIso8601String();
 
-                                // ยิง API สร้างรายการจองใหม่
-                                // ยิง API สร้างรายการจองใหม่
                                 final response = await http
                                     .post(
                                       Uri.parse('$baseUrl/api/bookings'),
@@ -157,7 +168,7 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                     )
                                     .timeout(
                                       const Duration(seconds: 15),
-                                    ); // 💡 เพิ่ม Timeout ป้องกันแอปค้างหน้า Loading ถาวร
+                                    ); 
 
                                 if (response.statusCode == 201) {
                                   if (context.mounted) {
@@ -248,7 +259,6 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                   );
                                 }
                               } finally {
-                                // 🟢 4. ปิดสถานะ Loading หากเกิด Error หรือประมวลผลเสร็จ
                                 if (mounted) {
                                   setState(() {
                                     isSubmitting = false;
@@ -256,7 +266,6 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                 }
                               }
                             },
-                      // 🟢 5. สลับข้อความกับวงกลม Loading
                       child: isSubmitting
                           ? const SizedBox(
                               width: 24,
@@ -286,105 +295,71 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
     );
   }
 
+  // 🟢 ฟังก์ชันสร้าง Step รูปแบบใหม่
   Widget _buildStepIndicator() {
     return Container(
-      color: const Color(0xFF004AAD),
-      padding: const EdgeInsets.only(bottom: 20, top: 10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStepCircle(
-              '1',
-              'เลือกห้อง',
-              isActive: false,
-              isCompleted: true,
-            ),
-            _buildStepLine(isCompleted: true),
-            _buildStepCircle(
-              '2',
-              'กรอกข้อมูล',
-              isActive: false,
-              isCompleted: true,
-            ),
-            _buildStepLine(isCompleted: true),
-            _buildStepCircle('3', 'ยืนยัน', isActive: true, isCompleted: false),
-          ],
-        ),
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildStepItem(step: '1', title: 'เลือกห้อง', isActive: false),
+          _buildStepLine(),
+          _buildStepItem(step: '2', title: 'กรอกข้อมูล', isActive: false),
+          _buildStepLine(),
+          _buildStepItem(step: '3', title: 'ยืนยัน', isActive: true),
+        ],
       ),
     );
   }
 
-  Widget _buildStepCircle(
-    String step,
-    String label, {
+  Widget _buildStepItem({
+    required String step,
+    required String title,
     required bool isActive,
-    required bool isCompleted,
   }) {
-    Color circleColor = const Color(0xFFE2E8F0);
-    Color textColor = Colors.grey;
-    if (isActive) {
-      circleColor = const Color(0xFF00A8CC);
-      textColor = Colors.white;
-    } else if (isCompleted) {
-      circleColor = const Color(0xFF004AAD).withOpacity(0.1);
-      textColor = const Color(0xFF004AAD);
-    }
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 36,
+          width: 70,
           height: 36,
           decoration: BoxDecoration(
-            color: circleColor,
+            color: isActive ? const Color(0xFF00A8CC) : const Color(0xFFE6EDF5),
             shape: BoxShape.circle,
-            border: isCompleted
-                ? Border.all(color: const Color(0xFF004AAD), width: 1.5)
-                : null,
           ),
           alignment: Alignment.center,
           child: Text(
             step,
             style: TextStyle(
-              color: textColor,
+              color: isActive ? Colors.white : const Color(0xFFAAB6C7),
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               fontFamily: 'Kanit',
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 10),
         Text(
-          label,
+          title,
           style: TextStyle(
-            fontSize: 10,
-            color: isActive || isCompleted
-                ? const Color(0xFF004AAD)
-                : Colors.grey,
+            color: isActive ? const Color(0xFF004381) : const Color(0xFF004381),
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
             fontFamily: 'Kanit',
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStepLine({required bool isCompleted}) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: isCompleted ? const Color(0xFF004AAD) : const Color(0xFFE2E8F0),
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-      ),
+  Widget _buildStepLine() {
+    return Container(
+      margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
+      width: 80,
+      height: 2,
+      color: const Color(0xFFAAB6C7),
     );
   }
 
@@ -415,7 +390,6 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                   height: 180,
                   width: double.infinity,
                   color: Colors.grey[300],
-                  // 💡 ปรับลอจิกให้ตรงกับ Room_list.dart: บังคับใช้ Image.network เนื่องจากภาพอยู่บนเซิร์ฟเวอร์ทั้งหมด
                   child:
                       (widget.room.imagePath != null &&
                           widget.room.imagePath!.isNotEmpty)

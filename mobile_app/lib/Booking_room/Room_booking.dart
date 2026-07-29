@@ -1,13 +1,12 @@
-import 'dart:convert'; // 💡 เพิ่มสำหรับจัดการ JSON
-import 'package:http/http.dart' as http; // 💡 เพิ่มสำหรับยิง API
-import 'package:shared_preferences/shared_preferences.dart'; // 💡 เพิ่มสำหรับดึง Token
-import 'package:flutter/foundation.dart'
-    show kIsWeb; // 💡 เพิ่มสำหรับเช็ค Platform
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import 'package:flutter/material.dart';
 import 'Room_model.dart';
 import 'Room_comfirm.dart';
-import '../Book_history.dart'; // ใส่ชื่อไฟล์ที่เป็นตัวจริงของ globalBookingHistory
+import '../Book_history.dart';
 
 class RoomBookingAScreen extends StatefulWidget {
   final MeetingRoom room;
@@ -23,19 +22,16 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   bool showWarning = false;
   bool isLoading = false;
 
-  // 💡 [แก้ไข] เปลี่ยนจาก DateTime(2026, 5, 27) ตายตัว ให้เริ่มต้นเป็นวันที่ปัจจุบัน ณ ตอนที่เปิดจองแทน
   late DateTime selectedDate;
   TimeOfDay startTime = const TimeOfDay(hour: 10, minute: 0);
   TimeOfDay endTime = const TimeOfDay(hour: 12, minute: 0);
-  late int participantCount; // เปลี่ยนมาใช้ late เพื่อกำหนดค่าใน initState
+  late int participantCount;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    // ตัดเวลาทิ้ง เหลือเพียง ปี-เดือน-วัน ปัจจุบัน
     selectedDate = DateTime(now.year, now.month, now.day);
-    // ป้องกันผู้ใช้เริ่มต้นด้วยจำนวนคนที่เกินความจุห้อง
     participantCount = widget.room.capacity < 4 ? widget.room.capacity : 4;
   }
 
@@ -45,9 +41,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
     super.dispose();
   }
 
-  // 💡 [แก้ไข] ปรับเปลี่ยนฟอร์แมตโครงสร้างวันที่ให้เป็น วัน/เดือน/ปี (DD/MM/YYYY) ตามปกติ
   String _formatDate(DateTime date) {
-    // ปรับเป็น วัน/เดือน/ปี (DD/MM/YYYY)
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
 
@@ -57,12 +51,8 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
     return '$hour:$minute';
   }
 
-  // 💡 ฟังก์ชันแปลง TimeOfDay เป็นนาทีทั้งหมด เพื่อให้ง่ายต่อการคำนวณเปรียบเทียบเลขคณิต
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
-  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อน
-  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อน (เวอร์ชันอัปเดตเพื่อคืนสิทธิ์เวลาที่เสร็จสิ้น/ยกเลิก)
-  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อนแบบ Real-time จาก Backend!
   Future<bool> _checkTimeSlotAvailability() async {
     try {
       final String baseUrl = kIsWeb
@@ -71,17 +61,6 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 
-      // [EVIDENCE_FLUTTER] 1. ตรวจสอบค่า Token ดิบที่อ่านขึ้นมาจาก SharedPreferences ในหน่วยความจำ
-      debugPrint(
-        '[EVIDENCE_FLUTTER] Token value from SharedPreferences: "$token" (Length: ${token.length})',
-      );
-
-      // [EVIDENCE_FLUTTER] 2. ตรวจสอบโครงสร้างข้อความสตริงเต็มที่จะถูกใส่ในช่อง Authorization Header
-      debugPrint(
-        '[EVIDENCE_FLUTTER] Full Generated Authorization Header: "Bearer $token"',
-      );
-
-      // ยิงไปที่ API ใหม่ที่เราเพิ่งสร้าง เพื่อดึงคิวของห้องนี้โดยเฉพาะ
       final response = await http
           .get(
             Uri.parse('$baseUrl/api/rooms/${widget.room.id}/schedule'),
@@ -95,16 +74,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
         final int newStart = _timeToMinutes(startTime);
         final int newEnd = _timeToMinutes(endTime);
 
-        // 💡 [LOG 1] ดูว่ารับข้อมูลมาจาก Backend กี่คิว
-        print("==================================================");
-        print("🔍 กำลังเช็กคิวห้อง ID: ${widget.room.id}");
-        print(
-          "📅 คุณต้องการจอง: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} เวลา ${_formatTime(startTime)} - ${_formatTime(endTime)}",
-        );
-        print("📦 พบข้อมูลคิวจาก Backend ทั้งหมด: ${schedules.length} คิว");
-
         for (var schedule in schedules) {
-          // ✅ ดึงจาก key startDatetime / endDatetime ให้ตรงกับ API
           DateTime existingStartTime = DateTime.parse(
             schedule['startDatetime'],
           ).toLocal();
@@ -112,12 +82,6 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
             schedule['endDatetime'],
           ).toLocal();
 
-          // 💡 [LOG 2] ปริ้นท์ข้อมูลที่ดึงมาเช็กทุกคิว
-          print(
-            "   -> คิวในระบบ: วันที่ ${existingStartTime.day}/${existingStartTime.month}/${existingStartTime.year} | เวลา ${_formatTime(TimeOfDay.fromDateTime(existingStartTime))} - ${_formatTime(TimeOfDay.fromDateTime(existingEndTime))}",
-          );
-
-          // เช็คเฉพาะคิวของ "วันเดียวกัน" ที่ผู้ใช้กำลังจะจอง
           if (existingStartTime.year == selectedDate.year &&
               existingStartTime.month == selectedDate.month &&
               existingStartTime.day == selectedDate.day) {
@@ -128,21 +92,12 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
               TimeOfDay.fromDateTime(existingEndTime),
             );
 
-            // สูตรคำนวณหาจุดคาบเกี่ยวของเวลา
             if (newStart < existingEnd && newEnd > existingStart) {
-              // 💡 [LOG 3] ปริ้นท์บอกถ้าเกิดการชนกัน
-              print("❌ [สรุป] จองไม่ได้! เวลาชนกับคิวด้านบนนี้ครับ!");
-              print("==================================================");
-              return true; // ❌ เวลาทับซ้อนกัน! มีคนจองตัดหน้าไปแล้ว
+              return true; 
             }
           }
         }
-
-        // 💡 [LOG 4] ปริ้นท์บอกถ้าผ่านฉลุย
-        // 💡 [LOG 4] ปริ้นท์บอกถ้าผ่านฉลุย
-        print("✅ [สรุป] ห้องว่าง! สามารถผ่านไปหน้ายืนยันได้");
-        print("==================================================");
-        return false; // ✅ เวลาว่างพร้อมจองฉลุย
+        return false; 
       } else if (response.statusCode == 401) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.clear();
@@ -168,27 +123,21 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
       }
     } catch (e) {
       print("🚨 เกิด Error ในการดึง API: $e");
-      rethrow; // โยน Error ไปให้ปุ่มกดยอมรับ
+      rethrow; 
     }
   }
 
   Future<void> _selectDate(BuildContext context) async {
     final now = DateTime.now();
-    final today = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ); // 💡 วันที่ปัจจุบันแบบไม่มีเศษเวลา
+    final today = DateTime(now.year, now.month, now.day); 
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: selectedDate,
-      firstDate: today, // 💡 ป้องกัน Crash จาก Assertion Error
-      lastDate: today.add(
-        const Duration(days: 365 * 2),
-      ), // จองล่วงหน้าได้สูงสุด 2 ปี
+      firstDate: today, 
+      lastDate: today.add(const Duration(days: 365 * 2)), 
       initialEntryMode: DatePickerEntryMode.calendarOnly,
     );
-    if (!mounted) return; // 💡 เพิ่มบรรทัดนี้
+    if (!mounted) return; 
     if (picked != null && picked != selectedDate) {
       setState(() {
         selectedDate = picked;
@@ -208,7 +157,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
         );
       },
     );
-    if (!mounted) return; // 💡 เพิ่มบรรทัดนี้
+    if (!mounted) return; 
     if (picked != null) {
       setState(() {
         if (isStartTime) {
@@ -223,9 +172,9 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF004AAD),
+        backgroundColor: const Color(0xFF004381),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -245,6 +194,23 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
       body: Column(
         children: [
           _buildStepIndicator(),
+          
+          // 🟢 แถบสีน้ำเงินหัวข้อ
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF004381),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: const Text(
+              'กรอกข้อมูลการจอง',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Kanit',
+              ),
+            ),
+          ),
 
           Expanded(
             child: SingleChildScrollView(
@@ -268,7 +234,6 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                         elevation: 4,
                         shadowColor: Colors.black26,
                       ),
-                      // 💡 ล็อกปุ่มไว้ถ้า isLoading เป็น true เพื่อไม่ให้กดย้ำ
                       onPressed: isLoading
                           ? null
                           : () async {
@@ -324,7 +289,6 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                                 return;
                               }
 
-                              // 🟢 เริ่มต้นกระบวนการ Re-validation เช็ค API
                               setState(() => isLoading = true);
 
                               try {
@@ -349,7 +313,6 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                                           ),
                                           SizedBox(width: 10),
                                           Expanded(
-                                            // 💡 นำ Expanded มาครอบไว้เช่นกัน
                                             child: Text(
                                               'เวลานี้ถูกจองแล้ว',
                                               style: TextStyle(
@@ -383,7 +346,6 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                                     ),
                                   );
                                 } else {
-                                  // ✅ ห้องว่างชัวร์! พาไปหน้า Confirm ได้
                                   setState(() {
                                     showWarning = false;
                                     isLoading = false;
@@ -408,8 +370,9 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                                     ),
                                   ).then((value) {
                                     if (!mounted) return;
-                                    if (value == true)
+                                    if (value == true) {
                                       Navigator.pop(context, true);
+                                    }
                                   });
                                 }
                               } catch (e) {
@@ -425,7 +388,6 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                                 );
                               }
                             },
-                      // 💡 child มีแค่ตัวเดียวตรงนี้ครับ
                       child: isLoading
                           ? const SizedBox(
                               width: 24,
@@ -455,110 +417,71 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
     );
   }
 
+  // 🟢 ฟังก์ชันสร้าง Step รูปแบบใหม่
   Widget _buildStepIndicator() {
     return Container(
-      color: const Color(0xFF004AAD),
-      padding: const EdgeInsets.only(bottom: 20, top: 10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStepCircle(
-              '1',
-              'เลือกห้อง',
-              isActive: false,
-              isCompleted: true,
-            ),
-            _buildStepLine(isCompleted: true),
-            _buildStepCircle(
-              '2',
-              'กรอกข้อมูล',
-              isActive: true,
-              isCompleted: false,
-            ),
-            _buildStepLine(isCompleted: false),
-            _buildStepCircle(
-              '3',
-              'ยืนยัน',
-              isActive: false,
-              isCompleted: false,
-            ),
-          ],
-        ),
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildStepItem(step: '1', title: 'เลือกห้อง', isActive: false),
+          _buildStepLine(),
+          _buildStepItem(step: '2', title: 'กรอกข้อมูล', isActive: true),
+          _buildStepLine(),
+          _buildStepItem(step: '3', title: 'ยืนยัน', isActive: false),
+        ],
       ),
     );
   }
 
-  Widget _buildStepCircle(
-    String step,
-    String label, {
+  Widget _buildStepItem({
+    required String step,
+    required String title,
     required bool isActive,
-    required bool isCompleted,
   }) {
-    Color circleColor = const Color(0xFFE2E8F0);
-    Color textColor = Colors.grey;
-    if (isActive) {
-      circleColor = const Color(0xFF00A8CC);
-      textColor = Colors.white;
-    } else if (isCompleted) {
-      circleColor = const Color(0xFF004AAD).withOpacity(0.1);
-      textColor = const Color(0xFF004AAD);
-    }
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 36,
+          width: 70,
           height: 36,
           decoration: BoxDecoration(
-            color: circleColor,
+            color: isActive ? const Color(0xFF00A8CC) : const Color(0xFFE6EDF5),
             shape: BoxShape.circle,
-            border: isCompleted
-                ? Border.all(color: const Color(0xFF004AAD), width: 1.5)
-                : null,
           ),
           alignment: Alignment.center,
           child: Text(
             step,
             style: TextStyle(
-              color: textColor,
+              color: isActive ? Colors.white : const Color(0xFFAAB6C7),
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               fontFamily: 'Kanit',
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 10),
         Text(
-          label,
+          title,
           style: TextStyle(
-            fontSize: 10,
-            color: isActive || isCompleted
-                ? const Color(0xFF004AAD)
-                : Colors.grey,
+            color: isActive ? const Color(0xFF004381) : const Color(0xFF004381),
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
             fontFamily: 'Kanit',
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStepLine({required bool isCompleted}) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: isCompleted ? const Color(0xFF004AAD) : const Color(0xFFE2E8F0),
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-      ),
+  Widget _buildStepLine() {
+    return Container(
+      margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
+      width: 80,
+      height: 2,
+      color: const Color(0xFFAAB6C7),
     );
   }
 
@@ -598,7 +521,6 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                   ),
                   SizedBox(width: 8),
                   Expanded(
-                    // 💡 นำ Expanded มาครอบ Text ไว้เพื่อป้องกันการล้นขอบ
                     child: Text(
                       'กรุณากรอกข้อมูลให้ครบถ้วน',
                       style: TextStyle(

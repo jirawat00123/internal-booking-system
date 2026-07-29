@@ -7,27 +7,25 @@ import 'Room_model.dart';
 import 'Room_booking.dart';
 
 class RoomListScreen extends StatefulWidget {
-  final bool isGuest; // 🟢 เพิ่มตัวแปรเพื่อรับค่าสถานะ Guest
+  final bool isGuest;
   const RoomListScreen({
     super.key,
     this.isGuest = false,
-  }); // 🟢 กำหนดค่า Default
+  });
 
   @override
   State<RoomListScreen> createState() => _RoomListScreenState();
 }
 
 class _RoomListScreenState extends State<RoomListScreen> {
-  bool isLoading =
-      true; // 💡 เพิ่ม State เพื่อโชว์ตัวโหลดระหว่างรอข้อมูลจาก Backend
+  bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _fetchRoomsFromApi(); // 💡 ดึงข้อมูลทันทีที่ผู้ใช้เข้ามาหน้านี้
+    _fetchRoomsFromApi();
   }
 
-  // 🔥 [สิ่งที่เปลี่ยนไป 1]: เพิ่มฟังก์ชันดึงห้องประชุมจาก Backend สำหรับ User
   Future<void> _fetchRoomsFromApi() async {
     try {
       final String baseUrl = kIsWeb
@@ -56,12 +54,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
             .map((e) => MeetingRoom.fromJson(e))
             .toList();
       } else if (response.statusCode == 401) {
-        // 🔴 [เพิ่มใหม่] จัดการ Concurrent Login: เมื่อ Session ไม่ตรงหรือหมดอายุ
         if (mounted) {
-          // 1. ล้าง Token ทิ้ง
           await prefs.clear();
-
-          // 2. แจ้งเตือนผู้ใช้
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -71,8 +65,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
               backgroundColor: Colors.red,
             ),
           );
-
-          // 3. บังคับเด้งกลับหน้า Login (ตรวจสอบชื่อ Route ให้ตรงกับที่คุณตั้งไว้ใน main.dart)
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/login',
@@ -80,7 +72,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
           );
         }
       } else {
-        // 🟢 2. แจ้งเตือนเมื่อ HTTP Status อื่นๆ ที่ไม่ใช่ 200 และ 401
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -95,7 +86,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
       }
     } catch (e) {
       debugPrint('Error fetching rooms: $e');
-      // 🟢 3. แจ้งเตือนเมื่อเน็ตหลุดหรือเซิร์ฟเวอร์มีปัญหา (Rule 19)
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -110,7 +100,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
     } finally {
       if (mounted) {
         setState(() {
-          isLoading = false; // ปิดตัวโหลดเมื่อดึงข้อมูลเสร็จ
+          isLoading = false;
         });
       }
     }
@@ -119,9 +109,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF8FAFC), // ปรับพื้นหลังให้เข้ากับ UI ใหม่
       appBar: AppBar(
-        backgroundColor: const Color(0xFF004AAD),
+        backgroundColor: const Color(0xFF004381),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -141,26 +131,38 @@ class _RoomListScreenState extends State<RoomListScreen> {
       body: Column(
         children: [
           _buildStepIndicator(),
+          
+          // 🟢 แถบสีน้ำเงินหัวข้อ
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF004381),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: const Text(
+              'เลือกห้องที่ต้องการ',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Kanit',
+              ),
+            ),
+          ),
 
-          // 🔥 [สิ่งที่เปลี่ยนไป 2]: เพิ่ม isLoading เช็กก่อนแสดงการ์ดห้อง เพื่อความสมูท
           Expanded(
             child: isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF004AAD)),
+                    child: CircularProgressIndicator(color: Color(0xFF004381)),
                   )
                 : RefreshIndicator(
-                    // 💡 1. เพิ่ม Widget นี้เข้ามาครอบ
-                    onRefresh:
-                        _fetchRoomsFromApi, // 💡 2. สั่งให้ดึง API ใหม่เมื่อใช้นิ้วดึงหน้าจอลง
-                    color: const Color(0xFF004AAD),
+                    onRefresh: _fetchRoomsFromApi,
+                    color: const Color(0xFF004381),
                     child: ValueListenableBuilder<List<MeetingRoom>>(
                       valueListenable: globalMeetingRooms,
                       builder: (context, rooms, child) {
                         if (rooms.isEmpty) {
                           return ListView(
-                            // 💡 (บังคับให้เป็น ListView เพื่อให้สามารถดึงหน้าจอลงได้แม้ไม่มีข้อมูล)
-                            physics:
-                                const AlwaysScrollableScrollPhysics(), // 💡 การันตีให้สามารถดึงเพื่อ Refresh ได้เสมอ
+                            physics: const AlwaysScrollableScrollPhysics(),
                             children: const [
                               SizedBox(height: 200),
                               Center(
@@ -195,64 +197,58 @@ class _RoomListScreenState extends State<RoomListScreen> {
     );
   }
 
-  // ส่วนสร้าง Step Indicator (1 เลือกห้อง -> 2 กรอกข้อมูล -> 3 ยืนยัน)
-  // ... (โค้ดด้านล่างที่เหลือทั้งหมดคงเดิม ไม่ต้องแก้ครับ) ...
-
-  // ส่วนสร้าง Step Indicator (1 เลือกห้อง -> 2 กรอกข้อมูล -> 3 ยืนยัน)
+  // 🟢 ฟังก์ชันสร้าง Step รูปแบบใหม่
   Widget _buildStepIndicator() {
     return Container(
-      color: const Color(0xFF004AAD),
-      padding: const EdgeInsets.only(bottom: 20, top: 10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStepCircle('1', 'เลือกห้อง', isActive: true),
-            _buildStepLine(),
-            _buildStepCircle('2', 'กรอกข้อมูล', isActive: false),
-            _buildStepLine(),
-            _buildStepCircle('3', 'ยืนยัน', isActive: false),
-          ],
-        ),
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildStepItem(step: '1', title: 'เลือกห้อง', isActive: true),
+          _buildStepLine(),
+          _buildStepItem(step: '2', title: 'กรอกข้อมูล', isActive: false),
+          _buildStepLine(),
+          _buildStepItem(step: '3', title: 'ยืนยัน', isActive: false),
+        ],
       ),
     );
   }
 
-  Widget _buildStepCircle(String step, String label, {required bool isActive}) {
+  Widget _buildStepItem({
+    required String step,
+    required String title,
+    required bool isActive,
+  }) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 36,
+          width: 70,
           height: 36,
           decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF00A8CC) : const Color(0xFFE2E8F0),
+            color: isActive ? const Color(0xFF00A8CC) : const Color(0xFFE6EDF5),
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
           child: Text(
             step,
             style: TextStyle(
-              color: isActive ? Colors.white : Colors.grey,
+              color: isActive ? Colors.white : const Color(0xFFAAB6C7),
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               fontFamily: 'Kanit',
             ),
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 10),
         Text(
-          label,
+          title,
           style: TextStyle(
-            fontSize: 10,
-            color: isActive ? const Color(0xFF004AAD) : Colors.grey,
+            color: isActive ? const Color(0xFF004381) : const Color(0xFF004381),
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
             fontFamily: 'Kanit',
           ),
         ),
@@ -261,20 +257,18 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 
   Widget _buildStepLine() {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: const Color(0xFFE2E8F0),
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-      ),
+    return Container(
+      margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
+      width: 80,
+      height: 2,
+      color: const Color(0xFFAAB6C7),
     );
   }
 
   Widget _buildRoomCard(MeetingRoom room) {
     bool isAvailable = room.status == 'AVAILABLE';
     Color statusColor;
-    // ฟังก์ชันแยกสำหรับจัดการโหลดรูปภาพ (Optimize พร้อม ErrorBuilder ป้องกันแอปพัง)
-    // 🟢 4. บังคับใช้ Image.network เสมอ และตัดลอจิก Image.file ทิ้ง เพราะภาพทุกใบของระบบนี้อยู่บนเซิร์ฟเวอร์
+    
     Widget _buildImage(String? imagePath) {
       if (imagePath == null || imagePath.isEmpty) {
         return Container(
@@ -304,16 +298,13 @@ class _RoomListScreenState extends State<RoomListScreen> {
       );
     }
 
-    // ส่วนสร้าง Card ห้องประชุม
     switch (room.status) {
       case 'AVAILABLE':
         statusColor = const Color(0xFF2EC4B6);
         break;
-
       case 'RESERVED':
         statusColor = Colors.orange;
         break;
-
       default:
         statusColor = const Color(0xFFE11D48);
     }
@@ -337,15 +328,12 @@ class _RoomListScreenState extends State<RoomListScreen> {
         children: [
           Stack(
             children: [
-              // แสดงรูปภาพห้องประชุม
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(24),
                 ),
                 child: _buildImage(room.imagePath),
               ),
-
-              // Badge สถานะห้อง (มุมขวาบน)
               Positioned(
                 top: 12,
                 right: 12,
@@ -397,8 +385,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-
-                // รายละเอียด โลเคชั่น และ ความจุ
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
@@ -416,8 +402,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-
-                // Tags อุปกรณ์เสริมภายในห้อง (Wrap ป้องกัน UI ทะลุบนจอเล็ก)
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -428,15 +412,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     _buildTag('กระดานไวท์บอร์ด'),
                   ],
                 ),
-
                 const SizedBox(height: 20),
-
-                // ปุ่มเลือกห้องนี้
                 SizedBox(
                   width: double.infinity,
                   height: 46,
                   child: ElevatedButton(
-                    // 🟢 ถ้าเป็น Guest ให้ปุ่มเป็น null (กดไม่ได้) เพื่อรักษา Business Logic
                     onPressed: widget.isGuest
                         ? null
                         : () async {
@@ -446,8 +426,6 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                 builder: (_) => RoomBookingAScreen(room: room),
                               ),
                             );
-
-                            // เมื่อกลับมาหน้านี้ ถ้า result เป็น true ให้ดึงข้อมูลใหม่
                             if (result == true) {
                               if (!mounted) return;
                               setState(() {
@@ -457,9 +435,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                             }
                           },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(
-                        0xFF00A8CC,
-                      ), // สีฟ้าพร้อมกดเสมอ
+                      backgroundColor: const Color(0xFF00A8CC),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -488,7 +464,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF004AAD)),
+        Icon(icon, size: 18, color: const Color(0xFF004381)),
         const SizedBox(width: 8),
         Text(
           text,
