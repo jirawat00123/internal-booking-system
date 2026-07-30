@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'Vehicleout.dart'; // โยงไปหน้าถ่ายรูปปล่อยรถ
+import 'Vehicleout.dart'; 
+import 'Vehiclein.dart'; 
+import 'SecurityGroupPage.dart'; // นำเข้าหน้า SecurityGroupPage เพื่อใช้ในการย้อนกลับไปหน้า Welcome Security
 
 class SecurityVehicleListScreen extends StatefulWidget {
   const SecurityVehicleListScreen({Key? key}) : super(key: key);
@@ -15,8 +17,9 @@ class SecurityVehicleListScreen extends StatefulWidget {
 class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
   int _selectedIndex = 0;
   bool isLoading = true;
-  List<dynamic> pendingVehicles = []; // รถที่ถูกจองรอปล่อย
-  List<dynamic> inUseVehicles = []; // รถที่กำลังใช้งานรอรับเข้า
+  List<dynamic> pendingVehicles = []; // รอปล่อยออก
+  List<dynamic> inUseVehicles = [];   // กำลังใช้งาน (รอรับเข้า)
+  List<dynamic> historyVehicles = []; // 🎯 ประวัติ (เสร็จสิ้น)
 
   @override
   void initState() {
@@ -24,25 +27,37 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
     fetchSecurityVehicleList();
   }
 
-  // 💡 ฟังก์ชันดึงข้อมูลจาก Booking History และคัดแยกสถานะ
+  // 💡 ฟังก์ชันช่วยแปลงวันที่จาก 2026-06-05T00:00:00.000Z เป็น "วันที่ 05 มิ.ย. 2026"
+  String _formatThaiDate(String? isoDate) {
+    if (isoDate == null || isoDate.isEmpty) return '-';
+    try {
+      DateTime dt = DateTime.parse(isoDate).toLocal();
+      List<String> months = [
+        'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+        'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+      ];
+      String day = dt.day.toString().padLeft(2, '0');
+      String month = months[dt.month - 1];
+      String year = dt.year.toString();
+      return 'วันที่ $day $month $year';
+    } catch (e) {
+      return isoDate;
+    }
+  }
+
   Future<void> fetchSecurityVehicleList() async {
-    setState(() => isLoading = true);
+    if (mounted) setState(() => isLoading = true);
     try {
       final prefs = await SharedPreferences.getInstance();
-      // ✅ แก้ไข: เปลี่ยนคีย์เป็น 'jwt_token' ให้ตรงกับตอน Login
       String token = prefs.getString('jwt_token') ?? '';
 
       if (token.isEmpty) {
-        print("Error: No JWT Token found in SharedPreferences.");
-        setState(() => isLoading = false);
-        return; // หยุดการทำงานหากไม่มี Token
+        if (mounted) setState(() => isLoading = false);
+        return; 
       }
 
-      // ดึงข้อมูลการจองรถทั้งหมด
       final response = await http.get(
-        Uri.parse(
-          'http://localhost:3001/api/vehicle-bookings?page=1&limit=100',
-        ),
+        Uri.parse('http://localhost:3001/api/vehicle-bookings?page=1&limit=100'),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -50,33 +65,36 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
         final data = jsonDecode(response.body);
         List<dynamic> allBookings = data['data'] ?? data['bookings'] ?? [];
 
-        setState(() {
-          // กรองเฉพาะ "ถูกจองไว้อยู่" (รออนุมัติ/Pending)
-          pendingVehicles = allBookings.where((b) {
-            String status = b['status']?.toString().toLowerCase() ?? '';
-            return status == 'pending' || status == 'ถูกจองไว้อยู่';
-          }).toList();
+        if (mounted) {
+          setState(() {
+            // 1. รออนุมัติ / รอปล่อย
+            pendingVehicles = allBookings.where((b) {
+              String status = b['status']?.toString().toLowerCase() ?? '';
+              return status == 'pending' || status == 'ถูกจองไว้อยู่';
+            }).toList();
 
-          // กรองเฉพาะ "กำลังใช้งาน" (In Use/Approved)
-          inUseVehicles = allBookings.where((b) {
-            String status = b['status']?.toString().toLowerCase() ?? '';
-            return status == 'in_use' ||
-                status == 'approved' ||
-                status == 'กำลังใช้งาน';
-          }).toList();
+            // 2. กำลังใช้งาน
+            inUseVehicles = allBookings.where((b) {
+              String status = b['status']?.toString().toLowerCase() ?? '';
+              return status == 'in_use' || status == 'approved' || status == 'กำลังใช้งาน';
+            }).toList();
 
-          isLoading = false;
-        });
+            // 3. 🎯 เสร็จสิ้น (ประวัติ)
+            historyVehicles = allBookings.where((b) {
+              String status = b['status']?.toString().toLowerCase() ?? '';
+              return status == 'completed' || status == 'เสร็จสิ้น';
+            }).toList();
+
+            isLoading = false;
+          });
+        }
       } else {
-        // ✅ เพิ่ม Error Handling หาก Backend ไม่ตอบ 200 จะได้รู้สาเหตุ
-        print(
-          "API Error: Status ${response.statusCode}, Body: ${response.body}",
-        );
-        setState(() => isLoading = false);
+        print("API Error: Status ${response.statusCode}");
+        if (mounted) setState(() => isLoading = false);
       }
     } catch (e) {
       print("Error fetching security list: $e");
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -89,7 +107,17 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            // 🚀 เปลี่ยนคำสั่งเคลียร์หน้าต่างทั้งหมด แล้วกลับไปหน้า Welcome Security
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(
+                // 💡 เปลี่ยนชื่อ SecurityDashboardScreen เป็นชื่อคลาสหน้า Welcome ของคุณ
+                builder: (context) => const SecurityGroupPage(), 
+              ),
+              (Route<dynamic> route) => false, // ลบประวัติหน้าซ้อนทิ้งให้หมด
+            );
+          },
         ),
         title: const Text(
           'ระบบจัดการรถเข้า-ออก',
@@ -158,9 +186,10 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
   }
 
   Widget _buildVehicleList() {
+    // 🎯 ดึง List ตามแท็บที่เลือก
     List<dynamic> currentList = _selectedIndex == 0
         ? pendingVehicles
-        : (_selectedIndex == 1 ? inUseVehicles : []);
+        : (_selectedIndex == 1 ? inUseVehicles : historyVehicles);
 
     if (currentList.isEmpty) {
       return const Center(
@@ -185,8 +214,39 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
           plate: vehicle['plateNumber'] ?? '-',
           booker: user['fullName'] ?? 'ไม่ระบุชื่อ',
           imageUrl: vehicle['uploadUrl'] ?? '',
+          startDate: booking['startDatetime'], // ส่งวันที่ไปแปลง
+          endDate: booking['endDatetime'],     // ส่งวันที่ไปแปลง
         );
       },
+    );
+  }
+
+  // 🎯 สร้าง Widget แถวสำหรับแสดง วันที่/ชื่อผู้จอง ในหน้าประวัติ
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.grey,
+              fontSize: 13,
+              fontFamily: 'Kanit',
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Color(0xFF003E75),
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+              fontFamily: 'Kanit',
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -196,8 +256,16 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
     required String plate,
     required String booker,
     required String imageUrl,
+    String? startDate,
+    String? endDate,
   }) {
     bool isPending = _selectedIndex == 0;
+    bool isInUse = _selectedIndex == 1;
+    bool isHistory = _selectedIndex == 2;
+
+    // 🎯 กำหนดสีและข้อความของ Badge มุมขวาบน
+    Color badgeColor = isPending ? Colors.amber : (isInUse ? Colors.blue : Colors.grey.shade400);
+    String badgeText = isPending ? 'รออนุมัติ' : (isInUse ? 'กำลังใช้งาน' : 'เสร็จสิ้น');
 
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -241,22 +309,20 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.black54,
+                      // 🎯 ถ้าเป็นหน้าประวัติ ให้พื้นหลังเป็นสีเทาขุ่นนิดๆ
+                      color: isHistory ? Colors.white.withOpacity(0.85) : Colors.black54,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.circle,
-                          size: 10,
-                          color: isPending ? Colors.amber : Colors.blue,
-                        ),
+                        Icon(Icons.circle, size: 10, color: badgeColor),
                         const SizedBox(width: 4),
                         Text(
-                          isPending ? 'รออนุมัติ' : 'กำลังใช้งาน',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          badgeText,
+                          style: TextStyle(
+                            color: isHistory ? Colors.black87 : Colors.white,
                             fontSize: 12,
+                            fontWeight: isHistory ? FontWeight.bold : FontWeight.normal,
                             fontFamily: 'Kanit',
                           ),
                         ),
@@ -284,32 +350,55 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
                 fontFamily: 'Kanit',
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'ผู้จอง : $booker',
-              style: const TextStyle(
-                color: Colors.blueGrey,
-                fontSize: 13,
-                fontFamily: 'Kanit',
+            const SizedBox(height: 12),
+
+            // 🎯 สลับการแสดงผลข้อมูลระหว่าง "หน้าปกติ" กับ "หน้าประวัติ"
+            if (isHistory) ...[
+              const Divider(),
+              const SizedBox(height: 8),
+              _buildDetailRow('วันที่ใช้ :', _formatThaiDate(startDate)),
+              _buildDetailRow('ถึงวันที่ :', _formatThaiDate(endDate)),
+              _buildDetailRow('ผู้ขับขี่ :', booker),
+            ] else ...[
+              Text(
+                'ผู้จอง : $booker',
+                style: const TextStyle(
+                  color: Colors.blueGrey,
+                  fontSize: 13,
+                  fontFamily: 'Kanit',
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            if (isPending) // แสดงปุ่มถ่ายรูปเฉพาะตอนปล่อยรถออก
+            ],
+
+            const SizedBox(height: 8),
+
+            // 🎯 แสดงปุ่มถ่ายรูปเฉพาะตอน "ปล่อยรถออก" และ "รับรถเข้า" (ซ่อนตอนอยู่หน้าประวัติ)
+            if (isPending || isInUse) ...[
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 height: 44,
                 child: ElevatedButton(
                   onPressed: () {
-                    // 🚀 โยน ID การจองไปหน้าถ่ายรูป
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            VehicleOutScreen(bookingId: bookingId),
-                      ),
-                    ).then((_) {
-                      fetchSecurityVehicleList(); // รีเฟรชหน้าเมื่อกลับมา
-                    });
+                    if (isPending) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => VehicleOutScreen(bookingId: bookingId),
+                        ),
+                      ).then((_) {
+                        fetchSecurityVehicleList();
+                      });
+                    } else if (isInUse) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => VehicleInScreen(bookingId: bookingId), 
+                        ),
+                      ).then((_) {
+                        fetchSecurityVehicleList();
+                      });
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009CB4),
@@ -328,6 +417,7 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
                   ),
                 ),
               ),
+            ]
           ],
         ),
       ),

@@ -4,19 +4,18 @@ import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb; 
-import 'Vehicleoutcompleted.dart';
+// 💡 อย่าลืมสร้างไฟล์หน้า Success สำหรับรับรถเข้า (หรือจะเด้งกลับหน้าเดิมก็ได้ครับ)
+import 'Vehicleincompleted.dart'; 
 
-class VehicleOutScreen extends StatefulWidget {
+class VehicleInScreen extends StatefulWidget {
   final String bookingId;
-  const VehicleOutScreen({Key? key, required this.bookingId}) : super(key: key);
+  const VehicleInScreen({Key? key, required this.bookingId}) : super(key: key);
 
   @override
-  _VehicleOutScreenState createState() => _VehicleOutScreenState();
+  _VehicleInScreenState createState() => _VehicleInScreenState();
 }
 
-class _VehicleOutScreenState extends State<VehicleOutScreen> {
-  // ❌ ลบช่องเก็บข้อมูล slotController ออกไปแล้ว
-
+class _VehicleInScreenState extends State<VehicleInScreen> {
   XFile? frontImage;
   XFile? backImage;
   XFile? plateImage;
@@ -39,10 +38,9 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
   }
 
   void _checkAndSubmit() {
-    // 🎯 แก้ไข: ตรวจสอบแค่รูปภาพ 3 มุม (เอาเช็กช่องจอดรถออก)
     if (frontImage == null || backImage == null || plateImage == null) {
       _showErrorDialog(
-        'กรุณาถ่ายรูปให้ครบทั้ง 3 มุมก่อนดำเนินการต่อ', // 🎯 เปลี่ยนข้อความแจ้งเตือน
+        'กรุณาถ่ายรูปให้ครบทั้ง 3 มุมก่อนดำเนินการต่อ',
       );
       return;
     }
@@ -99,13 +97,13 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(
-              Icons.note_add_outlined,
+              Icons.check_circle_outline, // 🎯 เปลี่ยนไอคอนให้ดูเป็นเชิงเสร็จสิ้น
               color: Color(0xFF003E75),
               size: 60,
             ),
             const SizedBox(height: 16),
             const Text(
-              'ยืนยันการปล่อยรถออก',
+              'ยืนยันการรับรถเข้า', // 🎯 เปลี่ยนข้อความ
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -114,7 +112,7 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'คุณต้องการปล่อยรถออกใช่หรือไม่?',
+              'คุณต้องการรับรถเข้าใช่หรือไม่?', // 🎯 เปลี่ยนข้อความ
               style: TextStyle(fontFamily: 'Kanit'),
             ),
             const SizedBox(height: 20),
@@ -186,17 +184,18 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
           ? 'http://localhost:3001'
           : 'http://10.0.2.2:3001';
 
+      // 🎯 เปลี่ยน URL API ไปที่ /return สำหรับการคืนรถ
       var request = http.MultipartRequest(
         'PUT',
-        Uri.parse('$baseUrl/api/vehicle-bookings/${widget.bookingId}/release'),
+        Uri.parse('$baseUrl/api/vehicle-bookings/${widget.bookingId}/return'),
       );
 
       request.headers.addAll({
         'Authorization': 'Bearer $token',
       });
 
-      // ❌ ลบการส่งข้อมูล parkingSlot ออกไปแล้ว
-      request.fields['status'] = 'In_Use';
+      // 🎯 เปลี่ยนสถานะเป็น Completed (เสร็จสิ้นการใช้งาน)
+      request.fields['status'] = 'Completed';
 
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -223,13 +222,14 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       );
 
       var response = await request.send();
-      Navigator.pop(context);
+      Navigator.pop(context); // ปิดตัวโหลด
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => const VehicleOutCompletedScreen(),
+            // 🎯 ไปหน้าเสร็จสิ้นการรับรถ (ต้องสร้างไฟล์ Vehicleincompleted.dart ไว้ด้วยนะครับ)
+            builder: (context) => const VehicleInCompletedScreen(), 
           ),
         );
       } else {
@@ -287,7 +287,7 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
             children: [
               const Center(
                 child: Text(
-                  'บันทึกการปล่อยรถออก',
+                  'บันทึกการรับรถเข้า', // 🎯 เปลี่ยนข้อความ
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
@@ -349,8 +349,6 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
               ),
 
               const SizedBox(height: 20),
-
-              // ❌ ลบส่วน UI กรอกข้อมูลช่องจอดรถออกแล้ว
 
               _buildPhotoBox(
                 'แนบรูปหน้ารถ',

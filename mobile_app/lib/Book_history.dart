@@ -14,8 +14,7 @@ class BookingHistoryModel {
   final String title;
   final String date;
   final String endDate;
-  final DateTime?
-  rawDate; // 💡 เพิ่มฟิลด์นี้เข้ามาเพื่อใช้สำหรับ Midnight Filter และการ Sort
+  final DateTime? rawDate; 
   final TimeOfDay startTime;
   final TimeOfDay endTime;
   final String bookedBy;
@@ -35,7 +34,7 @@ class BookingHistoryModel {
     required this.title,
     required this.date,
     required this.endDate,
-    this.rawDate, // 💡 ใส่เป็นแบบเลือกใส่ได้ (Optional) เพื่อไม่ให้กระทบโค้ดส่วนอื่น
+    this.rawDate, 
     required this.startTime,
     required this.endTime,
     required this.bookedBy,
@@ -62,7 +61,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   bool isLoading = true;
   List<BookingHistoryModel> historyList = [];
 
-  // 💡 เพิ่มตัวแปรเก็บสิทธิ์และ ID ของคนที่ Login อยู่
+  // 💡 ตัวแปรเก็บสิทธิ์และ ID ของคนที่ Login อยู่
   String userRole = '';
   int currentUserId = 0;
 
@@ -71,10 +70,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     super.initState();
     _loadUserInfo().then(
       (_) => fetchHistory(),
-    ); // 💡 โหลด User Info ก่อนดึง API
+    );
   }
 
-  // 💡 โหลดข้อมูลจาก SharedPreferences
   // 💡 โหลดข้อมูลจาก SharedPreferences (แก้ไขป้องกัน Type Mismatch)
   Future<void> _loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
@@ -109,18 +107,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
   String _formatThaiDate(DateTime date) {
     const thaiMonths = [
-      'ม.ค.',
-      'ก.พ.',
-      'มี.ค.',
-      'เม.ย.',
-      'พ.ค.',
-      'มิ.ย.',
-      'ก.ค.',
-      'ส.ค.',
-      'ก.ย.',
-      'ต.ค.',
-      'พ.ย.',
-      'ธ.ค.',
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
     ];
     return '${date.day.toString().padLeft(2, '0')} ${thaiMonths[date.month - 1]} ${date.year + 543}';
   }
@@ -165,15 +153,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
           String rawStatus = item['status'] ?? 'ถูกจองไว้อยู่';
           if (rawStatus.toLowerCase() == 'pending') rawStatus = 'ถูกจองไว้อยู่';
-          // 💡 เติมสถานะของห้องประชุมให้แปลงเป็นภาษาไทย เพื่อให้เงื่อนไขปุ่ม "กำลังใช้งาน" ทำงานได้ถูกต้อง
           if (rawStatus.toLowerCase() == 'approved' ||
               rawStatus.toLowerCase() == 'in_use' ||
               rawStatus.toLowerCase() == 'active')
             rawStatus = 'กำลังใช้งาน';
           if (rawStatus.toLowerCase() == 'completed') rawStatus = 'เสร็จสิ้น';
           if (rawStatus.toLowerCase() == 'cancelled') rawStatus = 'ยกเลิกแล้ว';
-
-          // ค้นหาชื่อ User ของห้องประชุม
 
           // ค้นหาชื่อ User ของห้องประชุม
           String userName = 'ไม่ระบุชื่อ';
@@ -205,7 +190,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   0,
               participantCount: 0,
               currentStatus: rawStatus,
-              // 💡 เพิ่มการดึงรูปภาพของห้องประชุม (ถ้า Database คุณใช้ชื่อฟิลด์อื่น ให้แก้ตามโครงสร้าง JSON จริง)
               imageUrl:
                   item['room']?['uploadUrl'] ?? item['room']?['imageUrl'] ?? '',
             ),
@@ -229,7 +213,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
           String rawStatus = item['status'] ?? 'ถูกจองไว้อยู่';
           if (rawStatus.toLowerCase() == 'pending') rawStatus = 'ถูกจองไว้อยู่';
-          // 💡 เผื่อ Backend ส่งคำว่า active มา
           if (rawStatus.toLowerCase() == 'approved' ||
               rawStatus.toLowerCase() == 'in_use' ||
               rawStatus.toLowerCase() == 'active')
@@ -237,13 +220,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           if (rawStatus.toLowerCase() == 'completed') rawStatus = 'เสร็จสิ้น';
           if (rawStatus.toLowerCase() == 'cancelled') rawStatus = 'ยกเลิกแล้ว';
 
-          // 💡 1. ดึงชื่อผู้ทำรายการจากการจองรถ (ใช้ fullName ตาม Database Schema)
+          // ดึงชื่อผู้ทำรายการจากการจองรถ
           String userName = 'ไม่ระบุชื่อ';
           if (item['user'] != null) {
             userName = item['user']['employee']?['fullName'] ?? 'ไม่ระบุชื่อ';
           }
 
-          // 💡 2. ดึงจำนวนคน (ใช้ passengers หรือ passengerCount)
+          // ดึงจำนวนคน
           int pCount = 0;
           if (item['passengers'] != null) {
             pCount = int.tryParse(item['passengers'].toString()) ?? 0;
@@ -262,7 +245,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               endTime: TimeOfDay(hour: end.hour, minute: end.minute),
               bookedBy: userName,
               bookerName: userName,
-              // 💡 เพิ่มการแปลง Type เป็น int อย่างปลอดภัย และเผื่อกรณี Backend ส่งมาใน item['user']['id']
               userId:
                   int.tryParse(
                     item['userId']?.toString() ??
@@ -281,7 +263,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         }
       }
 
-      // 💡 เรียงลำดับด้วย DateTime จริง จะแม่นยำกว่าการเทียบ String วันที่แบบภาษาไทย
       fetchedList.sort(
         (a, b) => (b.rawDate ?? DateTime.now()).compareTo(
           a.rawDate ?? DateTime.now(),
@@ -318,7 +299,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       // 💡 เงื่อนไขที่ 1: ถ้าเป็นการ "ยกเลิกรถ"
       if (booking.type == 'จองรถ' &&
           (newStatus == 'Cancelled' || newStatus == 'ยกเลิกแล้ว')) {
-        // 🚀 ต้องใช้ API เส้น PATCH และห้อยท้ายด้วย /cancel (ตามโค้ด Node.js ของคุณ)
         String endpoint =
             'http://localhost:3001/api/vehicle-bookings/${booking.id}/cancel';
         response = await http.patch(
@@ -327,18 +307,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $token',
           },
-          // ไม่ต้องส่ง body แล้ว เพราะ Node.js จัดการเปลี่ยนสถานะให้เองเลย
         );
-        newStatus =
-            'ยกเลิกแล้ว'; // บังคับเซ็ตค่ากลับเป็นภาษาไทยเพื่อโชว์บนหน้าจอ
+        newStatus = 'ยกเลิกแล้ว'; 
       }
       // 💡 เงื่อนไขที่ 2: ถ้าเป็นการอัปเดตสถานะอื่นๆ ของรถ (เช่น คืนรถ)
-      // 💡 เงื่อนไขที่ 2: ถ้าเป็นการอัปเดตสถานะอื่นๆ ของรถ (เช่น คืนรถ)
-      // 1. ตรวจสอบว่ามี import ด้านบนสุดของไฟล์แล้วหรือยัง:
-      // import 'package:flutter/foundation.dart' show kIsWeb;
-      // ... ในฟังก์ชัน _updateStatus ...
       else if (booking.type == 'จองรถ') {
-        // 🎯 กำหนด baseUrl ตาม Platform ให้ถูกต้อง
         String baseUrl = kIsWeb
             ? 'http://localhost:3001'
             : 'http://10.0.2.2:3001';
@@ -378,7 +351,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           ),
         );
       } else {
-        // 1. ดึงข้อความแจ้งเตือนจาก Backend เป็นค่าเริ่มต้น
         String errorMessage;
         try {
           final responseData = jsonDecode(response.body);
@@ -389,7 +361,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           errorMessage = 'เกิดข้อผิดพลาดรหัส ${response.statusCode}';
         }
 
-        // 2. แปลงข้อความตาม HTTP Status Code ที่กำหนด
         switch (response.statusCode) {
           case 401:
             errorMessage = 'กรุณาเข้าสู่ระบบใหม่';
@@ -409,7 +380,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             break;
         }
 
-        // 3. แสดงผลผ่าน SnackBar
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(errorMessage),
@@ -466,7 +436,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   }
 
   Widget _buildList() {
-    // 💡 คำนวณเวลาเที่ยงคืนของวันนี้
     DateTime todayMidnight = DateTime(
       DateTime.now().year,
       DateTime.now().month,
@@ -474,10 +443,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     );
 
     List<BookingHistoryModel> filteredList = historyList.where((item) {
-      // 1. กรองตาม Tab
       if (selectedTab != 'ทั้งหมด' && item.type != selectedTab) return false;
 
-      // 2. Midnight Filter: ถ้าสถานะจบไปแล้ว และเป็นอดีต (ก่อนเที่ยงคืนของวันนี้) ให้ซ่อน
       if ((item.currentStatus == 'เสร็จสิ้น' ||
               item.currentStatus == 'ยกเลิกแล้ว') &&
           item.rawDate != null) {
@@ -485,7 +452,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           return false;
         }
       }
-      return true; // รายการอื่นแสดงตามปกติ
+      return true;
     }).toList();
 
     if (filteredList.isEmpty) {
@@ -598,16 +565,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     height: 70,
                     color: Colors.grey[200],
                     child:
-                        booking
-                            .imageUrl
-                            .isNotEmpty // 💡 เอาเงื่อนไขจองรถออก เช็คแค่ว่ามีรูปหรือไม่
+                        booking.imageUrl.isNotEmpty 
                         ? Image.network(
                             booking.imageUrl.startsWith('/uploads')
                                 ? 'http://localhost:3001${booking.imageUrl}'
                                 : booking.imageUrl,
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => Icon(
-                              // 💡 ถ้าโหลดรูปพัง ให้แยกไอคอนตามประเภท
                               booking.type == 'ห้องประชุม'
                                   ? Icons.meeting_room
                                   : Icons.directions_car,
@@ -616,7 +580,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                             ),
                           )
                         : Icon(
-                            // 💡 ถ้าไม่มีรูปแต่แรก ให้แยกไอคอนตามประเภท
                             booking.type == 'ห้องประชุม'
                                 ? Icons.meeting_room
                                 : Icons.directions_car,
@@ -684,7 +647,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             ),
             const SizedBox(height: 16),
 
-            // เวลาการจอง
+            // 🎯 เวลาการจอง
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
@@ -709,8 +672,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     ),
                   ),
                   const Spacer(),
+                  // 🎯 โค้ดที่แก้ไข: เช็กว่าถ้าเป็นจองรถ โชว์แค่เวลาเริ่ม 
                   Text(
-                    '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
+                    booking.type == 'จองรถ'
+                        ? '${_formatTime(booking.startTime)} น.'
+                        : '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -723,18 +689,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             ),
             const SizedBox(height: 16),
 
-            // 💡 สร้างตัวแปรเช็คความเป็นเจ้าของ และเพิ่ม Debug Log
             Builder(
               builder: (context) {
                 bool isOwner = booking.userId == currentUserId;
-
-                print('--- Debug Log: Permission Check ---');
-                print('currentUserId = $currentUserId');
-                print('booking.userId = ${booking.userId}');
-                print('booking.id = ${booking.id}');
-                print('booking.status = $status');
-                print('isOwner = $isOwner');
-                print('-----------------------------------');
 
                 // ปุ่มต่างๆ
                 if (status == 'ถูกจองไว้อยู่') {
@@ -767,7 +724,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                             ),
                           ),
 
-                          // 💡 แสดงปุ่ม "ยกเลิกคิว" เฉพาะเจ้าของรายการ
                           if (isOwner) ...[
                             const SizedBox(width: 12),
                             Expanded(
@@ -848,34 +804,6 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // 💡 ปุ่มบันทึกคืนรถ ทำงานเหมือนเดิมตาม Logic เก่า
-                      if (booking.type == 'จองรถ')
-                        SizedBox(
-                          width: double.infinity,
-                          height: 44,
-                          child: ElevatedButton(
-                            onPressed: () =>
-                                _updateStatus(booking, 'เสร็จสิ้น'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF009CB4),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              elevation: 0,
-                            ),
-                            child: const Text(
-                              'บันทึกคืนรถ',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                fontFamily: 'Kanit',
-                              ),
-                            ),
-                          ),
-                        ),
-
-                      // 💡 ปุ่มคืนห้องก่อนเวลา ตรวจสอบให้แสดงเฉพาะเจ้าของรายการเท่านั้น
                       if (booking.type == 'ห้องประชุม' && isOwner)
                         SizedBox(
                           width: double.infinity,
@@ -1016,7 +944,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 💡 บล็อก 1: ข้อมูลพื้นฐาน (ใช้ร่วมกันได้)
+                  // 💡 บล็อก 1: ข้อมูลพื้นฐาน 
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -1038,9 +966,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               : '${booking.date} - ${booking.endDate}',
                         ),
                         const SizedBox(height: 12),
+                        // 🎯 โค้ดที่แก้ไข: เช็กใน Popup ว่าถ้าเป็นจองรถโชว์แค่เวลาเริ่ม
                         _buildPopupDetailRow(
                           'เวลา',
-                          '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
+                          booking.type == 'จองรถ'
+                              ? '${_formatTime(booking.startTime)} น.'
+                              : '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
                         ),
                         const SizedBox(height: 12),
                         _buildPopupDetailRow('ผู้ทำรายการ', booking.bookerName),
@@ -1054,7 +985,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 💡 บล็อก 2: ข้อมูลเพิ่มเติม (แยกประเภทชัดเจน ซ่อนบรรทัดที่ไม่เกี่ยวกับ Type นั้นๆ)
+                  // 💡 บล็อก 2: ข้อมูลเพิ่มเติม
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -1095,7 +1026,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                           _buildPopupDetailRow(
                             'วัตถุประสงค์',
                             '-',
-                          ), // คงไว้ตามโครงสร้างเดิมของรถ
+                          ), 
                           if (booking.driverType != '-') ...[
                             const SizedBox(height: 12),
                             _buildPopupDetailRow(
