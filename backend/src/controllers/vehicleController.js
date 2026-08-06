@@ -4,13 +4,20 @@ const prisma = new PrismaClient();
 const fs = require('fs');
 const path = require('path');
 
-// Helper Function: สำหรับลบไฟล์รูปภาพอย่างปลอดภัย
-const safeDeleteFile = async (filePath) => {
-    if (filePath && fs.existsSync(filePath)) {
-        try {
-            await fs.promises.unlink(filePath);
-        } catch (err) {
-            console.error("Error deleting file:", err);
+// 🎯 Helper Function: สำหรับลบไฟล์หลายไฟล์อย่างปลอดภัย (รองรับ req.files)
+const safeDeleteFiles = async (files) => {
+    if (!files) return;
+    const fileArray = [];
+    if (files['image']) fileArray.push(files['image'][0].path);
+    if (files['document']) fileArray.push(files['document'][0].path);
+    
+    for (const filePath of fileArray) {
+        if (filePath && fs.existsSync(filePath)) {
+            try {
+                await fs.promises.unlink(filePath);
+            } catch (err) {
+                console.error("Error deleting file:", err);
+            }
         }
     }
 };
@@ -32,17 +39,16 @@ exports.getVehicles = async (req, res) => {
 // 2. เพิ่มข้อมูลรถยนต์ใหม่
 exports.createVehicle = async (req, res) => {
     try {
-        // 💡 รับค่า vehicleName มาจากหน้าบ้านด้วย
         const { vehicleName, plateNumber, brand, model, seats, status } = req.body;
         
         if (!plateNumber || !brand || !model) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            await safeDeleteFiles(req.files);
             return res.status(400).json({ success: false, error: "กรุณากรอกข้อมูลให้ครบถ้วน (ทะเบียน, ยี่ห้อ, รุ่น)" });
         }
 
         const seatNumber = parseInt(seats, 10);
         if (isNaN(seatNumber) || seatNumber <= 0) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            await safeDeleteFiles(req.files);
             return res.status(400).json({ success: false, error: "จำนวนที่นั่งต้องเป็นตัวเลขและมากกว่า 0 ขึ้นไป" });
         }
 
@@ -51,29 +57,39 @@ exports.createVehicle = async (req, res) => {
         });
 
         if (existingVehicle) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            await safeDeleteFiles(req.files);
             return res.status(400).json({ success: false, error: `ป้ายทะเบียน ${plateNumber} มีในระบบแล้ว` });
         }
         
-        // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่งเป็น Base64/URL ผ่าน req.body
-        const uploadUrl = req.file ? `/uploads/vehicles/${req.file.filename}` : req.body.uploadUrl || null;
+        // 🎯 จัดการไฟล์รูปภาพและเอกสารจาก req.files
+        let uploadUrl = req.body.uploadUrl || null;
+        let uploadPororborUrl = req.body.uploadPororborUrl || null;
+
+        if (req.files) {
+            if (req.files['image'] && req.files['image'][0]) {
+                uploadUrl = `/uploads/vehicles/${req.files['image'][0].filename}`;
+            }
+            if (req.files['document'] && req.files['document'][0]) {
+                uploadPororborUrl = `/uploads/vehicles/${req.files['document'][0].filename}`;
+            }
+        }
 
         const newVehicle = await prisma.vehicle.create({
             data: {
-                // 💡 ถ้ามี vehicleName ส่งมาให้ใช้เลย ถ้าไม่มีให้เอา brand + model ต่อกัน
                 vehicleName: vehicleName || `${brand} ${model}`,
                 plateNumber,
                 brand,
                 model,
                 seats: seatNumber,
                 status: status || 'AVAILABLE',
-                uploadUrl: uploadUrl
+                uploadUrl: uploadUrl,
+                uploadPororborUrl: uploadPororborUrl // 🎯 บันทึก URL เอกสารลงฐานข้อมูล
             }
         });
 
         // 🟢 บันทึก AuditLog เมื่อเพิ่มรถยนต์สำเร็จ
         const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-if (actionUserId) {
+        if (actionUserId) {
             await prisma.auditLog.create({
                 data: {
                     action: "CREATE_VEHICLE",
@@ -88,7 +104,7 @@ if (actionUserId) {
 
         return res.status(201).json({ success: true, data: newVehicle, message: 'เพิ่มรถยนต์สำเร็จ' });
     } catch (error) {
-        if (req.file) await safeDeleteFile(req.file.path);
+        await safeDeleteFiles(req.files);
         console.error("Create Vehicle Error:", error);
         return res.status(500).json({ success: false, error: error.message || "ไม่สามารถเพิ่มข้อมูลรถได้" });
     }
@@ -119,49 +135,67 @@ exports.getVehicleById = async (req, res) => {
 exports.updateVehicle = async (req, res) => {
     try {
         const vehicleId = parseInt(req.params.id, 10);
-        // 💡 เพิ่ม vehicleName ให้สามารถแก้ไขชื่อรถได้ด้วย
         const { vehicleName, plateNumber, brand, model, seats, status } = req.body;
 
         if (isNaN(vehicleId)) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            await safeDeleteFiles(req.files);
             return res.status(400).json({ success: false, error: "ID ของรถยนต์ไม่ถูกต้อง" });
         }
 
         const existingVehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
         if (!existingVehicle || existingVehicle.isDeleted) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            await safeDeleteFiles(req.files);
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ที่ต้องการแก้ไข" });
         }
 
         if (plateNumber && plateNumber !== existingVehicle.plateNumber) {
             const duplicatePlate = await prisma.vehicle.findUnique({ where: { plateNumber: plateNumber } });
             if (duplicatePlate) {
-                if (req.file) await safeDeleteFile(req.file.path);
+                await safeDeleteFiles(req.files);
                 return res.status(400).json({ success: false, error: `ป้ายทะเบียน ${plateNumber} มีในระบบแล้ว` });
             }
         }
 
+        // 🎯 จัดการไฟล์รูปภาพและเอกสาร
         let newUploadUrl = existingVehicle.uploadUrl;
-        if (req.file) {
-            newUploadUrl = `/uploads/vehicles/${req.file.filename}`;
-            if (existingVehicle.uploadUrl) {
-                const oldFilePath = path.join(process.cwd(), existingVehicle.uploadUrl);
-                await safeDeleteFile(oldFilePath);
+        let newPororborUrl = existingVehicle.uploadPororborUrl;
+
+        if (req.files) {
+            // ถ้ารูปถูกส่งมาใหม่
+            if (req.files['image'] && req.files['image'][0]) {
+                newUploadUrl = `/uploads/vehicles/${req.files['image'][0].filename}`;
+                // ลบรูปเก่าทิ้ง (ถ้ามี)
+                if (existingVehicle.uploadUrl) {
+                    const oldFilePath = path.join(process.cwd(), existingVehicle.uploadUrl);
+                    if (fs.existsSync(oldFilePath)) fs.unlinkSync(oldFilePath);
+                }
             }
-        } else if (req.body.uploadUrl) {
-            newUploadUrl = req.body.uploadUrl; // รองรับกรณีส่ง path มาตรงๆ
-        }
+            // ถ้าเอกสาร พรบ. ถูกส่งมาใหม่
+            if (req.files['document'] && req.files['document'][0]) {
+                newPororborUrl = `/uploads/vehicles/${req.files['document'][0].filename}`;
+                // ลบเอกสารเก่าทิ้ง (ถ้ามี)
+                if (existingVehicle.uploadPororborUrl) {
+                    const oldDocPath = path.join(process.cwd(), existingVehicle.uploadPororborUrl);
+                    if (fs.existsSync(oldDocPath)) fs.unlinkSync(oldDocPath);
+                }
+            }
+        } 
+        
+        // รองรับกรณีส่ง path มาตรงๆ ผ่าน body
+        if (req.body.uploadUrl) newUploadUrl = req.body.uploadUrl;
+        if (req.body.uploadPororborUrl) newPororborUrl = req.body.uploadPororborUrl;
 
         const updatedVehicle = await prisma.vehicle.update({
             where: { id: vehicleId },
             data: {
-                vehicleName: vehicleName || existingVehicle.vehicleName, // 💡 อัปเดตชื่อรถ
+                vehicleName: vehicleName || existingVehicle.vehicleName,
                 plateNumber: plateNumber || existingVehicle.plateNumber,
                 brand: brand || existingVehicle.brand,
                 model: model || existingVehicle.model,
                 seats: seats ? parseInt(seats, 10) : existingVehicle.seats,
                 status: status || existingVehicle.status,
-                uploadUrl: newUploadUrl
+                uploadUrl: newUploadUrl,
+                uploadPororborUrl: newPororborUrl // 🎯 อัปเดต URL เอกสารลงฐานข้อมูล
             }
         });
 
@@ -182,7 +216,7 @@ exports.updateVehicle = async (req, res) => {
 
         return res.status(200).json({ success: true, data: updatedVehicle, message: "แก้ไขข้อมูลรถสำเร็จ" });
     } catch (error) {
-        if (req.file) await safeDeleteFile(req.file.path);
+        await safeDeleteFiles(req.files);
         console.error("Update Vehicle Error:", error);
         return res.status(500).json({ success: false, error: "ไม่สามารถแก้ไขข้อมูลรถได้" });
     }

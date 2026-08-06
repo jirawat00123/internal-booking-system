@@ -19,7 +19,6 @@ class WelcomeApp extends StatelessWidget {
       theme: ThemeData(primarySwatch: Colors.blue),
 
       // ✅ 2. อัปเดตแผนที่เส้นทาง (Routes) จาก /room_list เปลี่ยนเป็น /digitel
-      // ✅ 2. อัปเดตแผนที่เส้นทาง (Routes) จาก /room_list เปลี่ยนเป็น /digitel
       routes: {
         '/manage': (context) => const ManagePage(),
         '/digitel': (context) =>

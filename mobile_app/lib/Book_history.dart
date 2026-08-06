@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+// 🎯 แก้ไขใหม่: เพิ่ม import url_launcher เพื่อเปิดไฟล์
+import 'package:url_launcher/url_launcher.dart'; 
 import '../digitel.dart';
 import 'package:flutter/foundation.dart';
 
@@ -27,6 +29,8 @@ class BookingHistoryModel {
   final String plateNumber;
   final String destination;
   final String driverType;
+  // 🎯 แก้ไขใหม่: เพิ่มฟิลด์เก็บ URL เอกสาร พรบ.
+  final String? pororborUrl; 
 
   BookingHistoryModel({
     required this.id,
@@ -46,6 +50,7 @@ class BookingHistoryModel {
     this.plateNumber = '-',
     this.destination = '-',
     this.driverType = '-',
+    this.pororborUrl, // 🎯 แก้ไขใหม่
   });
 }
 
@@ -115,6 +120,26 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
   String _formatTime(TimeOfDay time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  // 🎯 แก้ไขใหม่: ฟังก์ชันสำหรับเปิด Link เอกสาร
+  Future<void> _openPororbor(String? urlPath) async {
+    if (urlPath == null || urlPath.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่พบไฟล์เอกสาร')),
+      );
+      return;
+    }
+
+    final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+    final fullUrl = '$baseUrl$urlPath';
+    final Uri url = Uri.parse(fullUrl);
+
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่สามารถเปิดเอกสารได้')),
+      );
+    }
   }
 
   // =========================================================
@@ -258,6 +283,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               plateNumber: item['vehicle']?['plateNumber'] ?? '-',
               destination: item['destination'] ?? '-',
               driverType: item['driverType'] ?? 'ขับขี่เอง',
+              // 🎯 แก้ไขใหม่: ดึง URL พรบ. มาเก็บไว้ (ชื่อฟิลด์ต้องตรงกับ Backend ส่งมา)
+              pororborUrl: item['vehicle']?['uploadPororborUrl'], 
             ),
           );
         }
@@ -747,7 +774,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                     color: Colors.redAccent,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
-                                    fontFamily: 'Kanit',
+                                   fontFamily: 'Kanit',
                                   ),
                                 ),
                               ),
@@ -1039,7 +1066,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     ),
                   ),
 
-                  // บล็อก 3: เอกสารประจำรถ
+                  // 🎯 บล็อก 3: เอกสารประจำรถ (แก้ไขใหม่)
                   if (booking.type == 'จองรถ') ...[
                     const SizedBox(height: 16),
                     Container(
@@ -1060,7 +1087,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               ),
                               const SizedBox(width: 8),
                               const Text(
-                                'เอกสารประจำรถ',
+                                'เอกสารประจำรถ (พรบ.)',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Color(0xFF8B5CF6),
@@ -1070,24 +1097,51 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               ),
                               const Spacer(),
                               Icon(
-                                Icons.image_outlined,
+                                Icons.file_present_outlined,
                                 color: Colors.blue.shade600,
                                 size: 18,
                               ),
                             ],
                           ),
                           const SizedBox(height: 12),
-                          _buildPopupDetailRow(
-                            'ประกันภัย :',
-                            'ประกันภัย ชั้น 1',
-                            valueColor: const Color(0xFF8B5CF6),
-                          ),
-                          const SizedBox(height: 8),
-                          _buildPopupDetailRow(
-                            'วันต่อภาษี :',
-                            '31 ส.ค. 2026',
-                            valueColor: const Color(0xFF8B5CF6),
-                          ),
+                          // 🎯 แก้ไขใหม่: ตรวจสอบว่ามี URL เอกสารหรือไม่
+                          booking.pororborUrl != null && booking.pororborUrl!.isNotEmpty
+                              ? SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _openPororbor(booking.pororborUrl),
+                                    icon: const Icon(Icons.picture_as_pdf, size: 18, color: Colors.white,),
+                                    label: const Text(
+                                      'ดูเอกสาร พรบ.',
+                                      style: TextStyle(
+                                        fontFamily: 'Kanit',
+                                        fontSize: 14,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold
+                                      ),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF009CB4),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      elevation: 0,
+                                    ),
+                                  ),
+                                )
+                              : const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                                    child: Text(
+                                      'ไม่มีเอกสารแนบ',
+                                      style: TextStyle(
+                                        fontFamily: 'Kanit',
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                         ],
                       ),
                     ),

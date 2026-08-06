@@ -32,7 +32,9 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
   late int passengerCount;
 
   XFile? _newVehicleImage; // 🟢 รูปภาพใหม่ที่ผู้ใช้เลือกมาอัปเดต
-  String? _docFilePath;
+  
+  // 🎯 แก้ไขใหม่: เปลี่ยนเก็บ PlatformFile เพื่อให้ได้ทั้ง Path (Mobile) และ Bytes (Web)
+  PlatformFile? _pickedDocFile; 
   String? _docFileName;
 
   bool isSubmitting = false;
@@ -79,16 +81,18 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     }
   }
 
+  // 🎯 แก้ไขใหม่: ปรับปรุงการเลือกไฟล์ให้รองรับ Web (withData: true)
   Future<void> _pickDocFile() async {
     FilePickerResult? result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'png'],
+      withData: kIsWeb, // จำเป็นสำหรับ Web เพื่อให้ได้ bytes
     );
 
     if (result != null) {
       setState(() {
-        _docFilePath = result.files.single.path;
-        _docFileName = result.files.single.name;
+        _pickedDocFile = result.files.single;
+        _docFileName = _pickedDocFile!.name;
       });
     }
   }
@@ -158,6 +162,32 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
           request.files.add(
             await http.MultipartFile.fromPath('image', _newVehicleImage!.path),
           );
+        }
+      }
+
+      // 🎯 แก้ไขใหม่: เพิ่มการส่งไฟล์เอกสาร (พรบ.) ไปยัง Backend
+      if (_pickedDocFile != null) {
+        if (kIsWeb) {
+          // สำหรับ Web ใช้ Bytes
+          if (_pickedDocFile!.bytes != null) {
+            request.files.add(
+              http.MultipartFile.fromBytes(
+                'document', // 🚨 คีย์ที่ Backend รอรับ (Pororbor)
+                _pickedDocFile!.bytes!,
+                filename: _pickedDocFile!.name,
+              ),
+            );
+          }
+        } else {
+          // สำหรับ Mobile ใช้ Path
+          if (_pickedDocFile!.path != null) {
+            request.files.add(
+              await http.MultipartFile.fromPath(
+                'document', // 🚨 คีย์ที่ Backend รอรับ (Pororbor)
+                _pickedDocFile!.path!,
+              ),
+            );
+          }
         }
       }
 

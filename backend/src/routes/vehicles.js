@@ -11,9 +11,8 @@ const verifyToken = authMiddleware.verifyToken;
 const requireRole = authMiddleware.requireRole;
 
 // นำเข้า Controller
-// นำเข้า Controller
 const vehicleController = require('../controllers/vehicleController');
-const vehicleBookingController = require('../controllers/vehicleBookingController'); // ✅ เพิ่ม Import เพื่อแก้ Error ลืมประกาศตัวแปร
+const vehicleBookingController = require('../controllers/vehicleBookingController');
 
 // ==========================================
 // 🛡️ [เพิ่มระบบดักจับข้อผิดพลาด] ตรวจสอบ Middleware & Controller
@@ -30,10 +29,7 @@ const checkHandler = (handler, name) => {
 };
 
 // ==========================================
-// 🛠️ ตั้งค่า Multer สำหรับอัปโหลดรูปภาพ
-// ==========================================
-// ==========================================
-// 🛠️ ตั้งค่า Multer สำหรับอัปโหลดรูปภาพ
+// 🛠️ ตั้งค่า Multer สำหรับอัปโหลดรูปภาพและเอกสาร
 // ==========================================
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
@@ -51,34 +47,38 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-    // 4. เพิ่ม Debug Log ก่อนเข้าเงื่อนไข (เพื่อหา Evidence)
     console.log('--- Debug Multer fileFilter ---');
     console.log('Fieldname:', file.fieldname);
     console.log('Originalname:', file.originalname);
     console.log('Mimetype:', file.mimetype);
     console.log('-------------------------------');
 
-    const allowedTypes = /jpeg|jpg|png/;
+    // 🎯 แก้ไข: เพิ่ม pdf, doc, docx ให้รองรับเอกสาร พรบ.
+    const allowedTypes = /jpeg|jpg|png|pdf|doc|docx/;
     
-    // ตรวจสอบนามสกุลไฟล์อย่างเข้มงวด
+    // ตรวจสอบนามสกุลไฟล์
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     
-    // ตรวจสอบ Mimetype ว่าเป็นรูปภาพ หรือเป็น octet-stream จาก Flutter Web
-    const isImageMimetype = allowedTypes.test(file.mimetype);
+    // ตรวจสอบ Mimetype 
+    const isImageOrDocMimetype = allowedTypes.test(file.mimetype) || 
+                                 file.mimetype === 'application/pdf' || 
+                                 file.mimetype === 'application/msword' || 
+                                 file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    
     const isFlutterWebBinary = file.mimetype === 'application/octet-stream' || file.mimetype === 'binary/octet-stream';
     
-    // เงื่อนไข: นามสกุลต้องถูกต้องเสมอ และ (Mimetype ต้องเป็นรูปภาพ หรือเป็น Binary จาก Web)
-    if (extname && (isImageMimetype || isFlutterWebBinary)) {
+    // เงื่อนไข: นามสกุลต้องถูกต้องเสมอ และ Mimetype ตรงกับรูปภาพ/เอกสาร หรือเป็น Binary จาก Web
+    if (extname && (isImageOrDocMimetype || isFlutterWebBinary)) {
         return cb(null, true);
     } else {
-        return cb(new Error('รองรับเฉพาะไฟล์รูปภาพ (png, jpg, jpeg) เท่านั้น'));
+        return cb(new Error('รองรับเฉพาะไฟล์รูปภาพ (png, jpg) และเอกสาร (pdf, docx) เท่านั้น'));
     }
 };
 
 const upload = multer({ 
     storage: storage,
     fileFilter: fileFilter,
-    limits: { fileSize: 5 * 1024 * 1024 }
+    limits: { fileSize: 10 * 1024 * 1024 } // 🎯 ขยายขนาดจำกัดเป็น 10MB เผื่อเอกสาร PDF ขนาดใหญ่
 });
 
 // ==========================================
@@ -86,19 +86,17 @@ const upload = multer({
 // ==========================================
 
 // 💡 1. ปลดล็อก GET (ดึงข้อมูลรถทั้งหมด) เพื่อให้ User ทั่วไปเข้าดูได้โดยไม่ต้องมี Token
-// 💡 1. ปลดล็อก GET (ดึงข้อมูลรถทั้งหมด) เพื่อให้ User ทั่วไปเข้าดูได้โดยไม่ต้องมี Token
 router.get('/', 
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
 );
 
-// 📺 API Monitor ยานพาหนะสำหรับ Guest/User ดูรายการรถและสถานะ (Requirement Week 13)
+// 📺 API Monitor ยานพาหนะสำหรับ Guest/User ดูรายการรถและสถานะ
 router.get('/monitor/vehicles',
     checkHandler(verifyToken, 'verifyToken'),
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
 );
 
-// 📜 ดึงประวัติการใช้งานรถ (ย้ายขึ้นมาก่อน /:id เพื่อป้องกัน Express สับสนคำว่า 'history' เป็น parameter id)
-// ✅ เพิ่ม 'GUEST' ใน requireRole เพื่อเปิดให้ Guest เข้าดูประวัติได้ตาม Requirement Week 13
+// 📜 ดึงประวัติการใช้งานรถ 
 router.get('/history', 
     checkHandler(verifyToken, 'verifyToken'),
     checkHandler(requireRole ? requireRole(['ADMIN', 'USER', 'GUARD', 'GUEST']) : null, 'requireRole'), 
@@ -109,7 +107,11 @@ router.get('/history',
 router.post('/', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
-    upload.single('image'), 
+    // 🎯 แก้ไข: ให้รองรับทั้งรูปรถและเอกสาร พรบ. 
+    upload.fields([
+        { name: 'image', maxCount: 1 }, 
+        { name: 'document', maxCount: 1 }
+    ]), 
     checkHandler(vehicleController.createVehicle, 'vehicleController.createVehicle')
 );
 
@@ -122,7 +124,11 @@ router.get('/:id',
 router.put('/:id', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
-    upload.single('image'), 
+    // 🎯 แก้ไข: เปลี่ยนจาก single('image') เป็น fields(...) รับ 2 ไฟล์พร้อมกัน
+    upload.fields([
+        { name: 'image', maxCount: 1 }, 
+        { name: 'document', maxCount: 1 }
+    ]), 
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
 );
 
@@ -132,9 +138,5 @@ router.delete('/:id',
     checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
     checkHandler(vehicleController.deleteVehicle, 'vehicleController.deleteVehicle')
 );
-
-// ✅ แก้ไข: อนุญาต ADMIN, USER, และ GUARD ให้ดูประวัติรถได้
-// ✅ แก้ไข: อนุญาต ADMIN, USER, และ GUARD ให้ดูประวัติรถได้
-
 
 module.exports = router;
