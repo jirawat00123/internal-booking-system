@@ -130,7 +130,9 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
       request.fields['vehicleName'] = fullName;
       request.fields['plateNumber'] = plateText;
       request.fields['capacity'] = passengerCount.toString();
-      request.fields['type'] = 'CAR';
+      request.fields['type'] = widget
+          .vehicle
+          .type; // 🟢 ดึงค่าประเภทรถเดิมมาใช้แทนการ Fix เป็น 'CAR'
       request.fields['status'] = currentStatus;
 
       // ส่งคีย์ตัวช่วยเพื่อกัน Error จากด่านตรวจ Backend (รองรับ Database Checklist Week 14)
@@ -171,6 +173,13 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
             await http.MultipartFile.fromPath('image', _newVehicleImage!.path),
           );
         }
+      }
+
+      // 🟢 เพิ่มการแนบไฟล์เอกสาร (พรบ.) ไปยัง Backend (ถ้ามีการเลือกไฟล์)
+      if (_docFilePath != null && !kIsWeb) {
+        request.files.add(
+          await http.MultipartFile.fromPath('document', _docFilePath!),
+        );
       }
 
       final streamedResponse = await request.send();

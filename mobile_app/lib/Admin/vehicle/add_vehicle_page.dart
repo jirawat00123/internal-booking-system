@@ -157,6 +157,13 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
         }
       }
 
+      // 🟢 เพิ่มการแนบไฟล์เอกสาร (พรบ.) ไปยัง Backend (ถ้ามีการเลือกไฟล์)
+      if (_docFilePath != null && !kIsWeb) {
+        request.files.add(
+          await http.MultipartFile.fromPath('document', _docFilePath!),
+        );
+      }
+
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 

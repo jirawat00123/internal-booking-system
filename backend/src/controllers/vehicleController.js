@@ -128,9 +128,10 @@ exports.createVehicle = async (req, res) => {
             }
         });
 
-        // 🟢 บันทึก AuditLog เมื่อเพิ่มรถยนต์สำเร็จ
-        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-if (actionUserId) {
+        // 🟢 บันทึก AuditLog เมื่อเพิ่มรถยนต์สำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
+        const rawUserId = req.user?.id || req.user?.userId;
+        const actionUserId = rawUserId ? parseInt(rawUserId, 10) : null;
+        if (actionUserId) {
             await prisma.auditLog.create({
                 data: {
                     action: "CREATE_VEHICLE",
@@ -184,6 +185,15 @@ exports.updateVehicle = async (req, res) => {
             return res.status(400).json({ success: false, error: "ID ของรถยนต์ไม่ถูกต้อง" });
         }
 
+        // 🟢 ตรวจสอบ Enum สถานะที่อนุญาต (ถ้ามีการส่ง status มาเพื่ออัปเดต)
+        if (status) {
+            const allowedStatuses = ['AVAILABLE', 'IN_USE', 'RESERVED', 'MAINTENANCE', 'INACTIVE'];
+            if (!allowedStatuses.includes(status)) {
+                if (req.file) await safeDeleteFile(req.file.path);
+                return res.status(400).json({ success: false, error: "สถานะรถยนต์ไม่ถูกต้อง" });
+            }
+        }
+
         const existingVehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
         if (!existingVehicle || existingVehicle.isDeleted) {
             if (req.file) await safeDeleteFile(req.file.path);
@@ -222,8 +232,9 @@ exports.updateVehicle = async (req, res) => {
             }
         });
 
-        // 🟢 บันทึก AuditLog เมื่อแก้ไขข้อมูลรถยนต์สำเร็จ
-        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+        // 🟢 บันทึก AuditLog เมื่อแก้ไขข้อมูลรถยนต์สำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
+        const rawUserId = req.user?.id || req.user?.userId;
+        const actionUserId = rawUserId ? parseInt(rawUserId, 10) : null;
         if (actionUserId) {
             await prisma.auditLog.create({
                 data: {
@@ -275,12 +286,13 @@ exports.deleteVehicle = async (req, res) => {
         }
 
         await prisma.vehicle.update({
-            where: {id: parseInt(req.params.id)},
-            data: {isDeleted: true}
+            where: { id: vehicleId },
+            data: { isDeleted: true }
         });
 
-        // 🟢 บันทึก AuditLog เมื่อลบข้อมูลรถยนต์สำเร็จ
-        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+        // 🟢 บันทึก AuditLog เมื่อลบข้อมูลรถยนต์สำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
+        const rawUserId = req.user?.id || req.user?.userId;
+        const actionUserId = rawUserId ? parseInt(rawUserId, 10) : null;
         if (actionUserId) {
             await prisma.auditLog.create({
                 data: {
@@ -345,8 +357,9 @@ exports.updateVehicleStatus = async (req, res) => {
             data: { status }
         });
 
-        // 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะรถยนต์สำเร็จ
-        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+        // 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะรถยนต์สำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
+        const rawUserId = req.user?.id || req.user?.userId;
+        const actionUserId = rawUserId ? parseInt(rawUserId, 10) : null;
         if (actionUserId) {
             await prisma.auditLog.create({
                 data: {

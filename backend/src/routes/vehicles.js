@@ -12,7 +12,6 @@ const requireRole = authMiddleware.requireRole;
 const isAdmin = authMiddleware.isAdmin; // ✅ นำเข้า isAdmin สำหรับสิทธิ์ Admin Management Module (Week 14)
 
 // นำเข้า Controller
-// นำเข้า Controller
 const vehicleController = require('../controllers/vehicleController');
 const vehicleBookingController = require('../controllers/vehicleBookingController'); // ✅ เพิ่ม Import เพื่อแก้ Error ลืมประกาศตัวแปร
 
@@ -30,9 +29,6 @@ const checkHandler = (handler, name) => {
     return handler;
 };
 
-// ==========================================
-// 🛠️ ตั้งค่า Multer สำหรับอัปโหลดรูปภาพ
-// ==========================================
 // ==========================================
 // 🛠️ ตั้งค่า Multer สำหรับอัปโหลดรูปภาพ
 // ==========================================
@@ -102,7 +98,7 @@ router.get('/monitor/vehicles',
 // ✅ เพิ่ม 'GUEST' ใน requireRole เพื่อเปิดให้ Guest เข้าดูประวัติได้ตาม Requirement Week 13
 router.get('/history', 
     checkHandler(verifyToken, 'verifyToken'),
-    checkHandler(requireRole ? requireRole(['ADMIN', 'USER', 'GUARD', 'GUEST']) : null, 'requireRole'), 
+    checkHandler(requireRole(['ADMIN', 'USER', 'GUARD', 'GUEST']), 'requireRole'), 
     checkHandler(vehicleBookingController.getHistory, 'vehicleBookingController.getHistory')
 );
 
@@ -141,9 +137,4 @@ router.delete('/:id',
     checkHandler(isAdmin, 'isAdmin'), 
     checkHandler(vehicleController.deleteVehicle, 'vehicleController.deleteVehicle')
 );
-
-// ✅ แก้ไข: อนุญาต ADMIN, USER, และ GUARD ให้ดูประวัติรถได้
-// ✅ แก้ไข: อนุญาต ADMIN, USER, และ GUARD ให้ดูประวัติรถได้
-
-
 module.exports = router;

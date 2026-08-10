@@ -73,13 +73,11 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ success: false, error: "ไม่พบข้อมูลผู้ใช้งาน" });
     }
 
-    //  แก้ไขเพิ่มเติม: ตรวจสอบสถานะการเปิดใช้งานบัญชี (Account Status Validation)
-    // อ้างอิงจาก Source of Truth ตาราง user ฟิลด์เก็บสถานะคือ "active" (Boolean)
-    //  แก้ไขเพิ่มเติม: ตรวจสอบสถานะการเปิดใช้งานบัญชี (Account Status Validation)
-    // อ้างอิงจาก Source of Truth ตาราง user ฟิลด์เก็บสถานะคือ "active" (Boolean)
-    if (!user.active) {
-      console.log(`[EVIDENCE] 7. 403 Failure Cause: [USER_INACTIVE] User ID "${decoded.userId}" account is deactivated.`);
-      return res.status(403).json({ success: false, error: "บัญชีผู้ใช้งานของคุณถูกระงับสิทธิ์การใช้งานชั่วคราว" });
+    // แก้ไขเพิ่มเติม: ตรวจสอบสถานะการเปิดใช้งานบัญชี และการถูกลบ (Soft Delete)
+    // อ้างอิงจาก Source of Truth ตาราง user ฟิลด์ "active" และ "isDeleted"
+    if (!user.active || user.isDeleted) {
+      console.log(`[EVIDENCE] 7. 403 Failure Cause: [USER_INACTIVE_OR_DELETED] User ID "${decoded.userId}" account is deactivated or deleted.`);
+      return res.status(403).json({ success: false, error: "บัญชีผู้ใช้งานของคุณถูกระงับสิทธิ์หรือถูกลบออกจากระบบ" });
     }
 
     // 🔒 [Security Feature]: บังคับตั้งค่า PIN ใหม่ หากถูก Admin สั่งรีเซ็ต หรือเป็นการเข้าใช้งานครั้งแรก
@@ -134,7 +132,12 @@ const verifyToken = authenticateToken;
 const requireRole = (allowedRoles) => {
     return (req, res, next) => {
         // อาศัย req.user.role ที่ผ่านการ Validate อย่างเข้มงวดมาแล้ว
-        if (!req.user || !allowedRoles.includes(req.user.role)) {
+        const currentRole = (req.user?.role || '').toUpperCase();
+        
+        // แปลง allowedRoles ทั้งหมดเป็น Uppercase เพื่อป้องกันบั๊กการพิมพ์ผิด
+        const normalizedAllowedRoles = allowedRoles.map(role => role.toUpperCase());
+
+        if (!req.user || !normalizedAllowedRoles.includes(currentRole)) {
             return res.status(403).json({ 
                 success: false, 
                 error: "ปฏิเสธการเข้าถึง: สิทธิ์ของคุณไม่เพียงพอ" 

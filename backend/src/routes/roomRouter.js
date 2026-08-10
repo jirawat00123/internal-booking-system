@@ -18,7 +18,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
       orderBy: { id: 'asc' }
     });
     
-    res.status(200).json(rooms);
+    res.status(200).json({ success: true, data: rooms });
   } catch (error) {
     next(error);
   }
@@ -28,7 +28,7 @@ router.get('/', authenticateToken, async (req, res, next) => {
 // 🔒 บังคับตรวจสอบ Token (Guest & User: Read Only)
 router.get('/:id', authenticateToken, async (req, res, next) => {
   try {
-    const roomId = parseInt(req.params.id);
+    const roomId = parseInt(req.params.id, 10);
     
     // 💡 ป้องกันบั๊ก: เช็กว่า ID ที่ส่งมาทาง URL เป็นตัวเลขหรือไม่
     if (isNaN(roomId)) {
@@ -54,7 +54,7 @@ router.get('/:id', authenticateToken, async (req, res, next) => {
       });
     }
 
-    res.status(200).json(room);
+    res.status(200).json({ success: true, data: room });
   } catch (error) {
     next(error);
   }

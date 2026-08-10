@@ -69,8 +69,14 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
   void initState() {
     super.initState();
     roomNameController = TextEditingController(text: widget.room.roomName);
-    floorNumber = int.tryParse(widget.room.location.split(' ')[1]) ?? 1;
-    selectedSide = widget.room.location.split(' ').last;
+
+    // 🟢 ป้องกัน RangeError โดยการเช็กความยาวของ List ก่อนดึงข้อมูล
+    List<String> locationParts = widget.room.location.split(' ');
+    floorNumber = (locationParts.length > 1)
+        ? (int.tryParse(locationParts[1]) ?? 1)
+        : 1;
+    selectedSide = locationParts.isNotEmpty ? locationParts.last : 'A';
+
     capacity = widget.room.capacity;
     // 🟢 กำหนดค่าสถานะเริ่มต้นให้รองรับ 3 สถานะ (AVAILABLE, RESERVED, IN_USE)
     if (widget.room.status == 'AVAILABLE') {
@@ -195,7 +201,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                             'Bearer $token';
 
                                         request.fields['roomName'] =
-                                            widget.room.roomName;
+                                            roomNameController.text;
                                         request.fields['location'] =
                                             'Floor $floorNumber - Side $selectedSide';
                                         request.fields['capacity'] = capacity
@@ -206,11 +212,23 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                         if (_imageFile != null) {
                                           final imageBytes = await _imageFile!
                                               .readAsBytes();
+
+                                          // 🟢 ตรวจสอบและกำหนดย่อรหัสไฟล์รูปภาพเพื่อความปลอดภัยบน Web
+                                          String finalFileName =
+                                              _imageFile!.name;
+                                          String lowerName = finalFileName
+                                              .toLowerCase();
+                                          if (!lowerName.endsWith('.png') &&
+                                              !lowerName.endsWith('.jpg') &&
+                                              !lowerName.endsWith('.jpeg')) {
+                                            finalFileName = 'room_image.png';
+                                          }
+
                                           request.files.add(
                                             http.MultipartFile.fromBytes(
                                               'image',
                                               imageBytes,
-                                              filename: _imageFile!.name,
+                                              filename: finalFileName,
                                             ),
                                           );
                                         }
@@ -222,9 +240,23 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                           final respStr = await response.stream
                                               .bytesToString();
                                           final jsonResp = json.decode(respStr);
-                                          final newImageUrl =
-                                              jsonResp['data']['uploadUrl'] ??
-                                              widget.room.imagePath;
+
+                                          // 🟢 ดึง URL รูปภาพใหม่อย่างปลอดภัย ป้องกัน crash ถ้า data เป็น null
+                                          String? newImageUrl;
+                                          if (jsonResp
+                                              is Map<String, dynamic>) {
+                                            if (jsonResp['data'] != null &&
+                                                jsonResp['data'] is Map) {
+                                              newImageUrl =
+                                                  jsonResp['data']['uploadUrl'] ??
+                                                  jsonResp['data']['imagePath'];
+                                            } else {
+                                              newImageUrl =
+                                                  jsonResp['uploadUrl'] ??
+                                                  jsonResp['imagePath'];
+                                            }
+                                          }
+                                          newImageUrl ??= widget.room.imagePath;
 
                                           final updatedList =
                                               List<MeetingRoom>.from(
@@ -240,7 +272,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                           if (targetIndex != -1) {
                                             updatedList[targetIndex] = MeetingRoom(
                                               id: widget.room.id,
-                                              roomName: widget.room.roomName,
+                                              roomName: roomNameController.text,
                                               location:
                                                   'Floor $floorNumber - Side $selectedSide',
                                               capacity: capacity,
@@ -512,7 +544,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                 widget.room.imagePath!.startsWith('http')
                                     ? widget.room.imagePath!
                                     // 🟢 5. เปลี่ยน URL ดึงภาพเป็น Dynamic ตาม Platform (Web หรือ Emulator)
-                                    : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${widget.room.imagePath!}',
+                                    : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${widget.room.imagePath!.startsWith('/') ? widget.room.imagePath! : '/${widget.room.imagePath!}'}',
                               ),
                               fit: BoxFit.cover,
                               onError: (exception, stackTrace) {
@@ -563,7 +595,40 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Text(
+            'ชื่อห้องประชุม',
+            style: TextStyle(
+              color: Color(0xFF9BB1BD),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Kanit',
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: roomNameController,
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFF0D47A1)),
+              ),
+            ),
+            style: const TextStyle(
+              fontFamily: 'Kanit',
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 25),
           Row(
             children: [
               Expanded(

@@ -6,26 +6,23 @@ const fs = require('fs');
 const roomController = require('../controllers/roomController'); 
 const {
   authenticateToken,
-  requireRole,
   isAdmin // ✅ นำเข้า isAdmin สำหรับบังคับสิทธิ์ของ Admin Management Module
 } = require('../middlewares/auth');
 const { PrismaClient, BookingStatus } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// สร้างโฟลเดอร์ uploads อัตโนมัติ ป้องกัน Multer Error
-const uploadDir = 'uploads/';
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-// ตั้งค่า multer สำหรับรองรับการอัปโหลดไฟล์
+// ตั้งค่า multer สำหรับรองรับการอัปโหลดไฟล์รูปห้องประชุม
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
-        cb(null, uploadDir);
+        const dir = path.join(__dirname, '../../uploads/rooms');
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+        cb(null, dir);
     },
     filename: function (req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'room-' + uniqueSuffix + path.extname(file.originalname));
+        cb(null, 'room-' + uniqueSuffix + path.extname(file.originalname).toLowerCase());
     }
 });
 const upload = multer({ storage: storage });
@@ -51,11 +48,14 @@ router.delete('/:id', authenticateToken, isAdmin, roomController.deleteRoom);
 // 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง (เพื่อแก้ 404 และกันการจองซ้อน)
 router.get('/:id/schedule', authenticateToken, async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const roomId = parseInt(req.params.id, 10);
+    if (isNaN(roomId)) {
+      return res.status(400).json({ success: false, error: "ID ของห้องประชุมไม่ถูกต้อง" });
+    }
 
     const schedules = await prisma.roomBooking.findMany({
       where: { 
-        roomId: parseInt(id),
+        roomId: roomId,
         // ใช้ Prisma BookingStatus Enum เพื่อให้ตรงกับ Type ที่ Prisma คาดหวัง
         // ตัดค่าที่ไม่ใช่ Enum ออก เพื่อไม่ให้เกิด Error และดึงเฉพาะคิวที่ยังแอคทีฟอยู่ (เช่น ยกเว้น CANCELLED หรือ REJECTED)
         status: { 

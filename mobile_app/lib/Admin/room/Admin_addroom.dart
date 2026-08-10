@@ -173,11 +173,22 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
 
                                         if (_imageBytes != null &&
                                             _imageFile != null) {
+                                          // 🟢 ป้องกันปัญหานามสกุลไฟล์รูปภาพผิดพลาดเมื่ออัปโหลดบน Web
+                                          String finalFileName =
+                                              _imageFile!.name;
+                                          String lowerName = finalFileName
+                                              .toLowerCase();
+                                          if (!lowerName.endsWith('.png') &&
+                                              !lowerName.endsWith('.jpg') &&
+                                              !lowerName.endsWith('.jpeg')) {
+                                            finalFileName = 'room_image.png';
+                                          }
+
                                           var multipartFile =
                                               http.MultipartFile.fromBytes(
                                                 'image',
                                                 _imageBytes!,
-                                                filename: _imageFile!.name,
+                                                filename: finalFileName,
                                               );
                                           request.files.add(multipartFile);
                                         }
@@ -189,6 +200,59 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                                           debugPrint(
                                             '📱 [Flutter] บันทึกข้อมูลลงฐานข้อมูลสำเร็จ!',
                                           );
+
+                                          // 🟢 อ่าน Response เพื่ออัปเดตข้อมูลเข้า globalMeetingRooms ทันที
+                                          final respStr = await response.stream
+                                              .bytesToString();
+                                          try {
+                                            final jsonResp = json.decode(
+                                              respStr,
+                                            );
+                                            final roomData =
+                                                jsonResp['data'] ?? jsonResp;
+
+                                            if (roomData != null) {
+                                              final newRoom = MeetingRoom(
+                                                id:
+                                                    roomData['id'] ??
+                                                    DateTime.now()
+                                                        .millisecondsSinceEpoch,
+                                                roomName:
+                                                    roomData['roomName'] ??
+                                                    'Floor $floorNumber - Side $selectedSide',
+                                                location:
+                                                    roomData['location'] ??
+                                                    'Floor $floorNumber - Side $selectedSide',
+                                                capacity:
+                                                    roomData['capacity'] is int
+                                                    ? roomData['capacity']
+                                                    : (int.tryParse(
+                                                            roomData['capacity']
+                                                                .toString(),
+                                                          ) ??
+                                                          capacity),
+                                                imagePath:
+                                                    roomData['uploadUrl'] ??
+                                                    roomData['imagePath'] ??
+                                                    '',
+                                                status:
+                                                    roomData['status'] ??
+                                                    'AVAILABLE',
+                                              );
+
+                                              final updatedList =
+                                                  List<MeetingRoom>.from(
+                                                    globalMeetingRooms.value,
+                                                  );
+                                              updatedList.add(newRoom);
+                                              globalMeetingRooms.value =
+                                                  updatedList; // 🟢 เพิ่มห้องใหม่ลงใน State ของแอปทันที
+                                            }
+                                          } catch (e) {
+                                            debugPrint(
+                                              '⚠️ [Flutter] Parse Room Error: $e',
+                                            );
+                                          }
 
                                           if (mounted) {
                                             Navigator.pop(
@@ -226,9 +290,6 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                                           );
 
                                           if (mounted) {
-                                            Navigator.pop(
-                                              dialogContext,
-                                            ); // ปิด Dialog
                                             ScaffoldMessenger.of(
                                               context,
                                             ).showSnackBar(
@@ -251,9 +312,6 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
                                           '❌ [Flutter] Catch Network Error: $e',
                                         );
                                         if (mounted) {
-                                          Navigator.pop(
-                                            dialogContext,
-                                          ); // ปิด Dialog
                                           ScaffoldMessenger.of(
                                             context,
                                           ).showSnackBar(

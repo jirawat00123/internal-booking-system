@@ -23,9 +23,9 @@ class Vehicle {
   final String type;
   final bool hasFutureBooking;
 
-  String get name => vehicleName; 
-  String? get imagePath => uploadUrl; 
-  int get capacity => seats; 
+  String get name => vehicleName;
+  String? get imagePath => uploadUrl;
+  int get capacity => seats;
 
   Vehicle({
     required this.id,
@@ -103,12 +103,12 @@ class VehiclePage extends StatefulWidget {
 }
 
 class _VehiclePageState extends State<VehiclePage> {
-  bool isLoading = true; 
-
+  bool isLoading = true;
+  String selectedFilterStatus = 'ALL'; // 🟢 เพิ่มตัวแปรสำหรับ Filter สถานะ
   @override
   void initState() {
     super.initState();
-    _fetchVehiclesFromApi(); 
+    _fetchVehiclesFromApi();
   }
 
   Future<void> _fetchVehiclesFromApi() async {
@@ -119,21 +119,27 @@ class _VehiclePageState extends State<VehiclePage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
-      
+
       final headers = {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ${token.trim()}',
       };
 
-      final vehicleFuture = http.get(Uri.parse('$baseUrl/api/vehicles'), headers: headers);
-      final bookingFuture = http.get(Uri.parse('$baseUrl/api/vehicle-bookings'), headers: headers);
+      final vehicleFuture = http.get(
+        Uri.parse('$baseUrl/api/vehicles'),
+        headers: headers,
+      );
+      final bookingFuture = http.get(
+        Uri.parse('$baseUrl/api/vehicle-bookings'),
+        headers: headers,
+      );
 
       final responses = await Future.wait([vehicleFuture, bookingFuture]);
 
       if (responses[0].statusCode == 200) {
         final decodedData = jsonDecode(responses[0].body);
         List<dynamic> vehicleData = [];
-        
+
         if (decodedData['success'] == true) {
           vehicleData = decodedData['data'];
         } else if (decodedData is List) {
@@ -142,7 +148,9 @@ class _VehiclePageState extends State<VehiclePage> {
           vehicleData = decodedData['data'];
         }
 
-        List<Vehicle> fetchedList = vehicleData.map((json) => Vehicle.fromJson(json)).toList();
+        List<Vehicle> fetchedList = vehicleData
+            .map((json) => Vehicle.fromJson(json))
+            .toList();
 
         if (responses[1].statusCode == 200) {
           final bData = jsonDecode(responses[1].body);
@@ -153,30 +161,48 @@ class _VehiclePageState extends State<VehiclePage> {
 
           for (int i = 0; i < fetchedList.length; i++) {
             var vehicle = fetchedList[i];
-            
+
             if (vehicle.status.toUpperCase() == 'MAINTENANCE') {
-               continue;
+              continue;
             }
 
             var vBookings = bookingsData.where((b) {
-              int bVid = int.tryParse(b['vehicleId']?.toString() ?? b['vehicle']?['id']?.toString() ?? '0') ?? 0;
+              int bVid =
+                  int.tryParse(
+                    b['vehicleId']?.toString() ??
+                        b['vehicle']?['id']?.toString() ??
+                        '0',
+                  ) ??
+                  0;
               return bVid == vehicle.id;
             }).toList();
 
             if (vBookings.isNotEmpty) {
               bool isInUse = vBookings.any((b) {
-                String s = (b['status'] ?? '').toString().toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+                String s = (b['status'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .replaceAll(' ', '_')
+                    .replaceAll('-', '_');
                 return s == 'in_use' || s == 'approved' || s == 'กำลังใช้งาน';
               });
 
               if (isInUse) {
                 fetchedList[i] = vehicle.copyWith(status: 'IN_USE');
-                continue; 
+                continue;
               }
 
               bool isReservedToday = vBookings.any((b) {
-                String s = (b['status'] ?? '').toString().toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
-                if (s == 'cancelled' || s == 'completed' || s == 'ยกเลิกแล้ว' || s == 'เสร็จสิ้น') return false;
+                String s = (b['status'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .replaceAll(' ', '_')
+                    .replaceAll('-', '_');
+                if (s == 'cancelled' ||
+                    s == 'completed' ||
+                    s == 'ยกเลิกแล้ว' ||
+                    s == 'เสร็จสิ้น')
+                  return false;
 
                 try {
                   String startStr = b['startDatetime'] ?? b['startDate'] ?? '';
@@ -185,11 +211,17 @@ class _VehiclePageState extends State<VehiclePage> {
 
                   DateTime start = DateTime.parse(startStr).toLocal();
                   DateTime end = DateTime.parse(endStr).toLocal();
-                  DateTime startDate = DateTime(start.year, start.month, start.day);
+                  DateTime startDate = DateTime(
+                    start.year,
+                    start.month,
+                    start.day,
+                  );
                   DateTime endDate = DateTime(end.year, end.month, end.day);
 
-                  if ((today.isAtSameMomentAs(startDate) || today.isAfter(startDate)) &&
-                      (today.isAtSameMomentAs(endDate) || today.isBefore(endDate))) {
+                  if ((today.isAtSameMomentAs(startDate) ||
+                          today.isAfter(startDate)) &&
+                      (today.isAtSameMomentAs(endDate) ||
+                          today.isBefore(endDate))) {
                     return true;
                   }
                 } catch (e) {
@@ -216,7 +248,11 @@ class _VehiclePageState extends State<VehiclePage> {
     }
   }
 
-  Future<void> _updateVehicleStatusQuickly(BuildContext dialogContext, Vehicle vehicle, String newStatus) async {
+  Future<void> _updateVehicleStatusQuickly(
+    BuildContext dialogContext,
+    Vehicle vehicle,
+    String newStatus,
+  ) async {
     final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
     final url = Uri.parse('$baseUrl/api/vehicles/${vehicle.id}');
 
@@ -224,41 +260,36 @@ class _VehiclePageState extends State<VehiclePage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 
-      var request = http.MultipartRequest('PUT', url);
-      request.headers['Authorization'] = 'Bearer ${token.trim()}';
-
-      request.fields['vehicleName'] = vehicle.vehicleName;
-      request.fields['plateNumber'] = vehicle.plate;
-      request.fields['capacity'] = vehicle.seats.toString();
-      request.fields['type'] = vehicle.type;
-      
-      request.fields['status'] = newStatus;
-
-      request.fields['plate'] = vehicle.plate;
-      request.fields['brand'] = vehicle.brand;
-      request.fields['model'] = vehicle.model;
-      request.fields['seats'] = vehicle.seats.toString();
-      request.fields['seatCount'] = vehicle.seats.toString();
-
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      // 🟢 ปรับไปใช้ PATCH ตาม Backend ของเรา
+      final patchUrl = Uri.parse('$baseUrl/api/vehicles/${vehicle.id}/status');
+      final response = await http.patch(
+        patchUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ${token.trim()}',
+        },
+        body: jsonEncode({'status': newStatus}),
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
-          Navigator.pop(dialogContext); 
+          Navigator.pop(dialogContext);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('เปลี่ยนสถานะรถเรียบร้อยแล้ว'),
               backgroundColor: Colors.green,
             ),
           );
-          _fetchVehiclesFromApi(); 
+          _fetchVehiclesFromApi();
         }
       } else {
         if (mounted) {
           Navigator.pop(dialogContext);
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('เกิดข้อผิดพลาดรหัส ${response.statusCode}'), backgroundColor: Colors.red),
+            SnackBar(
+              content: Text('เกิดข้อผิดพลาดรหัส ${response.statusCode}'),
+              backgroundColor: Colors.red,
+            ),
           );
         }
       }
@@ -266,7 +297,10 @@ class _VehiclePageState extends State<VehiclePage> {
       if (mounted) {
         Navigator.pop(dialogContext);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'), backgroundColor: Colors.red),
+          const SnackBar(
+            content: Text('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -281,10 +315,13 @@ class _VehiclePageState extends State<VehiclePage> {
     };
 
     String currentRawStatus = vehicle.status.trim().toUpperCase();
-    if (currentRawStatus == 'IN USE' || currentRawStatus == 'IN-USE') currentRawStatus = 'IN_USE';
+    if (currentRawStatus == 'IN USE' || currentRawStatus == 'IN-USE')
+      currentRawStatus = 'IN_USE';
     if (currentRawStatus == 'RESERVE') currentRawStatus = 'RESERVED';
-    
-    String selectedStatus = statusOptions.containsKey(currentRawStatus) ? currentRawStatus : 'AVAILABLE';
+
+    String selectedStatus = statusOptions.containsKey(currentRawStatus)
+        ? currentRawStatus
+        : 'AVAILABLE';
     bool isUpdating = false;
 
     showDialog(
@@ -322,7 +359,11 @@ class _VehiclePageState extends State<VehiclePage> {
                         children: [
                           const Row(
                             children: [
-                              Icon(Icons.swap_horiz, color: Color(0xFF009CB4), size: 28),
+                              Icon(
+                                Icons.swap_horiz,
+                                color: Color(0xFF009CB4),
+                                size: 28,
+                              ),
                               SizedBox(width: 8),
                               Text(
                                 'เปลี่ยนสถานะด่วน',
@@ -348,14 +389,21 @@ class _VehiclePageState extends State<VehiclePage> {
                           DropdownButtonFormField<String>(
                             value: selectedStatus,
                             decoration: InputDecoration(
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(color: Colors.grey.shade300),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(10),
-                                borderSide: BorderSide(color: Colors.grey.shade300),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
                               ),
                               filled: true,
                               fillColor: Colors.white,
@@ -363,7 +411,10 @@ class _VehiclePageState extends State<VehiclePage> {
                             items: statusOptions.entries.map((entry) {
                               return DropdownMenuItem<String>(
                                 value: entry.key,
-                                child: Text(entry.value, style: const TextStyle(fontFamily: 'Kanit')),
+                                child: Text(
+                                  entry.value,
+                                  style: const TextStyle(fontFamily: 'Kanit'),
+                                ),
                               );
                             }).toList(),
                             onChanged: (newValue) {
@@ -379,11 +430,17 @@ class _VehiclePageState extends State<VehiclePage> {
                                 child: ElevatedButton(
                                   onPressed: () {
                                     setStateDialog(() => isUpdating = true);
-                                    _updateVehicleStatusQuickly(dialogContext, vehicle, selectedStatus);
+                                    _updateVehicleStatusQuickly(
+                                      dialogContext,
+                                      vehicle,
+                                      selectedStatus,
+                                    );
                                   },
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF009CB4), 
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    backgroundColor: const Color(0xFF009CB4),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                     ),
@@ -405,7 +462,9 @@ class _VehiclePageState extends State<VehiclePage> {
                                   onPressed: () => Navigator.pop(dialogContext),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.grey.shade300,
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 12,
+                                    ),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(10),
                                     ),
@@ -452,8 +511,8 @@ class _VehiclePageState extends State<VehiclePage> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         if (mounted) {
-          Navigator.pop(dialogContext); 
-          _fetchVehiclesFromApi(); 
+          Navigator.pop(dialogContext);
+          _fetchVehiclesFromApi();
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -514,7 +573,11 @@ class _VehiclePageState extends State<VehiclePage> {
                 const SizedBox(height: 8),
                 const Text(
                   'รถคันนี้มีรายการจองในอนาคต\nโปรดยกเลิกการจองก่อนทำการลบ',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF003E75), fontFamily: 'Kanit'),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF003E75),
+                    fontFamily: 'Kanit',
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
@@ -625,7 +688,7 @@ class _VehiclePageState extends State<VehiclePage> {
                                     _deleteVehicleFromApi(
                                       dialogContext,
                                       vehicle.id,
-                                    ); 
+                                    );
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFFB20000),
@@ -719,7 +782,7 @@ class _VehiclePageState extends State<VehiclePage> {
                       builder: (context) => const AddVehiclePage(),
                     ),
                   ).then((value) {
-                    _fetchVehiclesFromApi(); 
+                    _fetchVehiclesFromApi();
                   });
                 },
                 icon: const Icon(Icons.add, color: Colors.white),
@@ -742,6 +805,72 @@ class _VehiclePageState extends State<VehiclePage> {
             ),
             const SizedBox(height: 16),
 
+            // 🟢 เพิ่ม UI สำหรับ Filter สถานะรถ (Checklist Week 14)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                const Text(
+                  'กรองสถานะ: ',
+                  style: TextStyle(
+                    fontFamily: 'Kanit',
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF003E75),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DropdownButton<String>(
+                  value: selectedFilterStatus,
+                  underline: Container(
+                    height: 2,
+                    color: const Color(0xFF003E75),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'ALL',
+                      child: Text(
+                        'ทั้งหมด (All)',
+                        style: TextStyle(fontFamily: 'Kanit'),
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'AVAILABLE',
+                      child: Text(
+                        'ว่าง (Available)',
+                        style: TextStyle(fontFamily: 'Kanit'),
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'RESERVED',
+                      child: Text(
+                        'ถูกจอง (Reserved)',
+                        style: TextStyle(fontFamily: 'Kanit'),
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'IN_USE',
+                      child: Text(
+                        'กำลังใช้งาน (In Use)',
+                        style: TextStyle(fontFamily: 'Kanit'),
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'MAINTENANCE',
+                      child: Text(
+                        'ส่งซ่อม (Maintenance)',
+                        style: TextStyle(fontFamily: 'Kanit'),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      selectedFilterStatus = value!;
+                    });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
             Expanded(
               child: isLoading
                   ? const Center(
@@ -752,9 +881,21 @@ class _VehiclePageState extends State<VehiclePage> {
                   : ValueListenableBuilder<List<Vehicle>>(
                       valueListenable: globalVehicles,
                       builder: (context, vehicles, child) {
-                        List<Vehicle> activeVehicles = vehicles
-                            .where((v) => !v.isDeleted)
-                            .toList();
+                        // 🟢 นำเงื่อนไข Filter มาใช้ในการกรองข้อมูลก่อนแสดงผล
+                        List<Vehicle> activeVehicles = vehicles.where((v) {
+                          if (v.isDeleted) return false;
+                          if (selectedFilterStatus == 'ALL') return true;
+
+                          // จัดฟอร์แมตสถานะให้ตรงกับ Dropdown เพื่อใช้ตรวจสอบ
+                          String rawStatus = v.status.trim().toUpperCase();
+                          if (rawStatus == 'IN USE' ||
+                              rawStatus == 'IN-USE' ||
+                              rawStatus == 'กำลังใช้งาน')
+                            rawStatus = 'IN_USE';
+                          if (rawStatus == 'RESERVE') rawStatus = 'RESERVED';
+
+                          return rawStatus == selectedFilterStatus;
+                        }).toList();
 
                         if (activeVehicles.isEmpty) {
                           return Column(
@@ -808,25 +949,31 @@ class _VehiclePageState extends State<VehiclePage> {
   Widget _buildVehicleCard(Vehicle vehicle) {
     String rawStatus = vehicle.status.trim().toUpperCase();
     String displayStatus = 'Available';
-    Color statusColor = const Color(0xFF10B981); 
+    Color statusColor = const Color(0xFF10B981);
     Color statusBgColor = const Color(0xFFD1FAE5);
 
     if (rawStatus == 'MAINTENANCE') {
       displayStatus = 'Maintenance';
-      statusColor = const Color(0xFFE65100); 
-      statusBgColor = const Color(0xFFFFF3E0); 
-    } else if (rawStatus == 'IN_USE' || rawStatus == 'IN USE' || rawStatus == 'IN-USE' || rawStatus == 'กำลังใช้งาน') {
+      statusColor = const Color(0xFFE65100);
+      statusBgColor = const Color(0xFFFFF3E0);
+    } else if (rawStatus == 'IN_USE' ||
+        rawStatus == 'IN USE' ||
+        rawStatus == 'IN-USE' ||
+        rawStatus == 'กำลังใช้งาน') {
       displayStatus = 'In Use';
-      statusColor = const Color(0xFFEF4444); 
-      statusBgColor = const Color(0xFFFEE2E2); 
-    } else if (rawStatus == 'RESERVED' || rawStatus == 'RESERVE' || rawStatus == 'PENDING' || rawStatus == 'จองแล้ว') {
+      statusColor = const Color(0xFFEF4444);
+      statusBgColor = const Color(0xFFFEE2E2);
+    } else if (rawStatus == 'RESERVED' ||
+        rawStatus == 'RESERVE' ||
+        rawStatus == 'PENDING' ||
+        rawStatus == 'จองแล้ว') {
       displayStatus = 'Reserve';
-      statusColor = const Color(0xFFF59E0B); 
-      statusBgColor = const Color(0xFFFEF3C7); 
+      statusColor = const Color(0xFFF59E0B);
+      statusBgColor = const Color(0xFFFEF3C7);
     } else {
       displayStatus = 'Available';
-      statusColor = const Color(0xFF10B981); 
-      statusBgColor = const Color(0xFFD1FAE5); 
+      statusColor = const Color(0xFF10B981);
+      statusBgColor = const Color(0xFFD1FAE5);
     }
 
     return Card(
@@ -835,9 +982,9 @@ class _VehiclePageState extends State<VehiclePage> {
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade200, width: 1), 
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
       ),
-      elevation: 0, 
+      elevation: 0,
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -925,7 +1072,11 @@ class _VehiclePageState extends State<VehiclePage> {
 
                 Text(
                   vehicle.plate,
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600, fontFamily: 'Kanit'),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade600,
+                    fontFamily: 'Kanit',
+                  ),
                 ),
                 const SizedBox(height: 12),
 
@@ -959,7 +1110,10 @@ class _VehiclePageState extends State<VehiclePage> {
                       ),
                       child: const Text(
                         'เปลี่ยนสถานะ',
-                        style: TextStyle(color: Color(0xFF009CB4), fontFamily: 'Kanit'),
+                        style: TextStyle(
+                          color: Color(0xFF009CB4),
+                          fontFamily: 'Kanit',
+                        ),
                       ),
                     ),
 
@@ -988,7 +1142,10 @@ class _VehiclePageState extends State<VehiclePage> {
                           ),
                           child: const Text(
                             'แก้ไข',
-                            style: TextStyle(color: Colors.white, fontFamily: 'Kanit'),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'Kanit',
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1009,7 +1166,10 @@ class _VehiclePageState extends State<VehiclePage> {
                           ),
                           child: const Text(
                             'ลบ',
-                            style: TextStyle(color: Colors.white, fontFamily: 'Kanit'),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'Kanit',
+                            ),
                           ),
                         ),
                       ],

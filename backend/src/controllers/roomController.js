@@ -123,7 +123,8 @@ exports.createRoom = async (req, res, next) => {
   try {
     const { roomName, capacity, location, status } = req.body;
     // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่ง URL/Path มาใน req.body
-    const uploadUrl = req.file ? `/uploads/${req.file.filename}` : req.body.uploadUrl || null;
+    // 🟢 แก้ไข Path ให้ตรงกับโฟลเดอร์ uploads/rooms
+    const uploadUrl = req.file ? `/uploads/rooms/${req.file.filename}` : req.body.uploadUrl || null;
 
     if (!roomName || !capacity) {
       return res.status(400).json({
@@ -153,8 +154,9 @@ exports.createRoom = async (req, res, next) => {
       },
     });
 
-    // 🟢 บันทึก AuditLog เมื่อสร้างห้องประชุมสำเร็จ
-    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    // 🟢 บันทึก AuditLog เมื่อสร้างห้องประชุมสำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
+    const rawUserId = req.user?.id || req.user?.userId;
+    const userId = rawUserId ? parseInt(rawUserId, 10) : null;
     if (userId) {
       await prisma.auditLog.create({
         data: {
@@ -203,7 +205,8 @@ exports.updateRoom = async (req, res, next) => {
     }
 
     if (req.file) {
-      uploadUrl = `/uploads/${req.file.filename}`;
+      // 🟢 แก้ไข Path ให้ตรงกับโฟลเดอร์ uploads/rooms
+      uploadUrl = `/uploads/rooms/${req.file.filename}`;
     } else if (req.body.uploadUrl) {
       uploadUrl = req.body.uploadUrl;
     }
@@ -243,12 +246,13 @@ exports.updateRoom = async (req, res, next) => {
     if (uploadUrl) updateData.uploadUrl = uploadUrl;
 
     const updatedRoom = await prisma.room.update({
-      where: { id: parseInt(id) },
+      where: { id: roomId },
       data: updateData,
     });
 
-    // 🟢 บันทึก AuditLog เมื่ออัปเดตข้อมูลห้องประชุมสำเร็จ
-    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    // 🟢 บันทึก AuditLog เมื่ออัปเดตข้อมูลห้องประชุมสำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
+    const rawUserId = req.user?.id || req.user?.userId;
+    const userId = rawUserId ? parseInt(rawUserId, 10) : null;
     if (userId) {
       await prisma.auditLog.create({
         data: {
@@ -293,11 +297,12 @@ exports.updateRoomStatus = async (req, res, next) => {
     }
 
     // Validation ID
-    if (isNaN(parseInt(id, 10))) {
+    const roomId = parseInt(id, 10);
+    if (isNaN(roomId)) {
       return res.status(400).json({ success: false, message: 'ID ของห้องประชุมไม่ถูกต้อง' });
     }
 
-    const room = await prisma.room.findFirst({ where: { id: parseInt(id, 10), isDeleted: false } });
+    const room = await prisma.room.findFirst({ where: { id: roomId, isDeleted: false } });
     if (!room) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลห้องประชุม' });
 
     // 🟢 2. ปรับเงื่อนไข: บล็อกเฉพาะเวลาจะซ่อมแซมหรือปิดใช้งาน หากยังมีคิวจองล่วงหน้าค้างอยู่
@@ -312,12 +317,13 @@ exports.updateRoomStatus = async (req, res, next) => {
     }
 
     const updatedRoom = await prisma.room.update({
-      where: { id: parseInt(id, 10) },
+      where: { id: roomId },
       data: { status }
     });
 
-    // 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะสำเร็จ
-    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    // 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะสำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
+    const rawUserId = req.user?.id || req.user?.userId;
+    const userId = rawUserId ? parseInt(rawUserId, 10) : null;
     if (userId) {
       await prisma.auditLog.create({
         data: {
@@ -368,8 +374,9 @@ exports.deleteRoom = async (req, res, next) => {
       },
     });
 
-    // 🟢 บันทึก AuditLog เมื่อ Soft Delete สำเร็จ
-    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    // 🟢 บันทึก AuditLog เมื่อ Soft Delete สำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
+    const rawUserId = req.user?.id || req.user?.userId;
+    const userId = rawUserId ? parseInt(rawUserId, 10) : null;
     if (userId) {
       await prisma.auditLog.create({
         data: {

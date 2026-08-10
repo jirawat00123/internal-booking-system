@@ -128,6 +128,236 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     }
   }
 
+  // 🟢 ฟังก์ชันยิง API อัปเดตสถานะห้องประชุม (PATCH /api/rooms/:id/status)
+  Future<void> _updateRoomStatusQuickly(
+    BuildContext dialogContext,
+    MeetingRoom room,
+    String newStatus,
+  ) async {
+    final String baseUrl = kIsWeb
+        ? 'http://localhost:3001'
+        : 'http://10.0.2.2:3001';
+    final url = Uri.parse('$baseUrl/api/rooms/${room.id}/status');
+
+    try {
+      String? token = await AuthService.instance.getToken();
+      final response = await http.patch(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'status': newStatus}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        if (mounted) {
+          Navigator.pop(dialogContext);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'เปลี่ยนสถานะห้องประชุมเรียบร้อยแล้ว',
+                style: TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.green,
+            ),
+          );
+          loadRooms();
+        }
+      } else {
+        if (mounted) {
+          Navigator.pop(dialogContext);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'เกิดข้อผิดพลาด: ${response.statusCode}',
+                style: const TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(dialogContext);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'เกิดข้อผิดพลาดในการเชื่อมต่อเครือข่าย',
+              style: TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    }
+  }
+
+  // 🟢 แสดง Dialog เลือกสถานะห้องประชุม
+  void _showQuickStatusDialog(BuildContext context, MeetingRoom room) {
+    final Map<String, String> statusOptions = {
+      'AVAILABLE': 'ว่างพร้อมใช้งาน (Available)',
+      'RESERVED': 'ถูกจองแล้ว (Reserved)',
+      'IN_USE': 'กำลังใช้งาน (In Use)',
+    };
+
+    String selectedStatus = statusOptions.containsKey(room.status)
+        ? room.status
+        : 'AVAILABLE';
+    bool isUpdating = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              backgroundColor: Colors.white,
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: isUpdating
+                    ? const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Color(0xFF009CB4)),
+                          SizedBox(height: 20),
+                          Text(
+                            'กำลังอัปเดตสถานะ...',
+                            style: TextStyle(
+                              color: Color(0xFF009CB4),
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(
+                                Icons.swap_horiz,
+                                color: Color(0xFF009CB4),
+                                size: 28,
+                              ),
+                              SizedBox(width: 8),
+                              Text(
+                                'เปลี่ยนสถานะด่วน',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0D47A1),
+                                  fontFamily: 'Kanit',
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'ห้อง: ${room.roomName}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.black87,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<String>(
+                            value: selectedStatus,
+                            decoration: InputDecoration(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              filled: true,
+                              fillColor: Colors.white,
+                            ),
+                            items: statusOptions.entries.map((entry) {
+                              return DropdownMenuItem<String>(
+                                value: entry.key,
+                                child: Text(
+                                  entry.value,
+                                  style: const TextStyle(fontFamily: 'Kanit'),
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (newValue) {
+                              setStateDialog(() {
+                                selectedStatus = newValue!;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    setStateDialog(() => isUpdating = true);
+                                    _updateRoomStatusQuickly(
+                                      dialogContext,
+                                      room,
+                                      selectedStatus,
+                                    );
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF009CB4),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'บันทึก',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontFamily: 'Kanit',
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton(
+                                  onPressed: () => Navigator.pop(dialogContext),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.grey.shade300,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'ยกเลิก',
+                                    style: TextStyle(
+                                      color: Colors.black87,
+                                      fontFamily: 'Kanit',
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> loadRooms() async {
     try {
       // 💡 ปรับ Base URL ให้รองรับ Web และ Emulator อัตโนมัติ (พอร์ต 3001)
@@ -416,11 +646,11 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
   Widget _buildRoomCard(MeetingRoom room, int index) {
     Color statusColor;
     if (room.status == 'AVAILABLE') {
-      statusColor = const Color(0xFF2EC4B6); 
+      statusColor = const Color(0xFF2EC4B6);
     } else if (room.status == 'RESERVED') {
-      statusColor = const Color(0xFFF59E0B); 
+      statusColor = const Color(0xFFF59E0B);
     } else {
-      statusColor = const Color(0xFFE11D48); 
+      statusColor = const Color(0xFFE11D48);
     }
 
     return Container(
@@ -439,7 +669,8 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch, // ขยายให้เต็มความกว้างการ์ด
+        crossAxisAlignment:
+            CrossAxisAlignment.stretch, // ขยายให้เต็มความกว้างการ์ด
         children: [
           // 📸 1. ส่วนรูปภาพและป้ายสถานะ (จัดแบบ Flat ไม่ซ้อนทับเนื้อหาด้านล่าง)
           Stack(
@@ -531,15 +762,12 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 12),
-                
+
                 // ไอคอนสถานที่ และ จำนวนคน
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildIconDetail(
-                      Icons.location_on_outlined,
-                      room.location,
-                    ),
+                    _buildIconDetail(Icons.location_on_outlined, room.location),
                     const SizedBox(width: 16),
                     _buildIconDetail(
                       Icons.people_outline,
@@ -548,7 +776,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                
+
                 // ป้าย Tag เรียงตรงกลาง (ใช้ Wrap เผื่อป้ายยาวจะได้ไม่ล้นจอ)
                 Wrap(
                   alignment: WrapAlignment.center,
@@ -562,33 +790,79 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // 🟢 ส่วนล่างสุด: ปุ่มแก้ไขและลบห้อง
+                // 🟢 ส่วนล่างสุด: ปุ่มเปลี่ยนสถานะ, แก้ไข และ ลบห้อง
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: _buildActionButton(
-                        'แก้ไขห้อง',
-                        const Color(0xFF009CB4), // สีฟ้าอมเขียว
-                        () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => MobileFrameEditRoomContainer(
-                                room: room,
-                                index: index,
-                              ),
-                            ),
-                          ).then((_) => setState(() {}));
-                        },
+                    // ปุ่มเปลี่ยนสถานะด่วน
+                    OutlinedButton(
+                      onPressed: () => _showQuickStatusDialog(context, room),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Color(0xFF009CB4)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                      ),
+                      child: const Text(
+                        'เปลี่ยนสถานะ',
+                        style: TextStyle(
+                          color: Color(0xFF009CB4),
+                          fontFamily: 'Kanit',
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildActionButton(
-                        'ลบห้อง',
-                        const Color(0xFFC60000), // สีแดง
-                        () => _showDeleteConfirmDialog(index),
-                      ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    MobileFrameEditRoomContainer(
+                                      room: room,
+                                      index: index,
+                                    ),
+                              ),
+                            ).then((_) => setState(() {}));
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF009CB4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          child: const Text(
+                            'แก้ไข',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        ElevatedButton(
+                          onPressed: () => _showDeleteConfirmDialog(index),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFC60000),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                          ),
+                          child: const Text(
+                            'ลบ',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
