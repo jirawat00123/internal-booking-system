@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'digitel.dart';
 import 'AdminGroupPage.dart';
 import '../Security/SecurityGroupPage.dart';
@@ -177,11 +178,16 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
       if (response.statusCode == 200 && data['success'] == true) {
         final prefs = await SharedPreferences.getInstance();
 
-        // 🟢 แก้ไข: บันทึกด้วย key 'token' (และบันทึกข้อมูลอื่นที่จำเป็นลงไปด้วย)
+        // 🟢 แก้ไข: บันทึกทั้ง SharedPreferences และ FlutterSecureStorage
         if (data['token'] != null) {
-          await prefs.setString('token', data['token']);
-          // หากแอปคุณต้องการใช้ key 'jwt_token' ด้วย ให้บันทึกคู่กันไปเลยเพื่อความชัวร์
-          await prefs.setString('jwt_token', data['token']);
+          final String tokenValue = data['token'];
+          await prefs.setString('token', tokenValue);
+          await prefs.setString('jwt_token', tokenValue);
+
+          // 🔑 เพิ่มการบันทึกลง SecureStorage ให้ DashboardService อ่านค่าได้
+          const storage = FlutterSecureStorage();
+          await storage.write(key: 'jwt_token', value: tokenValue);
+          await storage.write(key: 'token', value: tokenValue);
         }
 
         // 🟢 แก้ไข: ดึงข้อมูลจาก Object 'user' ที่ Backend ส่งมา
@@ -200,6 +206,12 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
         // อ่านค่า userId
         if (userObj != null && userObj['id'] != null) {
           await prefs.setInt('userId', userObj['id']);
+        }
+
+        // 🟢 เพิ่มการจัดเก็บ permissions ถ้า Backend ส่งมาด้วย
+        final permissions = data['permissions'] ?? userObj?['permissions'];
+        if (permissions != null) {
+          await prefs.setString('permissions', json.encode(permissions));
         }
 
         Widget nextPage;

@@ -286,8 +286,29 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                   }
                 }
 
-                final isoStart = convertToIso(startDate, timeRange);
-                final isoEnd = convertToIso(endDate, timeRange);
+                // 💡 1. แยกเวลาใช้งาน และกำหนดเวลาคืนรถอัตโนมัติ (เนื่องจากตัดเวลาคืนออกจากหน้า UI)
+                String startTimeStr = timeRange;
+                String endTimeStr =
+                    '18:00'; // ตั้งเวลาคืนรถเริ่มต้นเป็น 18:00 น.
+
+                if (timeRange.contains('-')) {
+                  final parts = timeRange.split('-');
+                  startTimeStr = parts[0].trim();
+                  endTimeStr = parts[1].trim();
+                }
+
+                final isoStart = convertToIso(startDate, startTimeStr);
+                String isoEnd = convertToIso(endDate, endTimeStr);
+
+                // 💡 2. ตรวจสอบให้แน่ใจว่าเวลาคืนรถ (End) มากกว่าเวลาเริ่ม (Start) เสมอ
+                DateTime dtStart = DateTime.parse(isoStart);
+                DateTime dtEnd = DateTime.parse(isoEnd);
+                if (!dtEnd.isAfter(dtStart)) {
+                  // ถ้าเวลาจบดันน้อยกว่าหรือเท่ากับเวลาเริ่ม ให้ทดเวลาจบไปอีก 4 ชั่วโมงอัตโนมัติ
+                  isoEnd = dtStart
+                      .add(const Duration(hours: 4))
+                      .toIso8601String();
+                }
 
                 // 📦 3. จุดสำคัญ: ยัด userId ลงไปในก้อนข้อมูลด้วย!
                 final Map<String, dynamic> bodyData = {
@@ -302,6 +323,11 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                   "driverType": driverType,
                 };
 
+                // 💡 1. แทรก Print ตรวจสอบข้อมูลที่กำลังจะส่ง
+                print('--- DEBUG POST REQUEST ---');
+                print('URL: http://localhost:3001/api/vehicle-bookings');
+                print('Body: ${jsonEncode(bodyData)}');
+
                 final response = await http.post(
                   Uri.parse('http://localhost:3001/api/vehicle-bookings'),
                   headers: {
@@ -310,6 +336,11 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                   },
                   body: jsonEncode(bodyData),
                 );
+
+                // 💡 2. แทรก Print ตรวจสอบข้อความที่ Backend ฟ้องกลับมา
+                print('--- DEBUG POST RESPONSE ---');
+                print('Status Code: ${response.statusCode}');
+                print('Response Body: ${response.body}');
 
                 if (!context.mounted) return;
                 Navigator.pop(context);
@@ -477,11 +508,13 @@ class VehicleBookingConfirmPage extends StatelessWidget {
   }
 
   Widget _buildStepLine({required bool isActive}) {
-    return Container(
-      margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
-      width: 80,
-      height: 2,
-      color: isActive ? const Color(0xFF009CB4) : const Color(0xFF009CB4),
+    return Expanded(
+      // 💡 ใช้ Expanded เพื่อให้เส้นยืดหดตามขนาดหน้าจอมือถืออัตโนมัติ
+      child: Container(
+        margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
+        height: 2,
+        color: isActive ? const Color(0xFF009CB4) : const Color(0xFF009CB4),
+      ),
     );
   }
 }

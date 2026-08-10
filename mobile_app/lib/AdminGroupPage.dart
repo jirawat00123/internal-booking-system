@@ -168,6 +168,15 @@ class AdminGroupPage extends StatelessWidget {
                             );
                           },
                         ),
+                        const SizedBox(height: 16),
+
+                        AdminMenuCard(
+                          icon: Icons.dashboard_outlined,
+                          title: 'แดชบอร์ดและรายงาน',
+                          onTap: () {
+                            Navigator.pushNamed(context, '/dashboard');
+                          },
+                        ),
 
                         // นำไปวางต่อจากปุ่มสุดท้าย (ก่อนถึงข้อความลิขสิทธิ์ด้านล่าง)
                         Center(

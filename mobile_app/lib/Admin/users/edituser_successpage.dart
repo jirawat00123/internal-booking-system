@@ -28,7 +28,7 @@ class EditUserSuccessPage extends StatelessWidget {
 
               // 📝 ข้อความสำเร็จ
               const Text(
-                'แก้ไขข้อมูลพนักงานสำเร็จ',
+                'แก้ไขข้อมูลผู้ใช้งานสำเร็จ',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,
@@ -52,7 +52,7 @@ class EditUserSuccessPage extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'กลับไปหน้าจัดการพนักงาน',
+                    'กลับไปหน้าจัดการผู้ใช้งาน',
                     style: TextStyle(
                       color: Color(0xFF1E2433),
                       fontSize: 14,

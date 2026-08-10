@@ -27,6 +27,8 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController nameController;
   late TextEditingController plateController;
+  late TextEditingController
+  provinceController; // 🟢 เพิ่ม Controller สำหรับจังหวัด (Week 14)
 
   late String currentStatus;
   late int passengerCount;
@@ -45,6 +47,9 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     // 🟢 ดึงข้อมูลเดิมจากหน้าต่างที่แล้วมาใส่ใน Controller
     nameController = TextEditingController(text: widget.vehicle.vehicleName);
     plateController = TextEditingController(text: widget.vehicle.plate);
+    provinceController = TextEditingController(
+      text: '',
+    ); // 🟢 กำหนดค่าเริ่มต้นจังหวัด
     currentStatus = widget.vehicle.status;
     passengerCount = widget.vehicle.seats;
   }
@@ -53,6 +58,7 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
   void dispose() {
     nameController.dispose();
     plateController.dispose();
+    provinceController.dispose(); // 🟢 คืนหน่วยความจำ
     super.dispose();
   }
 
@@ -127,8 +133,14 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
       request.fields['type'] = 'CAR';
       request.fields['status'] = currentStatus;
 
-      // ส่งคีย์ตัวช่วยเพื่อกัน Error จากด่านตรวจ Backend
+      // ส่งคีย์ตัวช่วยเพื่อกัน Error จากด่านตรวจ Backend (รองรับ Database Checklist Week 14)
       request.fields['plate'] = plateText;
+      request.fields['license_plate'] =
+          plateText; // 🟢 ฟิลด์ทะเบียนตรงตาม Schema DB
+      request.fields['vehicle_name'] =
+          fullName; // 🟢 ฟิลด์ชื่อรถตรงตาม Schema DB
+      request.fields['province'] = provinceController.text
+          .trim(); // 🟢 ฟิลด์จังหวัด
       request.fields['brand'] = brandStr;
       request.fields['model'] = modelStr;
       request.fields['seats'] = passengerCount.toString();
@@ -554,16 +566,26 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
                         isRequired: true,
                       ),
                       const SizedBox(height: 24),
-                      Center(
-                        child: SizedBox(
-                          width: 200,
-                          child: _buildTextField(
-                            label: 'ทะเบียนรถ',
-                            controller: plateController,
-                            hint: 'กข 1234',
-                            isRequired: true,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              label: 'ทะเบียนรถ',
+                              controller: plateController,
+                              hint: 'กข 1234',
+                              isRequired: true,
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildTextField(
+                              label: 'จังหวัด',
+                              controller: provinceController,
+                              hint: 'กรุงเทพมหานคร',
+                              isRequired: false,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 24),
                       Divider(color: Colors.indigo.shade50, thickness: 1.5),

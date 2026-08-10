@@ -23,7 +23,7 @@ class ResetPinDialog extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Reset รหัสผ่านพนักงาน',
+                'Reset รหัสผ่านผู้ใช้งาน',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,

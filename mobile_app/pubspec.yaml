@@ -15,9 +15,12 @@ dependencies:
   cupertino_icons: ^1.0.8
   image_picker: ^1.2.2
   http: ^1.6.0
-  shared_preferences: ^2.5.5 # <--- เก็บเวอร์ชันล่าสุดไว้บรรทัดเดียว
+  shared_preferences: ^2.5.5
   file_picker: ^11.0.2
   flutter_secure_storage: ^10.3.1
+  fl_chart: ^0.68.0
+  url_launcher: ^6.3.2
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui'; // สำหรับทำภาพเบลอ (BackdropFilter)
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // 🔗 Import ไฟล์ที่แยกไว้
 import 'add_user_page.dart';
@@ -41,19 +42,29 @@ class _UsersPageState extends State<UsersPage> {
     }
   }
 
-  // 🟢 2. GET /api/employees จาก Backend
+  // 🟢 2. GET /api/users จาก Backend (แก้ไข Endpoint ให้ตรงกับ Controller)
   Future<void> _fetchEmployees() async {
     try {
-      final response = await http.get(Uri.parse('$_baseUrl/api/employees'));
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token') ?? prefs.getString('accessToken');
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/api/users'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
 
       // 🚨 [STEP 8 EVIDENCE LOG - FLUTTER]
-      print("[Employee API] GET /api/employees");
+      print("[User API] GET /api/users");
       print(response.statusCode);
       print(response.body);
 
       if (response.statusCode == 200) {
         final body = json.decode(response.body);
         if (body['success'] == true && body['data'] != null) {
+          if (!mounted) return; // 👈 เช็คสถานะ Widget ก่อนอัปเดต State
           setState(() {
             _employees = (body['data'] as List)
                 .map((json) => Employee.fromJson(json))
@@ -85,6 +96,7 @@ class _UsersPageState extends State<UsersPage> {
               deptList.add(item['departmentName']);
             }
           }
+          if (!mounted) return; // 👈 เช็คสถานะ Widget ก่อนอัปเดต State
           setState(() {
             _departments = deptList;
           });
@@ -112,7 +124,7 @@ class _UsersPageState extends State<UsersPage> {
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.3),
-      builder: (context) {
+      builder: (dialogContext) {
         return BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
           child: Dialog(
@@ -167,15 +179,25 @@ class _UsersPageState extends State<UsersPage> {
                             onPressed: _isDeleting
                                 ? null
                                 : () async {
-                                    Navigator.pop(context); // ปิด Dialog
+                                    Navigator.pop(dialogContext); // ปิด Dialog
                                     setState(() => _isLoading = true);
 
                                     try {
-                                      // 🟢 สั่งลบข้อมูลผ่าน HTTP DELETE API จริง
+                                      // 🟢 สั่งลบข้อมูลผ่าน HTTP DELETE API ของ Users
+                                      final prefs =
+                                          await SharedPreferences.getInstance();
+                                      final token =
+                                          prefs.getString('token') ??
+                                          prefs.getString('accessToken');
+
                                       final response = await http.delete(
                                         Uri.parse(
-                                          '$_baseUrl/api/employees/${emp.id}',
+                                          '$_baseUrl/api/users/${emp.id}',
                                         ),
+                                        headers: {
+                                          'Content-Type': 'application/json',
+                                          'Authorization': 'Bearer $token',
+                                        },
                                       );
 
                                       print(
@@ -245,7 +267,7 @@ class _UsersPageState extends State<UsersPage> {
                         child: SizedBox(
                           height: 46,
                           child: ElevatedButton(
-                            onPressed: () => Navigator.pop(context),
+                            onPressed: () => Navigator.pop(dialogContext),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF009CB4),
                               shape: RoundedRectangleBorder(
@@ -528,7 +550,8 @@ class _UsersPageState extends State<UsersPage> {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          'รหัส: ${emp.employeeCode}\nแผนก: ${emp.departmentName}',
+                                          // 🟢 เพิ่มการแสดงสิทธิ์ (Role) ตาม Checklist
+                                          'รหัส: ${emp.employeeCode}\nแผนก: ${emp.departmentName}\nสิทธิ์: ${emp.role ?? 'USER'}',
                                           style: TextStyle(
                                             color: Colors.grey.shade600,
                                             fontSize: 13,

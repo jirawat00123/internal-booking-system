@@ -9,6 +9,7 @@ const fs = require('fs');
 const authMiddleware = require('../middlewares/auth');
 const verifyToken = authMiddleware.verifyToken;
 const requireRole = authMiddleware.requireRole;
+const isAdmin = authMiddleware.isAdmin; // ✅ นำเข้า isAdmin สำหรับสิทธิ์ Admin Management Module (Week 14)
 
 // นำเข้า Controller
 // นำเข้า Controller
@@ -85,9 +86,9 @@ const upload = multer({
 // 🚗 แมปปิ้งเส้นทาง API ไปยัง Controller (ผ่านตัวกรองตรวจสอบบั๊ก)
 // ==========================================
 
-// 💡 1. ปลดล็อก GET (ดึงข้อมูลรถทั้งหมด) เพื่อให้ User ทั่วไปเข้าดูได้โดยไม่ต้องมี Token
-// 💡 1. ปลดล็อก GET (ดึงข้อมูลรถทั้งหมด) เพื่อให้ User ทั่วไปเข้าดูได้โดยไม่ต้องมี Token
+// 🔒 บังคับตรวจสอบ Token (Guest & User: Read Only)
 router.get('/', 
+    checkHandler(verifyToken, 'verifyToken'),
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
 );
 
@@ -108,28 +109,36 @@ router.get('/history',
 // 🔒 เพิ่มข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
 router.post('/', 
     checkHandler(verifyToken, 'verifyToken'), 
-    checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
+    checkHandler(isAdmin, 'isAdmin'), 
     upload.single('image'), 
     checkHandler(vehicleController.createVehicle, 'vehicleController.createVehicle')
 );
 
-// 💡 2. ปลดล็อก GET by ID (ดึงข้อมูลรถแต่ละคัน) ให้ User เข้าดูได้
+// 🔒 บังคับตรวจสอบ Token (Guest & User: Read Only)
 router.get('/:id', 
+    checkHandler(verifyToken, 'verifyToken'),
     checkHandler(vehicleController.getVehicleById, 'vehicleController.getVehicleById')
 );
 
 // 🔒 แก้ไขข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
 router.put('/:id', 
     checkHandler(verifyToken, 'verifyToken'), 
-    checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
+    checkHandler(isAdmin, 'isAdmin'), 
     upload.single('image'), 
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
+);
+
+// 🔒 เปลี่ยนสถานะรถ (ตาม Checklist Week 14: PATCH /vehicles/:id/status)
+router.patch('/:id/status', 
+    checkHandler(verifyToken, 'verifyToken'), 
+    checkHandler(isAdmin, 'isAdmin'), 
+    checkHandler(vehicleController.updateVehicleStatus, 'vehicleController.updateVehicleStatus')
 );
 
 // 🔒 ลบข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
 router.delete('/:id', 
     checkHandler(verifyToken, 'verifyToken'), 
-    checkHandler(requireRole ? requireRole(['ADMIN']) : null, 'requireRole'), 
+    checkHandler(isAdmin, 'isAdmin'), 
     checkHandler(vehicleController.deleteVehicle, 'vehicleController.deleteVehicle')
 );
 

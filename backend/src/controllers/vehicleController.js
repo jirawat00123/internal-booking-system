@@ -18,11 +18,68 @@ const safeDeleteFile = async (filePath) => {
 // 1. ดึงข้อมูลรถยนต์ทั้งหมด
 exports.getVehicles = async (req, res) => {
     try {
-        const vehicles = await prisma.vehicle.findMany({
-            where: { isDeleted: false },
-            orderBy: { createdAt: 'desc' }
+        // 1. รับ Query Parameters
+        const { search, status, page, limit } = req.query;
+        
+        const pageNum = parseInt(page) || 1;
+        const limitNum = parseInt(limit) || 50; // ใส่ default ไว้กันแอปพังถ้าไม่ได้ส่งค่ามา
+        const skip = (pageNum - 1) * limitNum;
+
+        // 2. สร้าง เงื่อนไขการกรอง (Filter)
+        const whereClause = { isDeleted: false };
+
+        if (status) {
+            whereClause.status = status;
+        }
+
+        // 3. เงื่อนไขการค้นหา (Search) 
+        if (search) {
+            whereClause.OR = [
+                { vehicleName: { contains: search, mode: 'insensitive' } },
+                { plateNumber: { contains: search, mode: 'insensitive' } },
+                { brand: { contains: search, mode: 'insensitive' } },
+                { model: { contains: search, mode: 'insensitive' } }
+            ];
+        }
+
+        // 4. Query Database (ดึงข้อมูลรถพร้อมเช็กคิวจองที่ยังไม่เสร็จสิ้น)
+        const [totalItems, vehiclesList] = await Promise.all([
+            prisma.vehicle.count({ where: whereClause }),
+            prisma.vehicle.findMany({
+                where: whereClause,
+                include: {
+                    bookings: {
+                        where: {
+                            status: { in: ['APPROVED', 'RESERVED', 'IN_USE'] }
+                        }
+                    }
+                },
+                orderBy: { createdAt: 'desc' },
+                skip: skip,
+                take: limitNum,
+            })
+        ]);
+
+        // คำนวณสถานะรถแบบ Real-time (ถ้ามีคิวจองค้างอยู่ให้ถือว่าเป็น RESERVED)
+        const vehicles = vehiclesList.map(vehicle => {
+            const hasActiveBooking = vehicle.bookings && vehicle.bookings.length > 0;
+            return {
+                ...vehicle,
+                status: (vehicle.status === 'AVAILABLE' && hasActiveBooking) ? 'RESERVED' : vehicle.status
+            };
         });
-        return res.status(200).json({ success: true, data: vehicles });
+
+        // 5. ส่ง Response กลับพร้อมโครงสร้าง Pagination
+        return res.status(200).json({ 
+            success: true, 
+            data: vehicles,
+            pagination: {
+                page: pageNum,
+                limit: limitNum,
+                total: totalItems,
+                totalPages: Math.ceil(totalItems / limitNum)
+            }
+        });
     } catch (error) {
         console.error("Get Vehicles Error:", error);
         return res.status(500).json({ success: false, error: "ระบบขัดข้องในการดึงข้อมูลรถ" });
@@ -205,7 +262,7 @@ exports.deleteVehicle = async (req, res) => {
             where: {
                 vehicleId: vehicleId,
                 endDatetime: { gt: new Date() },
-                status: { notIn: ['Cancelled', 'Rejected'] }
+                status: { notIn: ['CANCELLED', 'REJECTED'] }
             }
         });
 
@@ -241,5 +298,75 @@ exports.deleteVehicle = async (req, res) => {
     } catch (error) {
         console.error("Delete Vehicle Error:", error);
         return res.status(500).json({ success: false, error: "ไม่สามารถลบข้อมูลรถได้" });
+    }
+};
+
+// 6. อัปเดตเฉพาะสถานะรถยนต์ (PATCH /vehicles/:id/status)
+exports.updateVehicleStatus = async (req, res) => {
+    try {
+        const vehicleId = parseInt(req.params.id, 10);
+        const { status } = req.body;
+
+        if (isNaN(vehicleId)) {
+            return res.status(400).json({ success: false, error: "ID ของรถยนต์ไม่ถูกต้อง" });
+        }
+
+        // 🟢 1. ตรวจสอบ Enum สถานะที่อนุญาต
+        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'RESERVED', 'MAINTENANCE', 'INACTIVE'];
+        if (!status || !allowedStatuses.includes(status)) {
+            return res.status(400).json({ success: false, error: "สถานะรถยนต์ไม่ถูกต้อง" });
+        }
+
+        const existingVehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+        if (!existingVehicle || existingVehicle.isDeleted) {
+            return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ที่ต้องการเปลี่ยนสถานะ" });
+        }
+
+        // 🟢 2. Business Logic: ถ้าเปลี่ยนเป็น MAINTENANCE หรือ INACTIVE ต้องเช็กคิวจองในอนาคตก่อน
+        if (status === 'MAINTENANCE' || status === 'INACTIVE') {
+            const futureBookings = await prisma.vehicleBooking.findMany({
+                where: {
+                    vehicleId: vehicleId,
+                    endDatetime: { gt: new Date() },
+                    status: { notIn: ['CANCELLED', 'REJECTED'] }
+                }
+            });
+
+            if (futureBookings.length > 0) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `ไม่สามารถเปลี่ยนสถานะเป็น ${status} ได้ เนื่องจากมีรายการจองในอนาคตค้างอยู่ ${futureBookings.length} รายการ`
+                });
+            }
+        }
+
+        const updatedVehicle = await prisma.vehicle.update({
+            where: { id: vehicleId },
+            data: { status }
+        });
+
+        // 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะรถยนต์สำเร็จ
+        const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+        if (actionUserId) {
+            await prisma.auditLog.create({
+                data: {
+                    action: 'UPDATE_VEHICLE_STATUS',
+                    module: 'VEHICLE',
+                    userId: actionUserId,
+                    entityId: vehicleId,
+                    entityType: 'VEHICLE',
+                    details: `User ${actionUserId} updated status of vehicle ID ${vehicleId} from ${existingVehicle.status} to ${status}`
+                }
+            }).catch(err => console.error("AuditLog Error [updateVehicleStatus]:", err.message));
+        }
+
+        return res.status(200).json({ 
+            success: true, 
+            data: updatedVehicle, 
+            message: "อัปเดตสถานะรถยนต์สำเร็จ" 
+        });
+    } catch (error) {
+        console.error("Update Vehicle Status Error:", error);
+        return res.status(500).json({ success: false, error: "ไม่สามารถอัปเดตสถานะรถได้" });
     }
 };

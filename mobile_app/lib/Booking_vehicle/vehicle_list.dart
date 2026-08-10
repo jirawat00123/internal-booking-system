@@ -1,17 +1,18 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shimmer/shimmer.dart'; 
 
 import 'vehicle_bookingstep_a.dart';
 import '../../Booking_vehicle/Vehicle_model.dart';
 
 class VehicleBooking extends StatefulWidget {
-  final bool isGuest; // 🟢 1. ประกาศตัวแปรรับค่าตรงนี้[cite: 7]
+  final bool isGuest;
 
-  // 🟢 2. เพิ่ม this.isGuest = false ในวงเล็บ[cite: 7]
   const VehicleBooking({super.key, this.isGuest = false});
 
   @override
@@ -20,6 +21,15 @@ class VehicleBooking extends StatefulWidget {
 
 class _VehicleBookingStep1PageState extends State<VehicleBooking> {
   bool isLoading = true;
+
+  int _selectedFilterIndex = 0; 
+  // 🟢 เพิ่มตัวกรอง รถกระบะ
+  final List<String> _filterOptions = [
+    'ทั้งหมด', 
+    'ว่างเท่านั้น', 
+    'รถตู้',
+    'รถกระบะ'
+  ];
 
   @override
   void initState() {
@@ -37,12 +47,10 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
         if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
       };
 
-      // 💡 1. ยิง API 2 เส้นพร้อมกัน (ดึงรถ & ดึงการจอง)
       final vehicleFuture = http.get(
         Uri.parse('http://localhost:3001/api/vehicles'),
         headers: headers,
       );
-      // เช็กให้ชัวร์ว่า endpoint การจองรถของคุณคือเส้นนี้
       final bookingFuture = http.get(
         Uri.parse('http://localhost:3001/api/vehicle-bookings'),
         headers: headers,
@@ -53,67 +61,101 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
       if (responses[0].statusCode == 200) {
         final decodedData = jsonDecode(responses[0].body);
         List<dynamic> vehiclesData = [];
+        
         if (decodedData is List) {
           vehiclesData = decodedData;
-        } else if (decodedData is Map && decodedData.containsKey('data')) {
-          vehiclesData = decodedData['data'];
+        } else if (decodedData is Map) {
+          vehiclesData = decodedData['data'] ?? [];
         }
 
         List<VehicleModel> fetchedList = vehiclesData
             .map((json) => VehicleModel.fromJson(json))
             .toList();
 
-        // 💡 2. ตรวจสอบข้อมูลการจองว่าคันไหนติดคิว "วันนี้" บ้าง
         if (responses[1].statusCode == 200) {
           final bData = jsonDecode(responses[1].body);
-          List<dynamic> bookingsData = bData['data'] ?? bData['bookings'] ?? [];
+          List<dynamic> bookingsData = [];
+          
+          if (bData is List) {
+            bookingsData = bData;
+          } else if (bData is Map) {
+            bookingsData = bData['data'] ?? bData['bookings'] ?? [];
+          }
 
           final now = DateTime.now();
-          final today = DateTime(
-            now.year,
-            now.month,
-            now.day,
-          ); // รีเซ็ตเวลาเป็นเที่ยงคืนของวันนี้
+          final today = DateTime(now.year, now.month, now.day);
 
-          for (var booking in bookingsData) {
-            String bStatus = booking['status'] ?? 'Pending';
+          for (int i = 0; i < fetchedList.length; i++) {
+            var vehicle = fetchedList[i];
 
-            // กรองเอาเฉพาะคิวที่ยังมีผล (ตัดพวกที่ยกเลิกหรือเสร็จสิ้นออกไป)
-            if (bStatus != 'Cancelled' &&
-                bStatus != 'Completed' &&
-                bStatus != 'ยกเลิกแล้ว' &&
-                bStatus != 'เสร็จสิ้น') {
-              DateTime start = DateTime.parse(
-                booking['startDatetime'],
-              ).toLocal();
-              DateTime end = DateTime.parse(booking['endDatetime']).toLocal();
+            if ((vehicle.status ?? '').toString().toUpperCase() == 'MAINTENANCE') {
+               continue;
+            }
 
-              DateTime startDate = DateTime(start.year, start.month, start.day);
-              DateTime endDate = DateTime(end.year, end.month, end.day);
+            var vBookings = bookingsData.where((b) {
+              int bVid = int.tryParse(b['vehicleId']?.toString() ??
+                      b['vehicle']?['id']?.toString() ??
+                      '0') ??
+                  0;
+              return bVid == vehicle.id;
+            }).toList();
 
-              // 💡 เช็กว่า "วันนี้" อยู่ในช่วงเวลาที่มีการจองหรือไม่
-              if ((today.isAtSameMomentAs(startDate) ||
-                      today.isAfter(startDate)) &&
-                  (today.isAtSameMomentAs(endDate) ||
-                      today.isBefore(endDate))) {
-                int bookedVehicleId = booking['vehicleId'];
+            if (vBookings.isNotEmpty) {
+              bool isInUse = vBookings.any((b) {
+                String s = (b['status'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .replaceAll(' ', '_')
+                    .replaceAll('-', '_');
+                return s == 'in_use' || s == 'approved' || s == 'กำลังใช้งาน';
+              });
 
-                // ค้นหาว่ารถคันที่ถูกจอง อยู่ index ไหนในลิสต์หน้าแอป
-                int index = fetchedList.indexWhere(
-                  (v) => v.id == bookedVehicleId,
-                );
-                if (index != -1) {
-                  // 🚨 เปลี่ยนสถานะรถคันนี้เป็น IN_USE ทันที (จะทำให้ UI กลายเป็นสีแดงอัตโนมัติ)
-                  fetchedList[index] = fetchedList[index].copyWith(
-                    status: 'IN_USE',
-                  );
+              if (isInUse) {
+                fetchedList[i] = vehicle.copyWith(status: 'IN_USE');
+                continue;
+              }
+
+              bool isReservedToday = vBookings.any((b) {
+                String s = (b['status'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .replaceAll(' ', '_')
+                    .replaceAll('-', '_');
+                if (s == 'cancelled' ||
+                    s == 'completed' ||
+                    s == 'ยกเลิกแล้ว' ||
+                    s == 'เสร็จสิ้น') return false;
+
+                try {
+                  String startStr = b['startDatetime']?.toString() ?? b['startDate']?.toString() ?? '';
+                  String endStr = b['endDatetime']?.toString() ?? b['endDate']?.toString() ?? '';
+                  if (startStr.isEmpty || endStr.isEmpty) return false;
+
+                  DateTime start = DateTime.parse(startStr).toLocal();
+                  DateTime end = DateTime.parse(endStr).toLocal();
+                  DateTime startDate =
+                      DateTime(start.year, start.month, start.day);
+                  DateTime endDate = DateTime(end.year, end.month, end.day);
+
+                  if ((today.isAtSameMomentAs(startDate) ||
+                          today.isAfter(startDate)) &&
+                      (today.isAtSameMomentAs(endDate) ||
+                          today.isBefore(endDate))) {
+                    return true;
+                  }
+                } catch (e) {
+                  return false;
                 }
+                return false;
+              });
+
+              if (isReservedToday) {
+                fetchedList[i] = vehicle.copyWith(status: 'RESERVED');
               }
             }
           }
         }
 
-        // อัปเดตข้อมูลขึ้นหน้าจอ
         globalVehicles.value = fetchedList;
       } else {
         print('ดึงข้อมูลล้มเหลว Code: ${responses[0].statusCode}');
@@ -122,11 +164,62 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
       print('เกิดข้อผิดพลาดในการดึงข้อมูล: $e');
     } finally {
       if (mounted) {
-        setState(() {
-          isLoading = false;
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) setState(() => isLoading = false);
         });
       }
     }
+  }
+
+  Widget _buildFilterBar() {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFF8FAFC), 
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: List.generate(_filterOptions.length, (index) {
+            bool isSelected = _selectedFilterIndex == index;
+            return Padding(
+              padding: const EdgeInsets.only(right: 12.0), 
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                child: ChoiceChip(
+                  label: Text(
+                    _filterOptions[index],
+                    style: TextStyle(
+                      fontFamily: 'Kanit',
+                      fontSize: 14,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                      color: isSelected ? Colors.white : const Color(0xFF003865),
+                    ),
+                  ),
+                  selected: isSelected,
+                  showCheckmark: false, 
+                  selectedColor: const Color(0xFF009CB4),
+                  backgroundColor: Colors.white,
+                  elevation: isSelected ? 4 : 1, 
+                  shadowColor: Colors.black.withOpacity(0.1),
+                  side: BorderSide(
+                    color: isSelected ? const Color(0xFF009CB4) : Colors.grey.shade300,
+                    width: 1,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  onSelected: (bool selected) {
+                    setState(() {
+                      _selectedFilterIndex = index;
+                    });
+                  },
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
   }
 
   @override
@@ -173,38 +266,73 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
               ),
             ),
           ),
+          
+          if (!isLoading) _buildFilterBar(),
 
           Expanded(
             child: isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF004381)),
+                ? ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: 4, 
+                    itemBuilder: (context, index) => _buildShimmerCard(),
                   )
                 : ValueListenableBuilder<List<VehicleModel>>(
                     valueListenable: globalVehicles,
                     builder: (context, vehicles, child) {
-                      final activeVehicles = vehicles
-                          .where((v) => !v.isDeleted)
-                          .toList();
+                      
+                      final activeVehicles = vehicles.where((v) {
+                        if (v.isDeleted == true) return false;
+
+                        if (_selectedFilterIndex == 1) { // ว่างเท่านั้น
+                          String rawStatus = (v.status ?? '').toString().trim().toUpperCase();
+                          bool isAvailable = (rawStatus == 'AVAILABLE' || rawStatus == 'ว่างพร้อมใช้งาน');
+                          if (!isAvailable) return false;
+                        } 
+                        else if (_selectedFilterIndex == 2) { // รถตู้
+                          String vName = (v.vehicleName ?? '').toLowerCase();
+                          bool isVan = v.seats >= 7 || 
+                                       vName.contains('ตู้') || 
+                                       vName.contains('van') || 
+                                       vName.contains('commuter');
+                          if (!isVan) return false;
+                        }
+                        // 🟢 เพิ่มลอจิกกรอง รถกระบะ
+                        else if (_selectedFilterIndex == 3) { 
+                          String vName = (v.vehicleName ?? '').toLowerCase();
+                          bool isPickup = vName.contains('กระบะ') || 
+                                          vName.contains('pickup') || 
+                                          vName.contains('revo') || 
+                                          vName.contains('vigo') ||
+                                          vName.contains('d-max') ||
+                                          vName.contains('triton') ||
+                                          vName.contains('ranger');
+                          if (!isPickup) return false;
+                        }
+
+                        return true; 
+                      }).toList();
 
                       if (activeVehicles.isEmpty) {
-                        return Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.directions_car,
-                              size: 80,
-                              color: Colors.grey.shade300,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'ไม่มีรถยนต์ในระบบ',
-                              style: TextStyle(
-                                color: Colors.grey.shade500,
-                                fontSize: 16,
-                                fontFamily: 'Kanit',
+                        return ShowUp(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.search_off,
+                                size: 80,
+                                color: Colors.grey.shade300,
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 16),
+                              Text(
+                                'ไม่พบรถที่ตรงกับเงื่อนไข',
+                                style: TextStyle(
+                                  color: Colors.grey.shade500,
+                                  fontSize: 16,
+                                  fontFamily: 'Kanit',
+                                ),
+                              ),
+                            ],
+                          ),
                         );
                       }
 
@@ -212,13 +340,77 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                         padding: const EdgeInsets.all(16),
                         itemCount: activeVehicles.length,
                         itemBuilder: (context, index) {
-                          return _buildVehicleCard(activeVehicles[index]);
+                          return ShowUp(
+                            delay: index * 100,
+                            child: _buildVehicleCard(activeVehicles[index]),
+                          );
                         },
                       );
                     },
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildShimmerCard() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+      ),
+      child: Shimmer.fromColors(
+        baseColor: Colors.grey.shade200, 
+        highlightColor: Colors.grey.shade50, 
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 160,
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(width: 150, height: 20, color: Colors.white),
+                      Container(
+                        width: 80,
+                        height: 24,
+                        decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Container(width: 100, height: 16, color: Colors.white),
+                  const SizedBox(height: 16),
+                  Container(width: 60, height: 16, color: Colors.white),
+                  const SizedBox(height: 20),
+                  Container(
+                    width: double.infinity,
+                    height: 48,
+                    decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -290,76 +482,6 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
     );
   }
 
-  void _showInUseErrorDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          backgroundColor: Colors.white,
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFF0000),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.priority_high,
-                    size: 50,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'รถคันนี้ถูกใช้งานอยู่\nโปรดเลือกรถคันที่ว่าง',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF003E75),
-                    fontFamily: 'Kanit',
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: 140,
-                  height: 45,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF009CB4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: const Text(
-                      'ตกลง',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'Kanit',
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildVehicleImage(String path) {
     Widget fallbackIcon = Container(
       height: 160,
@@ -406,28 +528,44 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
   }
 
   Widget _buildVehicleCard(VehicleModel vehicle) {
-    bool isAvailable =
-        (vehicle.status.toUpperCase() == 'AVAILABLE' ||
-        vehicle.status == 'ว่างพร้อมใช้งาน');
+    String rawStatus = (vehicle.status ?? '').toString().trim().toUpperCase();
+    bool isAvailable = false;
 
-    String displayStatus;
-    Color statusColor;
-    Color statusBgColor;
+    String displayStatus = 'Available';
+    Color statusColor = const Color(0xFF10B981);
+    Color statusBgColor = const Color(0xFFD1FAE5);
+    String buttonText = 'เลือกรถคันนี้'; 
 
-    if (isAvailable) {
-      displayStatus = 'Available';
-      statusColor = const Color(0xFF2EC4B6);
-      statusBgColor = const Color(0xFFE6F8F5);
-    } else {
+    if (rawStatus == 'MAINTENANCE' || rawStatus == 'ส่งซ่อม') {
+      displayStatus = 'Maintenance';
+      statusColor = const Color(0xFFE65100); 
+      statusBgColor = const Color(0xFFFFF3E0); 
+      buttonText = 'รถส่งซ่อม';
+    } else if (rawStatus == 'IN_USE' || rawStatus == 'IN USE' || rawStatus == 'IN-USE' || rawStatus == 'กำลังใช้งาน') {
+      displayStatus = 'In Use';
+      statusColor = const Color(0xFFEF4444);
+      statusBgColor = const Color(0xFFFEE2E2);
+      buttonText = 'รถกำลังใช้งาน';
+    } else if (rawStatus == 'RESERVED' || rawStatus == 'RESERVE' || rawStatus == 'PENDING' || rawStatus == 'จองแล้ว') {
       displayStatus = 'Reserve';
-      statusColor = const Color(0xFFF05252);
-      statusBgColor = const Color(0xFFFDE8E8);
+      statusColor = const Color(0xFFF59E0B);
+      statusBgColor = const Color(0xFFFEF3C7);
+      buttonText = 'ถูกจองแล้ว';
+    } else {
+      isAvailable = true;
+      displayStatus = 'Available';
+      statusColor = const Color(0xFF10B981);
+      statusBgColor = const Color(0xFFD1FAE5);
+      buttonText = 'เลือกรถคันนี้';
     }
+
+    String vName = vehicle.vehicleName?.toString() ?? '';
+    String vPlate = vehicle.plateNumber?.toString() ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
+        color: Colors.white, 
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200, width: 1),
         boxShadow: [
@@ -443,8 +581,10 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildVehicleImage(vehicle.uploadUrl ?? ''),
-
+            Hero(
+              tag: 'vehicle_img_${vehicle.id}',
+              child: _buildVehicleImage(vehicle.uploadUrl ?? ''),
+            ),
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
@@ -455,13 +595,11 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                     children: [
                       Expanded(
                         child: Text(
-                          vehicle.vehicleName.isNotEmpty
-                              ? vehicle.vehicleName
-                              : 'ไม่ระบุรุ่น',
+                          vName.isNotEmpty ? vName : 'ไม่ระบุรุ่น',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A8A),
+                            color: Color(0xFF1E3A8A), 
                             fontFamily: 'Kanit',
                           ),
                           maxLines: 1,
@@ -499,9 +637,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    vehicle.plateNumber.isNotEmpty
-                        ? vehicle.plateNumber
-                        : 'ไม่ระบุทะเบียน',
+                    vPlate.isNotEmpty ? vPlate : 'ไม่ระบุทะเบียน',
                     style: const TextStyle(
                       fontSize: 14,
                       color: Color(0xFF6B7280),
@@ -509,14 +645,12 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // 🔥 เอา Container ที่แสดง Sedan ออก และเหลือไว้แค่ Row จำนวนที่นั่ง
                   Row(
                     children: [
                       const Icon(
                         Icons.people_alt_outlined,
                         size: 16,
-                        color: Color(0xFF1D4ED8),
+                        color: Color(0xFF1D4ED8), 
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -530,14 +664,12 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton(
-                      // 🟢 ถ้าเป็น Guest ให้ปุ่มเป็น null (ปุ่มจะกลายเป็นสีเทาและกดไม่ได้)
-                      onPressed: widget.isGuest
+                      onPressed: (widget.isGuest || !isAvailable)
                           ? null
                           : () {
                               Navigator.push(
@@ -549,18 +681,18 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                               );
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(
-                          0xFF009CB4,
-                        ), // 💡 บังคับให้ปุ่มเป็นสีฟ้าเสมอ
+                        backgroundColor: isAvailable
+                            ? const Color(0xFF009CB4)
+                            : Colors.grey.shade300, 
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text(
-                        'เลือกรถคันนี้',
+                      child: Text(
+                        buttonText,
                         style: TextStyle(
-                          color: Colors.white,
+                          color: isAvailable ? Colors.white : Colors.white,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           fontFamily: 'Kanit',
@@ -573,6 +705,66 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// 🚀 WIDGET: ShowUp Animation
+// ==========================================
+class ShowUp extends StatefulWidget {
+  final Widget child;
+  final int delay;
+
+  const ShowUp({super.key, required this.child, this.delay = 0});
+
+  @override
+  State<ShowUp> createState() => _ShowUpState();
+}
+
+class _ShowUpState extends State<ShowUp> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _animOffset;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+
+    _animOffset = Tween<Offset>(
+      begin: const Offset(0.0, 0.2),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutCubic,
+    ));
+
+    if (widget.delay == 0) {
+      _controller.forward();
+    } else {
+      Timer(Duration(milliseconds: widget.delay), () {
+        if (mounted) _controller.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _controller,
+      child: SlideTransition(
+        position: _animOffset,
+        child: widget.child,
       ),
     );
   }

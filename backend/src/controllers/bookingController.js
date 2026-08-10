@@ -1,5 +1,6 @@
 const { PrismaClient, BookingStatus } = require('@prisma/client');
 const prisma = new PrismaClient();
+const notificationService = require('../services/notificationService'); // 🟢 1. นำเข้า notificationService
 
 // =========================================================================
 // Helper Function: สำหรับแปลงสตริงเวลาให้เป็น Date Object 
@@ -102,11 +103,18 @@ exports.createBooking = async (req, res, next) => {
     const start = new Date(startDatetime);
     const end = new Date(endDatetime);
 
+    // 1. เพิ่ม Time Validation 
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      return res.status(400).json({
-        success: false,
-        message: 'รูปแบบของวันที่และเวลาไม่ถูกต้อง'
-      });
+      return res.status(400).json({ success: false, message: 'รูปแบบของวันที่และเวลาไม่ถูกต้อง' });
+    }
+
+    if (start >= end) {
+      return res.status(400).json({ success: false, message: 'เวลาสิ้นสุดการจองต้องมากกว่าเวลาเริ่มต้น' });
+    }
+
+    const now = new Date();
+    if (start < now) {
+      return res.status(400).json({ success: false, message: 'ไม่สามารถจองห้องประชุมย้อนหลังได้' });
     }
 
     const isOverlap = await checkOverlapping(roomId, start, end);
@@ -117,6 +125,7 @@ exports.createBooking = async (req, res, next) => {
       });
     }
 
+    // 2. นำ AuditLog เข้ามารวมใน Transaction
     const newBooking = await prisma.$transaction(async (tx) => {
       const booking = await tx.roomBooking.create({
         data: {
@@ -125,7 +134,7 @@ exports.createBooking = async (req, res, next) => {
           startDatetime: start,     
           endDatetime: end,         
           purpose: title,           
-          status: BookingStatus.PENDING         
+          status: BookingStatus.PENDING // เปลี่ยนกลับเป็น PENDING เพื่อรออนุมัติ
         },
         include: { room: true }
       });
@@ -135,34 +144,36 @@ exports.createBooking = async (req, res, next) => {
         data: { status: 'RESERVED' },
       });
 
-      await tx.roomBookingHistory.create({
+      // 🟢 บันทึก AuditLog ภายใน Transaction เพื่อเป็น Single Source of Truth
+      await tx.auditLog.create({
         data: {
-          roomBookingId: booking.id,
-          changedById: userId,
-          action: 'CREATED',
-          statusSnapshot: BookingStatus.PENDING,
-          remark: 'สร้างการจองห้องประชุมใหม่'
+          action: "CREATE_ROOM_BOOKING",
+          module: "ROOM_BOOKING",
+          entityId: booking.id,
+          entityType: "ROOM_BOOKING",
+          userId: userId,
+          details: JSON.stringify({
+            newStatus: BookingStatus.PENDING,
+            remark: 'สร้างการจองห้องประชุมใหม่ รอการอนุมัติ'
+          })
         }
       });
 
       return booking;
     });
 
-// 🟢 บันทึก AuditLog เมื่อสร้างการจองสำเร็จ (Non-blocking)
-    await prisma.auditLog.create({
-      data: {
-        action: "CREATE_ROOM_BOOKING",
-        module: "ROOM_BOOKING",
-        entityId: newBooking.id,
-        entityType: "ROOM_BOOKING",
-        userId: userId,
-        details: `User ${userId} created room booking ID ${newBooking.id} for Room ${roomId}`
-      }
-    }).catch(err => console.error("AuditLog Error [CREATE_ROOM_BOOKING]:", err.message));
+    // 🔔 2. แจ้งเตือน Admin ว่ามีรายการขอจองห้องใหม่
+    await notificationService.notifyAdmins({
+      title: "มีคำขอจองห้องประชุมใหม่",
+      message: `รอการอนุมัติ: ห้องประชุม ${newBooking.room.roomName} (หัวข้อ: ${title})`,
+      type: 'APPROVAL',
+      entityType: 'ROOM_BOOKING',
+      entityId: newBooking.id
+    });
 
     return res.status(201).json({
       success: true,
-      message: '🎉 บันทึกการจองห้องประชุมและประวัติเรียบร้อยแล้ว!',
+      message: '🎉 บันทึกการจองห้องประชุมเรียบร้อย รอการอนุมัติ',
       data: newBooking
     });
 
@@ -178,7 +189,7 @@ exports.createBooking = async (req, res, next) => {
 };
 
 // =========================================================================
-// [GET] /api/bookings - API แสดงประวัติการจอง 
+// [GET] /api/bookings - API แสดงประวัติการจอง พร้อมคำนวณ Permissions ให้ Frontend
 // =========================================================================
 exports.getBookingHistory = async (req, res, next) => { 
   try {
@@ -210,6 +221,25 @@ exports.getBookingHistory = async (req, res, next) => {
       })
     ]);
 
+    // 🟢 แปลงข้อมูลและแนบสิทธิ์ (Permissions) กลับไปให้ Frontend อัตโนมัติ
+    const currentUserId = req.user ? parseInt(req.user.userId, 10) : null;
+    const currentUserRole = req.user ? req.user.role : 'USER';
+    
+    const bookingsWithPermissions = history.map(booking => {
+      const isOwner = currentUserId === booking.userId;
+      const isAdmin = currentUserRole === 'ADMIN';
+      const isPendingOrApproved = [BookingStatus.PENDING, BookingStatus.RESERVED, BookingStatus.APPROVED].includes(booking.status);
+
+      return {
+        ...booking,
+        permissions: {
+          canCancel: (isOwner || isAdmin) && isPendingOrApproved,
+          canEdit: (isOwner || isAdmin) && booking.status === BookingStatus.PENDING,
+          canApprove: isAdmin && booking.status === BookingStatus.PENDING // เพิ่มสิทธิ์ Approve ให้ Frontend
+        }
+      };
+    });
+
     return res.status(200).json({
       success: true,
       message: "ดึงข้อมูลรายการจองสำเร็จ",
@@ -219,7 +249,7 @@ exports.getBookingHistory = async (req, res, next) => {
         currentPage: page,
         limit
       },
-      bookings: history
+      bookings: bookingsWithPermissions
     });
 
   } catch (error) {
@@ -279,30 +309,24 @@ exports.cancelBooking = async (req, res, next) => {
         data: { status: 'AVAILABLE' },
       });
 
-      await tx.roomBookingHistory.create({
+      // 🟢 บันทึก AuditLog ภายใน Transaction
+      await tx.auditLog.create({
         data: {
-          roomBookingId: bookingId,
-          changedById: parseInt(req.user.userId, 10), 
-          action: 'CANCELLED',
-          statusSnapshot: BookingStatus.CANCELLED,
-          remark: cancelRemark
+          action: "CANCEL_ROOM_BOOKING",
+          module: "ROOM_BOOKING",
+          entityId: bookingId,
+          entityType: "ROOM_BOOKING",
+          userId: parseInt(req.user.userId, 10),
+          details: JSON.stringify({
+            oldStatus: existingBooking.status,
+            newStatus: BookingStatus.CANCELLED,
+            remark: cancelRemark
+          })
         }
       });
 
       return booking;
     });
-
-// 🟢 บันทึก AuditLog เมื่อยกเลิกการจองสำเร็จ (Non-blocking)
-    await prisma.auditLog.create({
-      data: {
-        action: "CANCEL_ROOM_BOOKING",
-        module: "ROOM_BOOKING",
-        entityId: bookingId,
-        entityType: "ROOM_BOOKING",
-        userId: parseInt(req.user.userId, 10),
-        details: `User ${req.user.userId} cancelled room booking ID ${bookingId}`
-      }
-    }).catch(err => console.error("AuditLog Error [CANCEL_ROOM_BOOKING]:", err.message));
 
     return res.status(200).json({
       success: true,
@@ -369,31 +393,27 @@ exports.updateBookingStatus = async (req, res, next) => {
         });
       }
 
-      await tx.roomBookingHistory.create({
+      // 🟢 บันทึก AuditLog ภายใน Transaction
+      const auditAction = validStatus === BookingStatus.APPROVED ? "APPROVE_ROOM_BOOKING" : 
+                         (validStatus === BookingStatus.COMPLETED ? "COMPLETED_ROOM_BOOKING" : "UPDATE_ROOM_BOOKING");
+      
+      await tx.auditLog.create({
         data: {
-          roomBookingId: bookingId,
-          changedById: parseInt(req.user.userId, 10), 
-          action: validStatus === BookingStatus.COMPLETED ? 'COMPLETED' : 'STATUS_CHANGED',
-          statusSnapshot: validStatus,
-          remark: remark || `อัปเดตสถานะเป็น ${validStatus}`
+          action: auditAction,
+          module: "ROOM_BOOKING",
+          entityId: bookingId,
+          entityType: "ROOM_BOOKING",
+          userId: parseInt(req.user.userId, 10),
+          details: JSON.stringify({
+            oldStatus: existingBooking.status,
+            newStatus: validStatus,
+            remark: remark || `อัปเดตสถานะเป็น ${validStatus}`
+          })
         }
       });
 
       return booking;
     });
-
-// 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะการจองสำเร็จ (Non-blocking)
-    const auditAction = validStatus === BookingStatus.APPROVED ? "APPROVE_ROOM_BOOKING" : "UPDATE_ROOM_BOOKING";
-    await prisma.auditLog.create({
-      data: {
-        action: auditAction,
-        module: "ROOM_BOOKING",
-        entityId: bookingId,
-        entityType: "ROOM_BOOKING",
-        userId: parseInt(req.user.userId, 10),
-        details: `User ${req.user.userId} updated room booking ID ${bookingId} status to ${validStatus}`
-      }
-    }).catch(err => console.error(`AuditLog Error [${auditAction}]:`, err.message));
 
     return res.status(200).json({ 
       success: true, 
@@ -401,6 +421,106 @@ exports.updateBookingStatus = async (req, res, next) => {
       data: updatedBooking
     });
 
+  } catch (error) {
+    next(error);
+  }
+};
+
+// =========================================================================
+// 🟢 3. [POST] /api/bookings/:id/approve - API อนุมัติการจองห้องประชุม
+// =========================================================================
+exports.approveBooking = async (req, res, next) => {
+  try {
+    const bookingId = parseInt(req.params.id, 10);
+    const adminId = parseInt(req.user.userId, 10);
+
+    const booking = await prisma.roomBooking.findUnique({ where: { id: bookingId } });
+    if (!booking) return res.status(404).json({ success: false, error: "ไม่พบการจอง" });
+
+    // เปลี่ยนสถานะเป็น APPROVED และบันทึก Log
+    const updatedBooking = await prisma.$transaction(async (tx) => {
+      const updated = await tx.roomBooking.update({
+        where: { id: bookingId },
+        data: { status: BookingStatus.APPROVED }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: 'APPROVE_ROOM_BOOKING',
+          module: 'ROOM_BOOKING',
+          userId: adminId,
+          entityId: bookingId,
+          entityType: 'ROOM_BOOKING',
+          details: JSON.stringify({ oldStatus: booking.status, newStatus: BookingStatus.APPROVED })
+        }
+      });
+      return updated;
+    });
+
+    // 🔔 ส่ง Notification แจ้งผู้จอง
+    await notificationService.createNotification({
+      userId: booking.userId,
+      title: "✅ อนุมัติการจองห้องประชุม",
+      message: `คำขอจองห้องประชุมของคุณ (อ้างอิง: ${booking.purpose}) ได้รับการอนุมัติแล้ว`,
+      type: 'APPROVAL',
+      entityType: 'ROOM_BOOKING',
+      entityId: bookingId
+    });
+
+    return res.status(200).json({ success: true, data: updatedBooking, message: "อนุมัติสำเร็จ" });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// =========================================================================
+// 🟢 4. [POST] /api/bookings/:id/reject - API ปฏิเสธการจองห้องประชุม
+// =========================================================================
+exports.rejectBooking = async (req, res, next) => {
+  try {
+    const bookingId = parseInt(req.params.id, 10);
+    const adminId = parseInt(req.user.userId, 10);
+    const { remark } = req.body;
+
+    const booking = await prisma.roomBooking.findUnique({ where: { id: bookingId } });
+    if (!booking) return res.status(404).json({ success: false, error: "ไม่พบการจอง" });
+
+    // เปลี่ยนสถานะเป็น REJECTED, คืนห้องให้ AVAILABLE และบันทึก Log
+    const updatedBooking = await prisma.$transaction(async (tx) => {
+      const updated = await tx.roomBooking.update({
+        where: { id: bookingId },
+        data: { status: BookingStatus.REJECTED }
+      });
+
+      await tx.room.update({
+        where: { id: booking.roomId },
+        data: { status: 'AVAILABLE' }
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: 'REJECT_ROOM_BOOKING',
+          module: 'ROOM_BOOKING',
+          userId: adminId,
+          entityId: bookingId,
+          entityType: 'ROOM_BOOKING',
+          details: JSON.stringify({ remark: remark || 'ปฏิเสธคำขอจองโดยผู้ดูแลระบบ' })
+        }
+      });
+      return updated;
+    });
+
+    // 🔔 ส่ง Notification แจ้งผู้จอง
+    await notificationService.createNotification({
+      userId: booking.userId,
+      title: "❌ ปฏิเสธการจองห้องประชุม",
+      message: `คำขอจองห้องประชุมของคุณถูกปฏิเสธ หมายเหตุ: ${remark || 'ไม่ระบุเหตุผล'}`,
+      type: 'APPROVAL',
+      entityType: 'ROOM_BOOKING',
+      entityId: bookingId
+    });
+
+    return res.status(200).json({ success: true, data: updatedBooking, message: "ปฏิเสธสำเร็จ" });
   } catch (error) {
     next(error);
   }

@@ -6,7 +6,8 @@ const fs = require('fs');
 const roomController = require('../controllers/roomController'); 
 const {
   authenticateToken,
-  requireRole
+  requireRole,
+  isAdmin // ✅ นำเข้า isAdmin สำหรับบังคับสิทธิ์ของ Admin Management Module
 } = require('../middlewares/auth');
 const { PrismaClient, BookingStatus } = require('@prisma/client');
 const prisma = new PrismaClient();
@@ -34,23 +35,20 @@ const upload = multer({ storage: storage });
 // ==========================================
 router.get('/monitor/rooms', authenticateToken, roomController.getAllRooms);
 router.get('/', authenticateToken, roomController.getAllRooms);
-// ✅ เพิ่ม requireRole(['ADMIN']) เข้าไปต่อจาก authenticateToken 
-// เพื่อบังคับให้ระบบเช็ค Role ก่อนเข้าไปถึง Controller
 // ดึงข้อมูลห้องตาม ID
 router.get('/:id', authenticateToken, roomController.getRoomById);
 
-router.post('/', authenticateToken, requireRole(['ADMIN']), upload.single('image'), roomController.createRoom);
-router.put('/:id', authenticateToken, requireRole(['ADMIN']), upload.single('image'), roomController.updateRoom);
+// 🔒 ADMIN ONLY: จัดการข้อมูลห้องและสถานะ (ใช้ isAdmin)
+router.post('/', authenticateToken, isAdmin, upload.single('image'), roomController.createRoom);
+router.put('/:id', authenticateToken, isAdmin, upload.single('image'), roomController.updateRoom);
 
 // อัปเดตเฉพาะสถานะของห้อง
-router.patch('/:id/status', authenticateToken, requireRole(['ADMIN']), roomController.updateRoomStatus);
+router.patch('/:id/status', authenticateToken, isAdmin, roomController.updateRoomStatus);
 
 // ลบข้อมูลห้อง (Soft Delete)
-router.delete('/:id', authenticateToken, requireRole(['ADMIN']), roomController.deleteRoom);
+router.delete('/:id', authenticateToken, isAdmin, roomController.deleteRoom);
 
 // 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง (เพื่อแก้ 404 และกันการจองซ้อน)
-// 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง
-// 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง
 router.get('/:id/schedule', authenticateToken, async (req, res, next) => {
   try {
     const { id } = req.params;

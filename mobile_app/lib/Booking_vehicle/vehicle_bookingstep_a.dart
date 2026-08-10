@@ -264,6 +264,22 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
       body: Column(
         children: [
           _buildStepIndicator(),
+          // 🔵 เพิ่ม Container แถบสีน้ำเงินตรงนี้ครับ
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF004381),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: const Text(
+              'กรอกข้อมูลการจอง',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Kanit',
+              ),
+            ),
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),

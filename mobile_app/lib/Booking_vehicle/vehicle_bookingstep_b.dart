@@ -163,7 +163,6 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
       }
 
       // 🚀 นำทางไปหน้า Step 3 (ตรวจสอบข้อมูลและยืนยัน)
-      // 🚀 นำทางไปหน้า Step 3 (ตรวจสอบข้อมูลและยืนยัน)
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -177,7 +176,7 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
             driverType: widget.driverType,
             bookerName: globalCurrentUserName, // ดึงชื่อตัวจริงมา
             userId:
-                globalCurrentUserId, // 💡 เปลี่ยนเลข 2 เป็นตัวแปรที่เก็บ ID ตัวจริงครับ! (ชื่อตัวแปรอาจจะต่างไปจากนี้ ลองพิมพ์หาดูในแอปของคุณครับ)
+                globalCurrentUserId, // 💡 เปลี่ยนเลข 2 เป็นตัวแปรที่เก็บ ID ตัวจริงครับ!
           ),
         ),
       );
@@ -209,7 +208,22 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
       body: Column(
         children: [
           _buildStepIndicator(),
-
+          // 🔵 เพิ่ม Container แถบสีน้ำเงินตรงนี้ครับ
+          Container(
+            width: double.infinity,
+            color: const Color(0xFF004381),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: const Text(
+              'กรอกข้อมูลการจอง',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Kanit',
+              ),
+            ),
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),

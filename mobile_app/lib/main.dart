@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:mobile_app/Select.dart';
 import 'Manage.dart';
 import 'package:mobile_app/Digitel.dart';
-// 👈 เพิ่มชิ้นนี้ (ปรับชื่อไฟล์ .dart ให้ตรงกับชื่อไฟล์จริงของคุณนะครับ เช่น digitel.dart)
+import 'Notification/notification_page.dart'; // 👈 นำเข้า NotificationPage ใหม่
+import 'Dashboard/dashboard_page.dart';
 
 void main() {
   runApp(const WelcomeApp());
@@ -18,14 +19,14 @@ class WelcomeApp extends StatelessWidget {
       title: 'Menam Mechanika',
       theme: ThemeData(primarySwatch: Colors.blue),
 
-      // ✅ 2. อัปเดตแผนที่เส้นทาง (Routes) จาก /room_list เปลี่ยนเป็น /digitel
-      // ✅ 2. อัปเดตแผนที่เส้นทาง (Routes) จาก /room_list เปลี่ยนเป็น /digitel
+      // ✅ อัปเดตแผนที่เส้นทาง (Routes) เพิ่ม /notifications
       routes: {
         '/manage': (context) => const ManagePage(),
-        '/digitel': (context) =>
-            const UserMenuPage(), // 👈 ผูกคำว่า /digitel เข้ากับคลาสหน้าจอใหม่ของคุณ
-        '/login': (context) =>
-            const LoginSelectionPage(), // 👈 เพิ่ม Route นี้เพื่อรองรับการเตะออก (401)
+        '/digitel': (context) => const UserMenuPage(),
+        '/login': (context) => const LoginSelectionPage(),
+        '/notifications': (context) =>
+            const NotificationPage(), // 👈 ลงทะเบียน Route ของระบบแจ้งเตือน
+        '/dashboard': (context) => const DashboardPage(),
       },
 
       builder: (context, child) {

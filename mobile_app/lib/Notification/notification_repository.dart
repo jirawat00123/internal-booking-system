@@ -1,0 +1,79 @@
+// lib/Notification/notification_repository.dart
+
+import 'dart:convert';
+import 'notification_service.dart';
+import 'notification_model.dart';
+
+class NotificationRepository {
+  // เรียกใช้ Service ที่เราสร้างไว้ในไฟล์ก่อนหน้า
+  final NotificationService _service = NotificationService();
+
+  /// ดึงรายการ Notification และแปลงเป็น List<NotificationModel>
+  Future<List<NotificationModel>> getNotifications({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      final response = await _service.getNotifications(
+        page: page,
+        limit: limit,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+
+        // รองรับ Response จาก Express ที่มักจะห่อด้วย key "data" หรือเป็น Array ตรงๆ
+        final List<dynamic> data = decoded['data'] ?? decoded;
+
+        return data.map((json) => NotificationModel.fromJson(json)).toList();
+      } else {
+        throw Exception(
+          'Failed to fetch notifications. Status: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Repository Error (getNotifications): $e');
+    }
+  }
+
+  /// ดึงจำนวนแจ้งเตือนที่ยังไม่ได้อ่าน กลับไปเป็นตัวเลข (int)
+  Future<int> getUnreadCount() async {
+    try {
+      final response = await _service.getUnreadCount();
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+
+        // รองรับ Format จาก Backend เช่น { "unreadCount": 5 } หรือ { "count": 5 }
+        return decoded['unreadCount'] ?? decoded['count'] ?? 0;
+      } else {
+        throw Exception(
+          'Failed to fetch unread count. Status: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Repository Error (getUnreadCount): $e');
+    }
+  }
+
+  /// อัปเดตสถานะการอ่านราย Item (คืนค่าเป็น bool เพื่อให้ UI รู้ว่าสำเร็จไหม)
+  Future<bool> markAsRead(String id) async {
+    try {
+      final response = await _service.markAsRead(id);
+      // รองรับทั้ง 200 OK และ 201 Created/Updated หรือ 204 No Content
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      return false; // กลืน Error แล้วบอก UI ว่าไม่สำเร็จ (สามารถเปลี่ยนเป็น throw ได้ถ้าต้องการจัดการที่ UI)
+    }
+  }
+
+  /// อัปเดตสถานะการอ่านทั้งหมด (Mark all as read)
+  Future<bool> markAllAsRead() async {
+    try {
+      final response = await _service.markAllAsRead();
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } catch (e) {
+      return false;
+    }
+  }
+}

@@ -72,10 +72,14 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
     floorNumber = int.tryParse(widget.room.location.split(' ')[1]) ?? 1;
     selectedSide = widget.room.location.split(' ').last;
     capacity = widget.room.capacity;
-    // 🟢 1. แก้ไขคำให้ตรงกับปุ่ม Toggle ด้านล่าง เพื่อให้ปุ่มถูกเลือก (Highlight) อย่างถูกต้อง
-    selectedStatus = widget.room.status == 'AVAILABLE'
-        ? 'ว่างพร้อมใช้งาน'
-        : 'ไม่ว่างพร้อมใช้งาน';
+    // 🟢 กำหนดค่าสถานะเริ่มต้นให้รองรับ 3 สถานะ (AVAILABLE, RESERVED, IN_USE)
+    if (widget.room.status == 'AVAILABLE') {
+      selectedStatus = 'AVAILABLE';
+    } else if (widget.room.status == 'RESERVED') {
+      selectedStatus = 'RESERVED';
+    } else {
+      selectedStatus = 'IN_USE';
+    }
   }
 
   Future<void> _pickImage() async {
@@ -197,9 +201,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                         request.fields['capacity'] = capacity
                                             .toString();
                                         request.fields['status'] =
-                                            selectedStatus == 'ว่างพร้อมใช้งาน'
-                                            ? 'AVAILABLE'
-                                            : 'IN_USE';
+                                            selectedStatus;
 
                                         if (_imageFile != null) {
                                           final imageBytes = await _imageFile!
@@ -243,11 +245,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                                   'Floor $floorNumber - Side $selectedSide',
                                               capacity: capacity,
                                               imagePath: newImageUrl,
-                                              status:
-                                                  selectedStatus ==
-                                                      'ว่างพร้อมใช้งาน'
-                                                  ? 'AVAILABLE'
-                                                  : 'IN_USE',
+                                              status: selectedStatus,
                                             );
                                             globalMeetingRooms.value =
                                                 updatedList; // อัปเดตข้อมูลให้หน้า List
@@ -707,7 +705,15 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
   }
 
   Widget _buildStatusToggle() {
-    final statuses = ['ว่างพร้อมใช้งาน', 'ไม่ว่างพร้อมใช้งาน'];
+    final statuses = [
+      {'label': 'ว่าง', 'value': 'AVAILABLE', 'color': const Color(0xFF2EC4B6)},
+      {'label': 'จองแล้ว', 'value': 'RESERVED', 'color': Colors.orange},
+      {
+        'label': 'กำลังใช้งาน',
+        'value': 'IN_USE',
+        'color': const Color(0xFFE11D48),
+      },
+    ];
 
     return Container(
       height: 40,
@@ -716,20 +722,20 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
-        children: statuses.map((status) {
-          bool isSelected = selectedStatus == status;
-          Color activeColor = status == 'ว่างพร้อมใช้งาน'
-              ? const Color(0xFF2EC4B6)
-              : const Color(0xFFE11D48);
+        children: statuses.map((item) {
+          final String statusValue = item['value'] as String;
+          final String statusLabel = item['label'] as String;
+          final Color statusColor = item['color'] as Color;
+          bool isSelected = selectedStatus == statusValue;
 
           return Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => selectedStatus = status),
+              onTap: () => setState(() => selectedStatus = statusValue),
               child: Container(
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? activeColor.withOpacity(0.12)
+                      ? statusColor.withOpacity(0.12)
                       : Colors.white,
                   borderRadius: BorderRadius.circular(9),
                 ),
@@ -739,16 +745,16 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                     Icon(
                       Icons.circle,
                       size: 8,
-                      color: isSelected ? activeColor : Colors.grey.shade400,
+                      color: isSelected ? statusColor : Colors.grey.shade400,
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      status,
+                      statusLabel,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         fontFamily: 'Kanit',
                         fontWeight: FontWeight.bold,
-                        color: isSelected ? activeColor : Colors.black54,
+                        color: isSelected ? statusColor : Colors.black54,
                       ),
                     ),
                   ],

@@ -1,4 +1,4 @@
-const { authenticateToken } = require('../middlewares/auth');
+const { authenticateToken, requireRole } = require('../middlewares/auth'); // 🟢 เพิ่ม requireRole
 const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
@@ -6,8 +6,14 @@ const prisma = new PrismaClient();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-// นำเข้า Controller ที่เราเพิ่งสร้าง
-const { releaseVehicle, completeVehicleBooking } = require('../controllers/vehicleBookingController');
+
+// 🟢 นำเข้า Controller สำหรับจัดการการจองรถยนต์
+const { 
+  releaseVehicle, 
+  completeVehicleBooking,
+  approveVehicleBooking, // เพิ่มใหม่
+  rejectVehicleBooking   // เพิ่มใหม่
+} = require('../controllers/vehicleBookingController');
 
 // ==========================================
 // 📂 ตั้งค่าระบบจัดการไฟล์ (Multer Configuration)
@@ -67,12 +73,21 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
   try {
     const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, purpose, driverType } = req.body;
 
-    // 🛑 1. ตรวจสอบข้อมูลเบื้องต้น
+// 🛑 1. ตรวจสอบข้อมูลเบื้องต้น
     if (!vehicleId || !startDatetime || !endDatetime) {
       deleteGarbageFile(req.file?.path);
       return res.status(400).json({
         success: false,
         error: "กรุณากรอกข้อมูลให้ครบถ้วน (รหัสรถ, วันเวลาเริ่มและสิ้นสุด)"
+      });
+    }
+
+    // 🛑 1.1 ตรวจสอบความถูกต้องของวันเวลา (เวลาคืนรถต้องมากกว่าเวลาเริ่มใช้งาน)
+    if (new Date(endDatetime) <= new Date(startDatetime)) {
+      deleteGarbageFile(req.file?.path);
+      return res.status(400).json({
+        success: false,
+        error: "เวลาคืนรถต้องมากกว่าเวลาเริ่มใช้งาน กรุณาตรวจสอบวันเวลาใหม่อีกครั้ง"
       });
     }
 
@@ -103,7 +118,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
       const overlappingVehicle = await tx.vehicleBooking.findFirst({
         where: {
           vehicleId: parsedVehicleId,
-          status: { notIn: ["Cancelled", "Completed", "Rejected", "CANCELLED", "REJECTED"] },
+          status: { notIn: ["CANCELLED", "COMPLETED", "REJECTED"] },
           startDatetime: { lt: new Date(endDatetime) },
           endDatetime: { gt: new Date(startDatetime) }
         }
@@ -117,7 +132,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
         data: { status: 'RESERVED' }
       });
 
-      // 🟢 3.4 บันทึกข้อมูลลงฐานข้อมูล
+      // 🟢 3.4 บันทึกข้อมูลลงฐานข้อมูล (เปลี่ยนเป็น PENDING เพื่อรออนุมัติ)
       return await tx.vehicleBooking.create({
         data: {
           vehicleId: parsedVehicleId,
@@ -127,7 +142,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
           startDatetime: new Date(startDatetime),
           endDatetime: new Date(endDatetime),
           purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
-          status: 'Pending'
+          status: 'PENDING' // 🟢 เปลี่ยนจาก Pending แบบ String เป็นตัวพิมพ์ใหญ่ตามมาตรฐาน
         }
       });
     });
@@ -153,7 +168,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
 
     return res.status(201).json({
       success: true,
-      message: "บันทึกคำขอจองรถยนต์และล็อกคิวรถเรียบร้อยแล้ว",
+      message: "บันทึกคำขอจองรถยนต์และล็อกคิวรถเรียบร้อยแล้ว รอการอนุมัติ",
       data: newBooking
     });
 
@@ -181,13 +196,13 @@ router.get('/history', async (req, res) => {
     }
 
     const historyBookings = await prisma.vehicleBooking.findMany({
-  where: { userId: userId },
-  include: {
-    vehicle: true,
-    attachments: true
-  },
-  orderBy: { createdAt: 'desc' }
-});
+      where: { userId: userId },
+      include: {
+        vehicle: true,
+        attachments: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
     return res.status(200).json({
       success: true,
@@ -211,13 +226,13 @@ router.get('/:id', authenticateToken, async (req, res) => {
     }
 
     const booking = await prisma.vehicleBooking.findUnique({
-  where: { id: bookingId },
-  include: {
-    vehicle: true,
-    user: { include: { employee: true } },
-    attachments: true
-  }
-});
+      where: { id: bookingId },
+      include: {
+        vehicle: true,
+        user: { include: { employee: true } },
+        attachments: true
+      }
+    });
 
     if (!booking) {
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจองนี้" });
@@ -239,13 +254,13 @@ router.get('/:id', authenticateToken, async (req, res) => {
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const bookings = await prisma.vehicleBooking.findMany({
-  include: {
-    vehicle: true,
-    user: { include: { employee: true } }
-  },
-  orderBy: { createdAt: 'desc' },
-  take: 100
-});
+      include: {
+        vehicle: true,
+        user: { include: { employee: true } }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
 
     return res.status(200).json({
       success: true,
@@ -287,13 +302,13 @@ router.patch('/:id/cancel', authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, error: "คุณไม่มีสิทธิ์ยกเลิกการจองของผู้อื่น" });
     }
 
-    if (bookingExists.status === "Cancelled") {
+    if (bookingExists.status === "CANCELLED" || bookingExists.status === "Cancelled") {
       return res.status(400).json({ success: false, error: "รายการนี้ถูกยกเลิกไปแล้ว" });
     }
 
     const updatedBooking = await prisma.vehicleBooking.update({
       where: { id: bookingId },
-      data: { status: "Cancelled" }
+      data: { status: "CANCELLED" }
     });
 
     return res.status(200).json({
@@ -318,10 +333,7 @@ router.put('/:id/release',
     console.log('\n===== [1] RELEASE START: After Auth, Entering Multer =====');
     next();
   },
-  upload.fields([
-    { name: 'frontImage', maxCount: 1 },
-    { name: 'plateImage', maxCount: 1 }
-  ]), 
+upload.any(),
   // 📍 2️⃣ ดักหลังออกจาก Multer (ดูว่าไฟล์ติดปัญหาไหม หรือ Hang อยู่ที่ Busboy)
   (req, res, next) => {
     console.log('===== [2] After Upload: Multer Processed Successfully =====');
@@ -354,24 +366,19 @@ router.put('/:id/release',
 
     console.log("===== [6] Booking Found =====");
     console.log("===== [7] Updating Booking =====");
-    // 2. อัปเดตสถานะเป็น In_Use (ตามที่ Flutter ส่งมา)
+    // 2. อัปเดตสถานะเป็น IN_USE (ตามที่ Flutter ส่งมา หรือบังคับ Enum)
     const updatedBooking = await prisma.vehicleBooking.update({
       where: { id: bookingId },
-      data: { status: status || 'In_Use' }
-      // หมายเหตุ: หาก schema ในฐานข้อมูลของคุณมีฟิลด์ parkingSlot ให้เพิ่ม `parkingSlot: parkingSlot` เข้าไปใน data ด้วย
+      data: { status: status ? status.toUpperCase() : 'IN_USE' }
     });
 
     console.log("===== [8] Updating Attachments (if any) =====");
     // 3. บันทึกรูปภาพลงฐานข้อมูล Attachment
-    if (req.files) {
-      const imagesToSave = [];
-      if (req.files['frontImage']) imagesToSave.push(req.files['frontImage'][0]);
-      if (req.files['plateImage']) imagesToSave.push(req.files['plateImage'][0]);
-
-      for (const file of imagesToSave) {
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
         await prisma.attachment.create({
           data: {
-            entityType: "VEHICLE_RELEASE_IMAGE", // สร้าง Type เพื่อแยกออกจากไฟล์เอกสารตอนจอง
+            entityType: "VEHICLE_RELEASE_IMAGE",
             entityId: bookingId,
             fileName: file.originalname,
             filePath: file.path,
@@ -383,7 +390,7 @@ router.put('/:id/release',
       }
     }
 
-console.log("===== [9] Commit Success: Sending Response =====");
+    console.log("===== [9] Commit Success: Sending Response =====");
     return res.status(200).json({
       success: true,
       message: "อัปเดตการปล่อยรถและบันทึกรูปภาพสำเร็จ",
@@ -400,5 +407,74 @@ console.log("===== [9] Commit Success: Sending Response =====");
 // 🏁 บันทึกการเสร็จสิ้นการใช้งานรถ (PUT /:id/complete)
 // ==========================================
 router.put('/:id/complete', authenticateToken, completeVehicleBooking);
+
+// ==========================================
+// 🔄 บันทึกการรับรถคืน (PUT /:id/return) - รองรับรูปถ่ายตอนคืนรถและปรับสถานะรถว่าง
+// ==========================================
+router.put('/:id/return', authenticateToken, upload.any(), async (req, res) => {
+  try {
+    const bookingId = parseInt(req.params.id, 10);
+    if (isNaN(bookingId)) {
+      return res.status(400).json({ success: false, error: "รหัสการจองไม่ถูกต้อง" });
+    }
+
+    // 1. ตรวจสอบข้อมูลการจอง
+    const booking = await prisma.vehicleBooking.findUnique({
+      where: { id: bookingId }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจอง" });
+    }
+
+    // 2. อัปเดตสถานะการจองเป็น COMPLETED และคืนสถานะรถเป็น AVAILABLE
+    const updatedBooking = await prisma.vehicleBooking.update({
+      where: { id: bookingId },
+      data: { status: 'COMPLETED' }
+    });
+
+    await prisma.vehicle.update({
+      where: { id: booking.vehicleId },
+      data: { status: 'AVAILABLE' }
+    });
+
+    // 3. บันทึกรูปภาพตอนคืนรถ (ถ้ามี)
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        await prisma.attachment.create({
+          data: {
+            entityType: "VEHICLE_RETURN_IMAGE",
+            entityId: bookingId,
+            fileName: file.originalname,
+            filePath: file.path,
+            fileType: file.mimetype,
+            uploadedBy: { connect: { id: req.user.userId } },
+            bookingVehicle: { connect: { id: bookingId } }
+          }
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "บันทึกการคืนรถสำเร็จ",
+      data: updatedBooking
+    });
+
+  } catch (error) {
+    console.error("🔴 Return Vehicle Error:", error);
+    return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการบันทึกการคืนรถ" });
+  }
+});
+
+// ==========================================
+// 🟢 อนุมัติการจองรถยนต์ (POST /:id/approve)
+// ==========================================
+router.post('/:id/approve', authenticateToken, requireRole(['ADMIN']), approveVehicleBooking);
+
+// ==========================================
+// 🔴 ปฏิเสธการจองรถยนต์ (POST /:id/reject)
+// ==========================================
+router.post('/:id/reject', authenticateToken, requireRole(['ADMIN']), rejectVehicleBooking);
 
 module.exports = router;

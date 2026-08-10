@@ -36,6 +36,7 @@ router.use(authenticateToken, requireRole(['ADMIN']));
 
 // 📋 CRUD User Management (เรียกผ่าน Controller ตามหลัก MVC)
 router.get('/', userController.getAllUsers);           // ค้นหา/แสดงรายชื่อ
+router.get('/:id', userController.getUserById);        // 🟢 เพิ่ม: ดึงข้อมูลผู้ใช้งานตาม ID (ตาม Checklist)
 router.post('/', userController.createUser);           // สร้างบัญชีใหม่
 router.put('/:id', userController.updateUser);         // แก้ไข Role / เปิด-ปิดบัญชี
 router.delete('/:id', userController.deleteUser);      // ลบบัญชี
@@ -66,6 +67,21 @@ const handleResetPin = async (req, res) => {
       include: { role: true, employee: true }
     });
 
+    // 🟢 เพิ่ม: บันทึก AuditLog เมื่อ Admin ทำการ Reset PIN
+    const adminId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (adminId) {
+      await prisma.auditLog.create({
+        data: {
+          action: 'UPDATE_USER',
+          module: 'USER_MANAGEMENT',
+          userId: adminId,
+          entityId: userId,
+          entityType: 'USER',
+          details: `Admin ID ${adminId} reset PIN for user ID ${userId}`
+        }
+      }).catch(err => console.error("AuditLog Error [Reset PIN]:", err.message));
+    }
+
     return res.status(200).json({
       success: true,
       message: "รีเซ็ตรหัส PIN สำเร็จ ผู้ใช้จะต้องทำการตั้งรหัส PIN ใหม่ในการใช้งานครั้งถัดไป",
@@ -77,7 +93,8 @@ const handleResetPin = async (req, res) => {
   }
 };
 
-// Route สำหรับ Reset PIN
+// Route สำหรับ Reset PIN (รองรับทั้ง PUT และ POST)
+router.put('/:id/reset-pin', handleResetPin);
 router.post('/:id/reset-pin', handleResetPin);
 router.post('/admin/users/:id/reset-pin', handleResetPin);
 

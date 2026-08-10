@@ -19,21 +19,70 @@ const checkFutureRoomBookings = async (roomId) => {
 // =========================================================================
 exports.getAllRooms = async (req, res, next) => {
   try {
-    // ใช้ Prisma ดึงข้อมูลจากตาราง rooms ทั้งหมด
-    const rooms = await prisma.room.findMany({
-      where: {
-        isDeleted: false,
-      },
-      orderBy: {
-        id: 'asc',
-      },
+    // 1. รับ Query Parameters สำหรับ Search & Filter
+    const { search, status, location, minCapacity, page, limit } = req.query;
+
+    // 2. ตั้งค่า Pagination (ถ้าไม่ส่งมา ให้ใช้ default ที่เยอะๆ ไปก่อนเพื่อไม่ให้กระทบระบบเก่า)
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 50; 
+    const skip = (pageNum - 1) * limitNum;
+
+    // 3. สร้าง whereClause สำหรับ Prisma
+    const whereClause = {
+      isDeleted: false,
+    };
+
+    // --- เพิ่ม Logic ของ Phase 8 ---
+    if (search) {
+      whereClause.roomName = { contains: search, mode: 'insensitive' };
+    }
+    if (status) {
+      whereClause.status = status;
+    }
+    if (location) {
+      whereClause.location = { contains: location, mode: 'insensitive' };
+    }
+    if (minCapacity) {
+      whereClause.capacity = { gte: parseInt(minCapacity, 10) };
+    }
+
+    // 4. Query Database (พร้อมดึงรายการจองเพื่อคำนวณสถานะ Real-time)
+    const [totalItems, roomsList] = await Promise.all([
+      prisma.room.count({ where: whereClause }),
+      prisma.room.findMany({
+        where: whereClause,
+        include: {
+          bookings: {
+            where: {
+              status: { in: ['APPROVED', 'RESERVED', 'IN_USE'] }
+            }
+          }
+        },
+        orderBy: { id: 'asc' },
+        skip: skip,
+        take: limitNum,
+      })
+    ]);
+
+    // คำนวณสถานะห้องแบบ Real-time (ถ้ามีคิวจองค้างอยู่ให้ถือว่าเป็น RESERVED)
+    const rooms = roomsList.map(room => {
+      const hasActiveBooking = room.bookings && room.bookings.length > 0;
+      return {
+        ...room,
+        status: (room.status === 'AVAILABLE' && hasActiveBooking) ? 'RESERVED' : room.status
+      };
     });
 
-    // ส่งข้อมูลกลับไปให้ Frontend ในรูปแบบ JSON
+    // 5. ส่ง Response แบบมี Pagination (สอดคล้องกับ Blueprint ข้อ 8.6)
     return res.status(200).json({
       success: true,
-      count: rooms.length,
       data: rooms,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalItems,
+        totalPages: Math.ceil(totalItems / limitNum)
+      }
     });
 
   } catch (error) {
@@ -73,11 +122,8 @@ exports.getRoomById = async (req, res, next) => {
 exports.createRoom = async (req, res, next) => {
   try {
     const { roomName, capacity, location, status } = req.body;
-    let uploadUrl = null; 
-
-    if (req.file) {
-      uploadUrl = `/uploads/${req.file.filename}`;
-    }
+    // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่ง URL/Path มาใน req.body
+    const uploadUrl = req.file ? `/uploads/${req.file.filename}` : req.body.uploadUrl || null;
 
     if (!roomName || !capacity) {
       return res.status(400).json({
@@ -144,11 +190,22 @@ exports.createRoom = async (req, res, next) => {
 exports.updateRoom = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const roomId = parseInt(id, 10);
     const { roomName, location, capacity, status } = req.body;
     let uploadUrl;
 
+    // 🟢 ตรวจสอบก่อนว่ามีห้องนี้อยู่จริงและไม่ได้ถูกลบ (isDeleted: false)
+    const currentRoom = await prisma.room.findFirst({
+      where: { id: roomId, isDeleted: false }
+    });
+    if (!currentRoom) {
+      return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลห้องประชุม หรือห้องนี้ถูกลบไปแล้ว' });
+    }
+
     if (req.file) {
       uploadUrl = `/uploads/${req.file.filename}`;
+    } else if (req.body.uploadUrl) {
+      uploadUrl = req.body.uploadUrl;
     }
 
     const updateData = {};
@@ -158,7 +215,7 @@ exports.updateRoom = async (req, res, next) => {
         where: { 
           roomName: roomName.toString(), 
           isDeleted: false,
-          id: { not: parseInt(id) }
+          id: { not: roomId }
         }
       });
       if (existingRoom) {
@@ -167,8 +224,8 @@ exports.updateRoom = async (req, res, next) => {
       updateData.roomName = roomName.toString();
     }
     
-    if (location) updateData.location = location.toString();
-    if (capacity) updateData.capacity = parseInt(capacity);
+    if (location !== undefined) updateData.location = location ? location.toString() : null;
+    if (capacity && !isNaN(parseInt(capacity, 10))) updateData.capacity = parseInt(capacity, 10);
     
     if (status) {
       if (status === 'MAINTENANCE' || status === 'INACTIVE') {
@@ -229,14 +286,21 @@ exports.updateRoomStatus = async (req, res, next) => {
     const { id } = req.params;
     const { status } = req.body;
 
+    // 🟢 1. อัปเดตให้รองรับครบทั้ง 5 สถานะตาม Prisma Schema
     const allowedStatuses = ['AVAILABLE', 'IN_USE', 'RESERVED', 'MAINTENANCE', 'INACTIVE'];
     if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: 'สถานะไม่ถูกต้อง (Invalid Status)' });
+      return res.status(400).json({ success: false, message: 'สถานะไม่ถูกต้อง (รองรับเฉพาะ AVAILABLE, IN_USE, RESERVED, MAINTENANCE, INACTIVE)' });
+    }
+
+    // Validation ID
+    if (isNaN(parseInt(id, 10))) {
+      return res.status(400).json({ success: false, message: 'ID ของห้องประชุมไม่ถูกต้อง' });
     }
 
     const room = await prisma.room.findFirst({ where: { id: parseInt(id, 10), isDeleted: false } });
     if (!room) return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลห้องประชุม' });
 
+    // 🟢 2. ปรับเงื่อนไข: บล็อกเฉพาะเวลาจะซ่อมแซมหรือปิดใช้งาน หากยังมีคิวจองล่วงหน้าค้างอยู่
     if (status === 'MAINTENANCE' || status === 'INACTIVE') {
       const hasFuture = await checkFutureRoomBookings(id);
       if (hasFuture) {

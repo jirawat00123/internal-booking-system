@@ -15,10 +15,13 @@ const vehicleRoutes = require('./routes/vehicles');
 const vehicleBookingsRouter = require('./routes/vehicleBookings');
 const securityRoutes = require('./routes/security');
 const attachmentRoutes = require('./routes/attachments');
+const calendarRoutes = require('./routes/calendar');
+const notificationRoutes = require('./routes/notifications');
 
 // 🚀 นำเข้า Route จัดการ User และ Monitor
 const userRoutes = require('./routes/users');
 const monitorRoutes = require('./routes/monitor');
+const reportRoutes = require('./routes/reports');
 
 const app = express();
 const prisma = new PrismaClient(); 
@@ -404,9 +407,10 @@ app.get('/', (req, res) => {
 // ==========================================
 // 🏢 Custom API overrides (ประกาศก่อน app.use Routers เพื่อป้องกัน Route Conflict)
 // ==========================================
+const { authenticateToken, isAdmin, requireRole } = require('./middlewares/auth');
 
-// [GET] ดึงข้อมูลห้องประชุม
-app.get('/api/rooms', async (req, res) => {
+// [GET] ดึงข้อมูลห้องประชุม (บังคับใช้ Token)
+app.get('/api/rooms', authenticateToken, async (req, res) => {
   try {
     const rooms = await prisma.room.findMany({
       orderBy: { roomName: 'asc' },
@@ -418,8 +422,8 @@ app.get('/api/rooms', async (req, res) => {
   }
 });
 
-// [POST] สร้างห้องประชุม
-app.post('/api/rooms', upload.single('image'), async (req, res) => {
+// [POST] สร้างห้องประชุม (สิทธิ์ Admin เท่านั้น)
+app.post('/api/rooms', authenticateToken, isAdmin, upload.single('image'), async (req, res) => {
   try {
     const { roomName, capacity, location, status } = req.body;
 
@@ -450,8 +454,8 @@ app.post('/api/rooms', upload.single('image'), async (req, res) => {
   }
 });
 
-// ✨ [DELETE] ลบห้องประชุม
-app.delete('/api/rooms/:id', async (req, res) => {
+// ✨ [DELETE] ลบห้องประชุม (สิทธิ์ Admin เท่านั้น)
+app.delete('/api/rooms/:id', authenticateToken, isAdmin, async (req, res) => {
   const { id } = req.params;
   const roomIdInt = parseInt(id, 10);
 
@@ -484,8 +488,8 @@ app.delete('/api/rooms/:id', async (req, res) => {
   }
 });
 
-// [GET] รถยนต์ว่าง
-app.get('/api/vehicles/available', async (req, res) => {
+// [GET] รถยนต์ว่าง (บังคับใช้ Token)
+app.get('/api/vehicles/available', authenticateToken, async (req, res) => {
   try {
     const availableVehicles = await prisma.vehicle.findMany({
       where: { 
@@ -502,8 +506,8 @@ app.get('/api/vehicles/available', async (req, res) => {
 });
 
 // [POST] จองรถยนต์
-// [POST] จองรถยนต์ (อัปเดตเวอร์ชันล็อกสถานะรถยนต์ 100%)
-app.post('/api/vehicle-bookings/book', async (req, res) => {
+// [POST] จองรถยนต์ (อัปเดตเวอร์ชันล็อกสถานะรถยนต์ 100%) (บังคับใช้ Token)
+app.post('/api/vehicle-bookings/book', authenticateToken, async (req, res) => {
   const { vehicleId, userId, startDate, endDate, purpose, destination, passengers } = req.body;
 
   if (!vehicleId || !userId || !startDate || !endDate || !purpose) {
@@ -595,8 +599,8 @@ app.post('/api/vehicle-bookings/book', async (req, res) => {
   }
 });
 
-// [GET] ประวัติใช้งานรถยนต์
-app.get('/api/vehicle-logs', async (req, res) => {
+// [GET] ประวัติใช้งานรถยนต์ (เฉพาะ ADMIN และ GUARD)
+app.get('/api/vehicle-logs', authenticateToken, requireRole(['ADMIN', 'GUARD']), async (req, res) => {
   try {
     const logs = await prisma.vehicleLog.findMany({
       orderBy: { createdAt: 'desc' },
@@ -621,11 +625,15 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/vehicle-bookings', vehicleBookingsRouter);
 app.use('/api/security', securityRoutes);
 app.use('/api/attachments', attachmentRoutes);
+app.use('/api/calendar', calendarRoutes);
 
 // 🚀 [เพิ่ม] ผูก Route สำหรับ Users และ Monitor Mode
 app.use('/api/users', userRoutes);
 app.use('/api/admin/users', userRoutes); // รองรับทั้ง /api/users และ /api/admin/users
 app.use('/api/monitor', monitorRoutes);
+app.use('/api/reports', reportRoutes);
+
+app.use('/api/notifications', notificationRoutes);
 
 // ==========================================
 // 🚨 Error Handlers

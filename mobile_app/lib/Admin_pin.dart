@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'PinError.dart';
 import 'AdminGroupPage.dart';
 import 'Booking_room/Room_model.dart';
@@ -102,11 +103,26 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                   : null);
 
           if (role == 'ADMIN') {
-            // 🟢 5. อัปเดต Token ใหม่ล่าสุดลง prefs
-            // ป้องกันกรณีที่ทั้ง Backend ไม่ส่ง Token มา และ existingToken ก็เป็น null
+            // 🟢 5. อัปเดต Token ใหม่ล่าสุดลง prefs และ SecureStorage
             final String? newToken = responseData['token'] ?? existingToken;
             if (newToken != null && newToken.isNotEmpty) {
               await prefs.setString('token', newToken);
+              await prefs.setString('jwt_token', newToken);
+
+              // 🔑 บันทึกลง SecureStorage ให้ DashboardService อ่านค่าได้
+              const storage = FlutterSecureStorage();
+              await storage.write(key: 'jwt_token', value: newToken);
+              await storage.write(key: 'token', value: newToken);
+
+              // 🟢 บันทึก permissions ลง SharedPreferences สำหรับควบคุม UI Action
+              final permissions =
+                  responseData['permissions'] ??
+                  (responseData['user'] != null
+                      ? responseData['user']['permissions']
+                      : null);
+              if (permissions != null) {
+                await prefs.setString('permissions', json.encode(permissions));
+              }
             }
 
             if (!mounted) return;

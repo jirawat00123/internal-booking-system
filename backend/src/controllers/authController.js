@@ -196,6 +196,38 @@ await prisma.auditLog.create({
   }
 };
 
+const getPermissionsByRole = (roleName) => {
+  const role = (roleName || '').toUpperCase();
+  if (role === 'ADMIN') {
+    return {
+      canExportReport: true,
+      canManageSystem: true,
+      canCreateRoomBooking: true,
+      canCreateVehicleBooking: true,
+      canCheckOut: true,
+      canCheckIn: true,
+    };
+  }
+  if (role === 'SECURITY' || role === 'GUARD') {
+    return {
+      canExportReport: false,
+      canManageSystem: false,
+      canCreateRoomBooking: false,
+      canCreateVehicleBooking: false,
+      canCheckOut: true,
+      canCheckIn: true,
+    };
+  }
+  return {
+    canExportReport: false,
+    canManageSystem: false,
+    canCreateRoomBooking: true,
+    canCreateVehicleBooking: true,
+    canCheckOut: false,
+    canCheckIn: false,
+  };
+};
+
 // ==========================================
 // API 4: เข้าสู่ระบบ (Login) - New Flow
 // ==========================================
@@ -243,11 +275,13 @@ const login = async (req, res) => {
     }
 
     const newSessionId = uuidv4(); 
+    const roleNameUpper = (user.role?.name || 'USER').toUpperCase();
+    const userPermissions = getPermissionsByRole(roleNameUpper);
 
     const tokenPayload = {
       userId: user.id,
       employeeCode: employee.employeeCode,
-      role: user.role.name,
+      role: roleNameUpper,
       sessionId: newSessionId 
     };
 
@@ -266,9 +300,7 @@ const login = async (req, res) => {
       }
     });
 
-// 🟢 เพิ่ม AuditLog เมื่อเข้าสู่ระบบสำเร็จ
-console.log("▶️ กำลังจะบันทึก AuditLog สำหรับ User ID:", user.id, "Role:", user.role.name); // <--- เพิ่มบรรทัดนี้
-
+    // บันทึก AuditLog เมื่อเข้าสู่ระบบสำเร็จ
     await prisma.auditLog.create({
       data: {
         action: "LOGIN_SYSTEM", 
@@ -276,24 +308,24 @@ console.log("▶️ กำลังจะบันทึก AuditLog สำห�
         entityId: parseInt(user.id, 10),
         entityType: "USER",
         userId: parseInt(user.id, 10),
-        details: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${user.role.name})` // แนะนำให้เติมเครื่องหมาย : กลับเข้าไป
+        details: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${roleNameUpper})`
       }
     }).catch(err => {
-      console.error("❌ AuditLog Error [LOGIN_SYSTEM]:", err.message); // <--- ถ้ามี Error จะโชว์ตรงนี้
+      console.error("❌ AuditLog Error [LOGIN_SYSTEM]:", err.message);
     });
-
-    console.log("✅ AuditLog บันทึกสำเร็จ หรือผ่านจุดดักจับแล้ว"); // <--- เพิ่มบรรทัดนี้
 
     return res.status(200).json({
       success: true,
       message: "เข้าสู่ระบบสำเร็จ",
       token,
+      permissions: userPermissions,
       user: {
         id: user.id,
         employeeCode: employee.employeeCode,
         fullName: employee.fullName,
-        role: user.role.name,
-        pinResetRequired: user.pinResetRequired
+        role: roleNameUpper,
+        pinResetRequired: user.pinResetRequired,
+        permissions: userPermissions
       }
     });
 
@@ -302,7 +334,6 @@ console.log("▶️ กำลังจะบันทึก AuditLog สำห�
     return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการเข้าสู่ระบบ" });
   }
 };
-
 module.exports = {
   login,
   setupPin,

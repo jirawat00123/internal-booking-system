@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/foundation.dart'
-    show kIsWeb; // 💡 1. เพิ่มการนำเข้า kIsWeb
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'Vehicleoutcompleted.dart';
 
 class VehicleOutScreen extends StatefulWidget {
@@ -16,32 +15,34 @@ class VehicleOutScreen extends StatefulWidget {
 }
 
 class _VehicleOutScreenState extends State<VehicleOutScreen> {
-  final TextEditingController slotController = TextEditingController();
+  // ❌ ลบช่องเก็บข้อมูล slotController ออกไปแล้ว
 
-  // 💡 2. เปลี่ยนจาก File เป็น XFile เพื่อให้รองรับ Web
   XFile? frontImage;
+  XFile? backImage;
   XFile? plateImage;
 
   final ImagePicker _picker = ImagePicker();
 
-  Future<void> _pickImage(bool isFront) async {
+  Future<void> _pickImage(String imageType) async {
     final XFile? image = await _picker.pickImage(source: ImageSource.camera);
     if (image != null) {
       setState(() {
-        if (isFront)
+        if (imageType == 'front') {
           frontImage = image;
-        else
+        } else if (imageType == 'back') {
+          backImage = image;
+        } else if (imageType == 'plate') {
           plateImage = image;
+        }
       });
     }
   }
 
   void _checkAndSubmit() {
-    if (slotController.text.trim().isEmpty ||
-        frontImage == null ||
-        plateImage == null) {
+    // 🎯 แก้ไข: ตรวจสอบแค่รูปภาพ 3 มุม (เอาเช็กช่องจอดรถออก)
+    if (frontImage == null || backImage == null || plateImage == null) {
       _showErrorDialog(
-        'กรุณากรอกระบุช่องจอด และถ่ายรูปให้ครบถ้วนก่อนดำเนินการต่อ',
+        'กรุณาถ่ายรูปให้ครบทั้ง 3 มุมก่อนดำเนินการต่อ', // 🎯 เปลี่ยนข้อความแจ้งเตือน
       );
       return;
     }
@@ -170,8 +171,6 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-
-      // 🎯 1. ตรวจสอบ Key ให้ตรงกับตอน Login (แก้ไขเป็น 'token' หาก auth_service ใช้คำนี้)
       String token =
           prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
 
@@ -183,8 +182,6 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
         return;
       }
 
-      // 🎯 2. ใช้ IP Address สำหรับทดสอบแทน localhost เพื่อให้ Emulator/มือถือ มองเห็น Backend
-      // (เปลี่ยน 10.0.2.2 เป็น IP ของคอมคุณ เช่น 192.168.1.X ถ้าใช้มือถือจริงเทสต์)
       String baseUrl = kIsWeb
           ? 'http://localhost:3001'
           : 'http://10.0.2.2:3001';
@@ -194,25 +191,30 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
         Uri.parse('$baseUrl/api/vehicle-bookings/${widget.bookingId}/release'),
       );
 
-      // 🎯 3. แนบ Header ให้ครบถ้วน
-      request.headers.addAll({
-        'Authorization': 'Bearer $token',
-        // ไม่ต้องใส่ Content-Type: multipart/form-data เอง ปล่อยให้ http.MultipartRequest จัดการ Boundary ให้
-      });
+      request.headers.addAll({'Authorization': 'Bearer $token'});
 
+      // ❌ ลบการส่งข้อมูล parkingSlot ออกไปแล้ว
       request.fields['status'] = 'In_Use';
-      request.fields['parkingSlot'] = slotController.text;
 
       request.files.add(
         http.MultipartFile.fromBytes(
-          'frontImage',
+          '/* เปลี่ยนเป็นชื่อฟิลด์รูปหน้ารถของ Backend */', // เช่น 'checkoutFrontPhoto' หรือ 'images'
           await frontImage!.readAsBytes(),
           filename: frontImage!.name,
         ),
       );
+
       request.files.add(
         http.MultipartFile.fromBytes(
-          'plateImage',
+          '/* เปลี่ยนเป็นชื่อฟิลด์รูปหลังรถของ Backend */', // เช่น 'checkoutBackPhoto' หรือ 'images'
+          await backImage!.readAsBytes(),
+          filename: backImage!.name,
+        ),
+      );
+
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          '/* เปลี่ยนเป็นชื่อฟิลด์รูปเลขไมล์ของ Backend */', // เช่น 'checkoutMileagePhoto' หรือ 'images'
           await plateImage!.readAsBytes(),
           filename: plateImage!.name,
         ),
@@ -229,7 +231,6 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
           ),
         );
       } else {
-        // หากล้มเหลว ให้ลองปริ้นท์ status code ออกมาดูใน Console ด้วย
         print('Upload failed with status: ${response.statusCode}');
         _showErrorDialog(
           'อัปโหลดรูปภาพไม่สำเร็จ (รหัส: ${response.statusCode})',
@@ -344,45 +345,28 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
                   ],
                 ),
               ),
+
               const SizedBox(height: 20),
 
-              const Text(
-                'ระบุช่องจอด',
-                style: TextStyle(
-                  color: Colors.blueGrey,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Kanit',
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: 140,
-                child: TextField(
-                  controller: slotController,
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
+              // ❌ ลบส่วน UI กรอกข้อมูลช่องจอดรถออกแล้ว
+              _buildPhotoBox(
+                'แนบรูปหน้ารถ',
+                frontImage,
+                () => _pickImage('front'),
               ),
               const SizedBox(height: 20),
 
               _buildPhotoBox(
-                'แนบรูปหน้ารถ',
-                frontImage,
-                () => _pickImage(true),
+                'แนบรูปหลังรถ',
+                backImage,
+                () => _pickImage('back'),
               ),
               const SizedBox(height: 20),
 
               _buildPhotoBox(
                 'แนบรูปเลขไมล์',
                 plateImage,
-                () => _pickImage(false),
+                () => _pickImage('plate'),
               ),
               const SizedBox(height: 32),
 
@@ -415,7 +399,6 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
     );
   }
 
-  // 💡 4. แยกการโชว์รูปว่ารันบนเว็บ หรือบนมือถือ
   Widget _buildPhotoBox(String label, XFile? image, VoidCallback onTap) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,14 +426,8 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: kIsWeb
-                        ? Image.network(
-                            image.path,
-                            fit: BoxFit.cover,
-                          ) // ถ้าเป็นเว็บ ใช้ Image.network แสดง path เสมือน
-                        : Image.file(
-                            File(image.path),
-                            fit: BoxFit.cover,
-                          ), // ถ้าเป็นมือถือ/Desktop ใช้ Image.file
+                        ? Image.network(image.path, fit: BoxFit.cover)
+                        : Image.file(File(image.path), fit: BoxFit.cover),
                   )
                 : const Icon(
                     Icons.add_photo_alternate_outlined,

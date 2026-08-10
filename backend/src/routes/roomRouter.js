@@ -1,5 +1,6 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
+const { authenticateToken } = require('../middlewares/auth'); // ✅ นำเข้า Middleware ตรวจสอบสิทธิ์
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -9,9 +10,11 @@ const prisma = new PrismaClient();
 // =========================================================================
 
 // [GET] / - ดึงรายชื่อห้องประชุมทั้งหมด (ลำดับที่ 3 ในตาราง)
-router.get('/', async (req, res, next) => {
+// 🔒 บังคับตรวจสอบ Token (Guest & User: Read Only)
+router.get('/', authenticateToken, async (req, res, next) => {
   try {
     const rooms = await prisma.room.findMany({
+      where: { isDeleted: false }, // 🟢 เพิ่มเงื่อนไขเพื่อซ่อนห้องที่ถูก Soft Delete
       orderBy: { id: 'asc' }
     });
     
@@ -22,7 +25,8 @@ router.get('/', async (req, res, next) => {
 });
 
 // [GET] /:id - ดึงรายละเอียดของห้องประชุมเดี่ยวๆ ตาม ID (ลำดับที่ 4 ในตาราง)
-router.get('/:id', async (req, res, next) => {
+// 🔒 บังคับตรวจสอบ Token (Guest & User: Read Only)
+router.get('/:id', authenticateToken, async (req, res, next) => {
   try {
     const roomId = parseInt(req.params.id);
     
@@ -34,11 +38,15 @@ router.get('/:id', async (req, res, next) => {
       });
     }
 
-    const room = await prisma.room.findUnique({
-      where: { id: roomId }
+// 🟢 เปลี่ยนมาใช้ findFirst แทน เพื่อให้เช็กเงื่อนไข isDeleted ร่วมกับ id ได้
+    const room = await prisma.room.findFirst({
+      where: { 
+        id: roomId,
+        isDeleted: false // 🟢 ป้องกันการดึงห้องที่ถูกลบไปแล้วมาแสดงผล
+      }
     });
 
-    // 💡 กรณีหาห้องไม่เจอ (เช่น ใส่ ID มั่ว)
+    // 💡 กรณีหาห้องไม่เจอ (เช่น ใส่ ID มั่ว หรือห้องถูกลบไปแล้ว)
     if (!room) {
       return res.status(404).json({ 
         success: false, 

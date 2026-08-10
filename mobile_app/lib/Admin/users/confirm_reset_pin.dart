@@ -33,10 +33,12 @@ class _ConfirmResetPinDialogState extends State<ConfirmResetPinDialog> {
       // หากคุณมีไฟล์ ApiConfig (เช่น ApiConfig.baseUrl) ให้เปลี่ยนมาเรียกใช้ตัวแปรแทนเพื่อไม่ให้ Hardcode
       final String baseUrl = 'http://localhost:3001';
       final url = Uri.parse(
-        '$baseUrl/api/users/admin/users/${widget.userId}/reset-pin',
+        // 🟢 แก้ไข URL ให้ตรงกับ Backend API (ตัด admin/users/ ที่ซ้ำซ้อนออก)
+        '$baseUrl/api/users/${widget.userId}/reset-pin',
       );
 
-      final response = await http.post(
+      // 🟢 เปลี่ยนจาก http.post เป็น http.put สำหรับการอัปเดตข้อมูล
+      final response = await http.put(
         url,
         headers: {
           'Content-Type': 'application/json',

@@ -23,4 +23,14 @@ router.put('/:id', authenticateToken, requireRole(['ADMIN', 'USER', 'GUARD']), b
 // 🔒 ยกเลิกการจอง (อนุญาตเฉพาะ ADMIN และ USER)
 router.patch('/:id/cancel', authenticateToken, requireRole(['ADMIN', 'USER']), bookingController.cancelBooking);
 
+// =========================================================================
+// 🟢 🆕 Workflow อนุมัติการจอง (Phase 6)
+// =========================================================================
+
+// ✅ อนุมัติการจอง (อนุญาตเฉพาะ ADMIN)
+router.post('/:id/approve', authenticateToken, requireRole(['ADMIN']), bookingController.approveBooking);
+
+// ❌ ปฏิเสธการจอง (อนุญาตเฉพาะ ADMIN)
+router.post('/:id/reject', authenticateToken, requireRole(['ADMIN']), bookingController.rejectBooking);
+
 module.exports = router;

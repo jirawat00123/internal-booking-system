@@ -18,6 +18,8 @@ class EditUserPage extends StatefulWidget {
 
 class _EditUserPageState extends State<EditUserPage> {
   late TextEditingController nameController;
+  // 🟢 1. เพิ่ม Controller สำหรับช่องกรอกรหัสพนักงาน
+  late TextEditingController empCodeController;
 
   String? selectedDepartment;
   String? selectedRole;
@@ -37,6 +39,9 @@ class _EditUserPageState extends State<EditUserPage> {
   void initState() {
     super.initState();
     nameController = TextEditingController(text: widget.employee.fullName);
+    // 🟢 2. ดึงรหัสพนักงานเดิมมาแสดง (สมมติว่าตัวแปรชื่อ employeeCode หากพี่ตั้งชื่อใน Model เป็นอย่างอื่น ให้แก้ให้ตรงนะครับ)
+    empCodeController = TextEditingController(text: widget.employee.employeeCode ?? '');
+    
     selectedDepartment = widget.employee.departmentName;
 
     selectedRole = 'User';
@@ -54,12 +59,14 @@ class _EditUserPageState extends State<EditUserPage> {
   @override
   void dispose() {
     nameController.dispose();
+    empCodeController.dispose(); // 🟢 อย่าลืม dispose
     super.dispose();
   }
 
   void _showConfirmDialog(BuildContext context) {
     if (selectedDepartment == null ||
         selectedRole == null ||
+        empCodeController.text.trim().isEmpty || // 🟢 ตรวจสอบว่ากรอกรหัสพนักงานหรือยัง
         nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -132,7 +139,8 @@ class _EditUserPageState extends State<EditUserPage> {
                             if (selectedRole == 'Security') roleId = 3;
 
                             final bodyData = jsonEncode({
-                              'fullName': nameController.text,
+                              'employeeCode': empCodeController.text.trim(), // 🟢 ส่งรหัสพนักงานใหม่ (หากแก้ไข) ไปที่ Backend
+                              'fullName': nameController.text.trim(),
                               'departmentId': selectedDepartment == 'ไอที (IT)'
                                   ? 1
                                   : 2,
@@ -230,7 +238,6 @@ class _EditUserPageState extends State<EditUserPage> {
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // 🌫️ 1. เอา Filter เบลอออก แล้วใช้พื้นหลังสีดำโปร่งแสงแทน
           Positioned.fill(
             child: GestureDetector(
               onTap: () => Navigator.pop(context),
@@ -260,7 +267,6 @@ class _EditUserPageState extends State<EditUserPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ❌ 2. เพิ่มปุ่มกากบาทตรงหัวข้อ
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,6 +455,44 @@ class _EditUserPageState extends State<EditUserPage> {
                               thickness: 1,
                             ),
                           ),
+
+                          // 🟢 3. เพิ่มช่องกรอกรหัสพนักงานที่ดึงของเดิมมาโชว์
+                          const Text(
+                            'รหัสพนักงาน (Employee Code)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: empCodeController,
+                            decoration: InputDecoration(
+                              hintText: 'เช่น MC-AC0299',
+                              hintStyle: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 14,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
 
                           const Text(
                             'ชื่อ-นามสกุล (ชื่อเล่น)',

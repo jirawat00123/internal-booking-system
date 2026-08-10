@@ -14,7 +14,10 @@ const sanitizeUser = (user) => {
 exports.getAllUsers = async (req, res) => {
   try {
     const { search, role, active } = req.query;
-    let whereCondition = {};
+    // 🟢 ดึงเฉพาะรายการที่ยังไม่ถูกลบ (isDeleted: false) ดึงทั้ง active: true และ active: false
+    let whereCondition = {
+      isDeleted: false
+    };
 
     if (search) {
       whereCondition.employee = {
@@ -34,6 +37,19 @@ exports.getAllUsers = async (req, res) => {
 
     if (active !== undefined) {
       whereCondition.active = active === 'true';
+    }
+
+    // 🟢 เพิ่ม Filter กรองตามแผนก (Department)
+    const { department } = req.query;
+    if (department) {
+      whereCondition.employee = {
+        ...whereCondition.employee,
+        position: {
+          department: {
+            name: { contains: department, mode: 'insensitive' } 
+          }
+        }
+      };
     }
 
     const users = await prisma.user.findMany({
@@ -59,52 +75,98 @@ exports.getAllUsers = async (req, res) => {
 };
 
 // ==========================================
+// 🔍 1.5 ดึงข้อมูลผู้ใช้งานตาม ID (GET By ID)
+// ==========================================
+exports.getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await prisma.user.findUnique({
+      where: { id: parseInt(id, 10) },
+      include: {
+        role: true,
+        employee: {
+          include: {
+            position: { include: { department: true } }
+          }
+        }
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: "ไม่พบข้อมูลบัญชีผู้ใช้งาน" });
+    }
+
+    return res.status(200).json({ success: true, data: sanitizeUser(user) });
+  } catch (error) {
+    console.error('Get User By ID Error:', error);
+    return res.status(500).json({ success: false, error: "ไม่สามารถดึงข้อมูลผู้ใช้งานได้" });
+  }
+};
+
+// ==========================================
 // ➕ 2. เพิ่มบัญชีผู้ใช้งานใหม่ (POST)
 // ==========================================
 exports.createUser = async (req, res) => {
   try {
-    const { employeeId, employeeCode, roleId, roles, active } = req.body; 
+    const { employeeCode, fullName, departmentId, positionId, roleId, active } = req.body;
 
-    if (!employeeId && !employeeCode) {
-      return res.status(400).json({ success: false, error: "กรุณาระบุ employeeId หรือ employeeCode" });
-    }
-
-    let employee;
-    if (employeeId) {
-      employee = await prisma.employee.findUnique({
-        where: { id: parseInt(employeeId, 10) },
-        include: { users: true }
-      });
-    } else {
-      employee = await prisma.employee.findUnique({
-        where: { employeeCode: String(employeeCode).trim() },
-        include: { users: true }
+    if (!employeeCode || !fullName || !departmentId || !positionId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "กรุณากรอกข้อมูลพนักงาน (รหัสพนักงาน, ชื่อ-นามสกุล, แผนก, ตำแหน่ง) ให้ครบถ้วน" 
       });
     }
 
-    if (!employee) {
-      return res.status(404).json({ success: false, error: "ไม่พบข้อมูลพนักงานในระบบ" });
-    }
+    const cleanEmpCode = String(employeeCode).trim();
 
-    if (employee.users && employee.users.length > 0) {
-      return res.status(400).json({ success: false, error: "พนักงานท่านนี้มีบัญชีผู้ใช้งานในระบบอยู่แล้ว" });
-    }
-
-    const newUser = await prisma.user.create({
-      data: {
-        employeeId: employee.id,
-        roleId: roleId ? parseInt(roleId, 10) : null,
-        roles: roles || 'USER', 
-        active: active !== undefined ? Boolean(active) : true,
-        pin: null,
-        pinInitialized: false, 
-        pinResetRequired: false
-      },
-      include: { role: true, employee: true }
+    // 1. ตรวจสอบว่ารหัสพนักงานนี้มีบัญชีผู้ใช้งานอยู่แล้วหรือไม่
+    const existingEmployee = await prisma.employee.findUnique({
+      where: { employeeCode: cleanEmpCode },
+      include: { users: true }
     });
 
-    // 🟢 บันทึก AuditLog เมื่อสร้างผู้ใช้งานสำเร็จ
-    const adminId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    if (existingEmployee && existingEmployee.users && existingEmployee.users.length > 0) {
+      return res.status(400).json({ success: false, error: "รหัสพนักงานนี้มีบัญชีผู้ใช้งานในระบบอยู่แล้ว" });
+    }
+
+    // 2. สร้างข้อมูล พนักงาน และ บัญชีผู้ใช้งาน ไปพร้อมกันใน Transaction
+    const newUser = await prisma.$transaction(async (tx) => {
+      let employee = existingEmployee;
+
+      if (!employee) {
+        employee = await tx.employee.create({
+          data: {
+            employeeCode: cleanEmpCode,
+            fullName: String(fullName).trim(),
+            departmentId: parseInt(departmentId, 10),
+            positionId: parseInt(positionId, 10),
+            isActive: active !== undefined ? Boolean(active) : true
+          }
+        });
+      }
+
+      return await tx.user.create({
+        data: {
+          employeeId: employee.id,
+          roleId: roleId ? parseInt(roleId, 10) : 2, // 2 คือ USER
+          active: active !== undefined ? Boolean(active) : true,
+          pin: null,
+          pinInitialized: false,
+          pinResetRequired: false
+        },
+        include: {
+          role: true,
+          employee: {
+            include: {
+              position: { include: { department: true } }
+            }
+          }
+        }
+      });
+    });
+
+    // 🟢 บันทึก AuditLog เมื่อสร้างผู้ใช้งานสำเร็จ (รองรับทั้ง userId และ id จาก Token)
+    const adminId = (req.user?.userId || req.user?.id) ? parseInt(req.user.userId || req.user.id, 10) : null;
     if (adminId) {
 await prisma.auditLog.create({
         data: {
@@ -113,7 +175,7 @@ await prisma.auditLog.create({
           entityId: newUser.id,
           entityType: "USER",
           userId: adminId,
-          details: `Admin ID ${adminId} created user ID ${newUser.id} for employee ID ${employee.id}`
+          details: `Admin ID ${adminId} created user ID ${newUser.id} for employee ID ${newUser.employeeId}`
         }
       }).catch(err => console.error("AuditLog Error [CREATE_USER]:", err.message));
     }
@@ -135,7 +197,7 @@ await prisma.auditLog.create({
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { roleId, roles, active } = req.body;
+    const { roleId, roles, active, employeeCode, fullName, departmentId, positionId } = req.body;
 
     const user = await prisma.user.findUnique({ where: { id: parseInt(id) } });
     if (!user) {
@@ -143,12 +205,38 @@ exports.updateUser = async (req, res) => {
     }
 
     const dataToUpdate = {};
-    if (roleId !== undefined) dataToUpdate.roleId = parseInt(roleId, 10);
-    if (roles !== undefined) dataToUpdate.roles = roles;
+    
+    // 🟢 แก้ไขเป็นการใช้ connect และตรวจสอบค่า null/undefined อย่างรัดกุม
+    if (roleId !== undefined && !isNaN(parseInt(roleId, 10))) {
+      dataToUpdate.role = { connect: { id: parseInt(roleId, 10) } };
+    }
+    
+    // 🟢 (ลบ dataToUpdate.roles ออก เนื่องจากไม่มีฟิลด์นี้ในตาราง User)
+    
     if (active !== undefined) dataToUpdate.active = Boolean(active);
 
     if (active === false) {
       dataToUpdate.currentSessionId = null; 
+    }
+
+    // 🟢 อัปเดตข้อมูลในตาราง Employee (รวมถึงสถานะ isActive) ลง Database
+    const employeeData = {};
+    if (active !== undefined) employeeData.isActive = Boolean(active);
+    if (employeeCode) employeeData.employeeCode = String(employeeCode).trim();
+    if (fullName) employeeData.fullName = String(fullName).trim();
+    if (departmentId) employeeData.departmentId = parseInt(departmentId, 10);
+    if (positionId) employeeData.positionId = parseInt(positionId, 10);
+
+    if (Object.keys(employeeData).length > 0) {
+      dataToUpdate.employee = {
+        update: employeeData
+      };
+    }
+
+    // 🟢 แปลงเป็น Int ตั้งแต่ตรงนี้ (รองรับทั้ง userId และ id จาก Token)
+    const adminId = (req.user?.userId || req.user?.id) ? parseInt(req.user.userId || req.user.id, 10) : null;
+    if (adminId === parseInt(id) && (roleId !== undefined || roles !== undefined)) {
+      return res.status(403).json({ success: false, error: "ไม่สามารถแก้ไขสิทธิ์การใช้งาน (Role) ของตัวเองได้" });
     }
 
     const updatedUser = await prisma.user.update({
@@ -157,17 +245,31 @@ exports.updateUser = async (req, res) => {
       include: { role: true, employee: true }
     });
 
-    // 🟢 บันทึก AuditLog เมื่ออัปเดตผู้ใช้งานสำเร็จ
-    const adminId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    // 🟢 บันทึก AuditLog แยกตามประเภท (Change Role, Activate, Deactivate, Update)
+    // (ลบการประกาศ const adminId ซ้ำทิ้งไป ใช้ตัวแปรจากด้านบนแทน)
     if (adminId) {
+      let actionType = 'UPDATE_USER';
+      let actionDetails = `Admin ID ${adminId} updated settings for user ID ${updatedUser.id}`;
+
+      if (active === true && user.active === false) {
+        actionType = 'ACTIVATE_USER';
+        actionDetails = `Admin ID ${adminId} activated user ID ${updatedUser.id}`;
+      } else if (active === false && user.active === true) {
+        actionType = 'DEACTIVATE_USER';
+        actionDetails = `Admin ID ${adminId} deactivated user ID ${updatedUser.id}`;
+      } else if (roleId !== undefined && roleId !== user.roleId) {
+        actionType = 'CHANGE_ROLE';
+        actionDetails = `Admin ID ${adminId} changed role for user ID ${updatedUser.id} to Role ID ${roleId}`;
+      }
+
       await prisma.auditLog.create({
         data: {
-          action: 'UPDATE_USER',
+          action: actionType,
           module: 'USER_MANAGEMENT',
           userId: adminId,
           entityId: updatedUser.id,
           entityType: 'USER',
-          details: `Admin ID ${adminId} updated settings for user ID ${updatedUser.id}`
+          details: actionDetails
         }
       }).catch(err => console.error("AuditLog Error [updateUser]:", err.message));
     }
@@ -195,12 +297,23 @@ exports.deleteUser = async (req, res) => {
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลบัญชีผู้ใช้งาน" });
     }
 
-    await prisma.user.delete({
-      where: { id: parseInt(id) }
+// 🟢 ทำ Soft Delete: ตั้งค่า isDeleted: true และอัปเดตสถานะทั้ง User และ Employee เป็น false
+    await prisma.user.update({
+      where: { id: parseInt(id) },
+      data: { 
+        isDeleted: true,
+        active: false,
+        currentSessionId: null,
+        employee: {
+          update: {
+            isActive: false
+          }
+        }
+      }
     });
 
-    // 🟢 บันทึก AuditLog เมื่อลบผู้ใช้งานสำเร็จ
-    const adminId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    // 🟢 บันทึก AuditLog เมื่อลบผู้ใช้งานสำเร็จ (รองรับทั้ง userId และ id จาก Token)
+    const adminId = (req.user?.userId || req.user?.id) ? parseInt(req.user.userId || req.user.id, 10) : null;
     if (adminId) {
       await prisma.auditLog.create({
         data: {

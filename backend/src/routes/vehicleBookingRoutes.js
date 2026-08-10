@@ -27,4 +27,7 @@ router.get('/:id', authenticateToken, vehicleBookingController.getBookingById);
 // API สำหรับยกเลิกการจองรถยนต์
 router.patch('/:id/cancel', authenticateToken, vehicleBookingController.cancelBooking);
 
+// API สำหรับบันทึกคืนรถ (ไม่ต้องมี Multer อัปโหลดไฟล์)
+router.put('/:id/complete', authenticateToken, vehicleBookingController.releaseVehicle);
+
 module.exports = router;

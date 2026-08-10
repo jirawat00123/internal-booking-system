@@ -31,7 +31,7 @@ class AddUserSuccessPage extends StatelessWidget {
 
               // 📝 ข้อความสำเร็จ
               const Text(
-                'เพิ่มพนักงานสำเร็จ',
+                'เพิ่มบัญชีผู้ใช้งานสำเร็จ',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,

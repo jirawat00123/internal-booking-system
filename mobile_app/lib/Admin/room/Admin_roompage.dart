@@ -414,21 +414,22 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
   }
 
   Widget _buildRoomCard(MeetingRoom room, int index) {
-    // 💡 ปรับให้รองรับ 3 สีตามสถานะของ Backend
     Color statusColor;
     if (room.status == 'AVAILABLE') {
-      statusColor = const Color(0xFF2EC4B6); // สีเขียว
+      statusColor = const Color(0xFF2EC4B6); 
     } else if (room.status == 'RESERVED') {
-      statusColor = const Color(0xFFF59E0B); // สีส้ม/เหลือง
+      statusColor = const Color(0xFFF59E0B); 
     } else {
-      statusColor = const Color(0xFFE11D48); // สีแดง (IN_USE)
+      statusColor = const Color(0xFFE11D48); 
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
+      // 🟢 ตั้งค่าขอบด้านข้าง (Margin) ให้ตรงกับรูปเป๊ะๆ (ซ้าย-ขวา 16, บน-ล่าง 12)
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16), // ปรับขอบให้มนเท่ารูปต้นแบบ
+        border: Border.all(color: Colors.grey.shade200, width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -438,192 +439,158 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch, // ขยายให้เต็มความกว้างการ์ด
         children: [
-          // 💡 ส่วนของการทำภาพและกล่องข้อมูลลอยซ้อนเกยกัน
-          SizedBox(
-            height: 310, // ล็อกความสูงรวมของส่วนแสดงผลด้านบนเพื่อไม่ให้เบียดกัน
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // 1. ตัวรูปภาพประชุม (หรือกล่องสีเทา) วางเต็มพื้นที่ด้านบน
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(24),
-                  ),
-                  // 🟢 ดึงรูปจาก Network เสมอ ทั้ง Web และ Mobile พร้อมทำ Null & Empty check
-                  child: room.imagePath != null && room.imagePath!.isNotEmpty
-                      ? Image.network(
-                          room.imagePath!.startsWith('http')
-                              ? room.imagePath!
-                              : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${room.imagePath}',
-                          height: 180,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              height: 180,
-                              width: double.infinity,
-                              color: Colors.grey[300],
-                              child: const Icon(
-                                Icons.broken_image,
-                                size: 50,
-                                color: Colors.grey,
-                              ),
-                            );
-                          },
-                        )
-                      : Container(
-                          height: 180,
-                          width: double.infinity,
-                          color: Colors.grey[300],
-                          child: const Icon(
-                            Icons.image,
-                            size: 50,
-                            color: Colors.grey,
-                          ),
-                        ),
+          // 📸 1. ส่วนรูปภาพและป้ายสถานะ (จัดแบบ Flat ไม่ซ้อนทับเนื้อหาด้านล่าง)
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(16),
                 ),
-
-                // 2. ป้ายสถานะ เกาะอยู่ที่มุมบนขวาของรูปภาพอย่างถูกต้อง
-                Positioned(
-                  top: 16,
-                  right: 16,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: const [
-                        BoxShadow(color: Colors.black12, blurRadius: 4),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.circle, color: statusColor, size: 8),
-                        const SizedBox(width: 6),
-                        Text(
-                          displayStatus(room.status),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: statusColor,
-                            fontFamily: 'Kanit',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // 3. 🔥 กล่องทรงมนสีขาวลอยขึ้นมาเกยทับรูปภาพ (จัดตำแหน่งโดยใช้ Positioned)
-                Positioned(
-                  top: 120, // ดันลงมาให้อยู่กึ่งกลางรอยต่อขอบภาพพอดี
-                  left: 20,
-                  right: 20,
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(
-                        32,
-                      ), // มนกลมสวยงามตาม image_cd9329.png
-                      border: Border.all(color: Colors.grey.shade100),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          room.roomName,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B),
-                            fontFamily: 'Kanit',
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          // 🔥 สิ่งที่เปลี่ยนไป 2.1: ใช้ Expanded แบ่งพื้นที่คนละครึ่ง ป้องกันฝั่งใดฝั่งหนึ่งดันจนพื้นที่ล้น
-                          children: [
-                            Expanded(
-                              child: _buildIconDetail(
-                                Icons.location_on_outlined,
-                                room.location,
-                              ),
+                child: room.imagePath != null && room.imagePath!.isNotEmpty
+                    ? Image.network(
+                        room.imagePath!.startsWith('http')
+                            ? room.imagePath!
+                            : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${room.imagePath}',
+                        height: 180, // ความสูงรูปภาพตามต้นแบบ
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            height: 180,
+                            width: double.infinity,
+                            color: Colors.grey[200],
+                            child: const Icon(
+                              Icons.broken_image,
+                              size: 50,
+                              color: Colors.grey,
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _buildIconDetail(
-                                Icons.people_outline,
-                                'รองรับสูงสุด ${room.capacity} ท่าน',
-                              ),
-                            ),
-                          ],
+                          );
+                        },
+                      )
+                    : Container(
+                        height: 180,
+                        width: double.infinity,
+                        color: Colors.grey[200],
+                        child: const Icon(
+                          Icons.image,
+                          size: 50,
+                          color: Colors.grey,
                         ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _buildTag('โปรเจคเตอร์'),
-                            const SizedBox(width: 8),
-                            _buildTag('สมาร์ททีวี'),
-                          ],
+                      ),
+              ),
+
+              // ป้ายสถานะ มุมขวาบน
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.circle, color: statusColor, size: 10),
+                      const SizedBox(width: 4),
+                      Text(
+                        displayStatus(room.status),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: statusColor,
+                          fontFamily: 'Kanit',
                         ),
-                        const SizedBox(height: 6),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [_buildTag('กระดานไวท์บอร์ด')],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
 
-          // ส่วนล่างสุด: ปุ่มแก้ไขและลบห้อง
+          // 📝 2. ส่วนเนื้อหา (จัดให้อยู่ตรงกลางตามรูปต้นแบบ)
           Padding(
-            padding: const EdgeInsets.only(left: 24, right: 24, bottom: 20),
-            child: Row(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
               children: [
-                Expanded(
-                  child: _buildActionButton(
-                    'แก้ไขห้อง',
-                    const Color(0xFF0096C7), // เปลี่ยนโทนสีฟ้าตามดีไซน์ต้นฉบับ
-                    () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => MobileFrameEditRoomContainer(
-                            room: room,
-                            index: index,
-                          ),
-                        ),
-                      ).then((_) => setState(() {}));
-                    },
+                Text(
+                  room.roomName,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
+                    fontFamily: 'Kanit',
                   ),
+                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildActionButton(
-                    'ลบห้อง',
-                    const Color(
-                      0xFFB70000,
-                    ), // เปลี่ยนโทนสีแดงเข้มตามดีไซน์ต้นฉบับ
-                    () => _showDeleteConfirmDialog(index),
-                  ),
+                const SizedBox(height: 12),
+                
+                // ไอคอนสถานที่ และ จำนวนคน
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildIconDetail(
+                      Icons.location_on_outlined,
+                      room.location,
+                    ),
+                    const SizedBox(width: 16),
+                    _buildIconDetail(
+                      Icons.people_outline,
+                      'รองรับสูงสุด ${room.capacity} ท่าน',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // ป้าย Tag เรียงตรงกลาง (ใช้ Wrap เผื่อป้ายยาวจะได้ไม่ล้นจอ)
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8, // ระยะห่างแนวนอน
+                  runSpacing: 8, // ระยะห่างแนวตั้ง (กรณีขึ้นบรรทัดใหม่)
+                  children: [
+                    _buildTag('โปรเจคเตอร์'),
+                    _buildTag('สมาร์ททีวี'),
+                    _buildTag('กระดานไวท์บอร์ด'),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
+                // 🟢 ส่วนล่างสุด: ปุ่มแก้ไขและลบห้อง
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildActionButton(
+                        'แก้ไขห้อง',
+                        const Color(0xFF009CB4), // สีฟ้าอมเขียว
+                        () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => MobileFrameEditRoomContainer(
+                                room: room,
+                                index: index,
+                              ),
+                            ),
+                          ).then((_) => setState(() {}));
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildActionButton(
+                        'ลบห้อง',
+                        const Color(0xFFC60000), // สีแดง
+                        () => _showDeleteConfirmDialog(index),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

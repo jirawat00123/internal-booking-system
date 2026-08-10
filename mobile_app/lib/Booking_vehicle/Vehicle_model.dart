@@ -1,7 +1,28 @@
 import 'package:flutter/material.dart';
 
+// 💡 1. คลาสโมเดลสำหรับเก็บสิทธิ์การกระทำของ Booking (Dumb UI Pattern)
+// หมายเหตุ: หากมีการ Import ไฟล์นี้ชนกับ Room_model อาจต้องย้ายคลาสนี้ไปไว้ในไฟล์ Shared Model กลาง
+class BookingPermissions {
+  final bool canCancel;
+  final bool canEdit;
+
+  BookingPermissions({this.canCancel = false, this.canEdit = false});
+
+  factory BookingPermissions.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return BookingPermissions();
+    return BookingPermissions(
+      canCancel: json['canCancel'] ?? false,
+      canEdit: json['canEdit'] ?? false,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'canCancel': canCancel, 'canEdit': canEdit};
+  }
+}
+
 // ==========================================
-// 🚗 1. คลาสโมเดลสำหรับเก็บข้อมูลรถยนต์ (Vehicle)
+// 🚗 2. คลาสโมเดลสำหรับเก็บข้อมูลรถยนต์ (Vehicle)
 // ==========================================
 class VehicleModel {
   final int id;
@@ -15,8 +36,6 @@ class VehicleModel {
   final String vehicleName;
   final DateTime? createdAt;
   final DateTime? updatedAt;
-
-  // ตัวแปรสำหรับใช้งานฝั่ง UI
   final bool hasFutureBooking;
 
   VehicleModel({
@@ -34,7 +53,6 @@ class VehicleModel {
     this.hasFutureBooking = false,
   });
 
-  // 💡 ฟังก์ชันสําหรับก๊อปปี้ข้อมูลและเปลี่ยนบางค่า
   VehicleModel copyWith({
     int? id,
     String? plateNumber,
@@ -65,103 +83,121 @@ class VehicleModel {
     );
   }
 
-  // 💡 แปลง JSON จาก API เป็น Object
   factory VehicleModel.fromJson(Map<String, dynamic> json) {
     return VehicleModel(
       id: json['id'],
-      plateNumber: json['plateNumber'] ?? '',
+      plateNumber:
+          json['plateNumber'] ??
+          json['license_plate'] ??
+          '', // รองรับทั้ง camelCase และ snake_case
       brand: json['brand'] ?? '',
       model: json['model'] ?? '',
       seats: json['seats'] ?? 4,
       status: json['status'] ?? 'AVAILABLE',
-      uploadUrl: json['uploadUrl'],
-      isDeleted: json['isDeleted'] ?? false,
-      vehicleName: json['vehicleName'] ?? '',
+      uploadUrl: json['uploadUrl'] ?? json['upload_url'],
+      isDeleted: json['isDeleted'] ?? json['is_deleted'] ?? false,
+      vehicleName: json['vehicleName'] ?? json['vehicle_name'] ?? '',
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+          ? DateTime.tryParse(json['createdAt'])
           : null,
       updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
+          ? DateTime.tryParse(json['updatedAt'])
           : null,
     );
   }
 }
 
 // ==========================================
-// 📅 2. คลาสสำหรับเก็บโครงสร้างข้อมูลการจองรถ (VehicleBooking)
+// 📅 3. คลาสสำหรับเก็บโครงสร้างข้อมูลการจองรถ (VehicleBooking)
 // ==========================================
 class VehicleBookingModel {
   final int id;
   final int vehicleId;
   final int userId;
-  final int? driverEmployeeId;
+  final String userName; // 🟢 เพิ่มชื่อผู้จอง
   final String destination;
-  final DateTime
-  startDatetime; // รวมวันที่และเวลาไว้ใน DateTime เดียวตาม Prisma
+  final DateTime startDatetime;
   final DateTime endDatetime;
   final String purpose;
-  String status;
+  final String rawStatus; // 🟢 รับค่าตรงจาก Backend ไม่ใช้การคำนวณซ้ำซ้อน
   final int passengers;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
+  final VehicleModel? vehicle; // 🟢 เก็บ Object ข้อมูลรถที่แนบมาด้วย
+  final BookingPermissions permissions; // 🟢 สิทธิ์จาก Backend
 
   VehicleBookingModel({
     required this.id,
     required this.vehicleId,
     required this.userId,
-    this.driverEmployeeId,
+    required this.userName,
     required this.destination,
     required this.startDatetime,
     required this.endDatetime,
     required this.purpose,
-    this.status = 'Pending',
+    this.rawStatus = 'PENDING',
     this.passengers = 1,
-    this.createdAt,
-    this.updatedAt,
-  });
+    this.vehicle,
+    BookingPermissions? permissions,
+  }) : permissions = permissions ?? BookingPermissions();
 
-  // 🔥 ฟังก์ชันอัจฉริยะ: เช็คสถานะตามเวลาจริงอัตโนมัติ
+  // 🟢 แสดงข้อความสถานะภาษาไทยตามค่าจาก Backend
   String get currentStatus {
-    // ถ้าระบบหลังบ้านส่งสถานะที่ไม่ได้รอดำเนินการมา (เช่น ยกเลิก หรือ อนุมัติแล้ว)
-    if (status != 'Pending' && status != 'Approved') return status;
-
-    final now = DateTime.now();
-    if (now.isBefore(startDatetime)) {
-      return 'จองแล้ว';
-    } else if (now.isAfter(startDatetime) && now.isBefore(endDatetime)) {
-      return 'กำลังใช้งาน';
-    } else if (now.isAfter(endDatetime)) {
-      return 'เสร็จสิ้น';
+    switch (rawStatus) {
+      case 'RESERVED':
+        return 'จองแล้ว';
+      case 'IN_USE':
+        return 'กำลังใช้งาน';
+      case 'COMPLETED':
+        return 'เสร็จสิ้น';
+      case 'CANCELLED':
+        return 'ยกเลิกแล้ว';
+      case 'APPROVED':
+        return 'อนุมัติแล้ว';
+      case 'PENDING':
+        return 'รออนุมัติ';
+      case 'REJECTED':
+        return 'ปฏิเสธ';
+      default:
+        return rawStatus;
     }
-
-    return status;
   }
 
-  // 💡 แปลง JSON จาก API เป็น Object
   factory VehicleBookingModel.fromJson(Map<String, dynamic> json) {
+    // 🟢 ดึงชื่อผู้ใช้จากการ Join ของ Prisma
+    final userObj = json['user'];
+    final employeeObj = userObj != null ? userObj['employee'] : null;
+    final name = employeeObj != null
+        ? employeeObj['fullName'] ?? employeeObj['full_name'] ?? 'ผู้ใช้งาน'
+        : 'ผู้ใช้งาน';
+
     return VehicleBookingModel(
       id: json['id'],
-      vehicleId: json['vehicleId'],
-      userId: json['userId'],
-      driverEmployeeId: json['driverEmployeeId'],
+      vehicleId: json['vehicleId'] ?? json['vehicle_id'],
+      userId: json['userId'] ?? json['user_id'],
+      userName: name,
       destination: json['destination'] ?? '',
-      startDatetime: DateTime.parse(json['startDatetime']),
-      endDatetime: DateTime.parse(json['endDatetime']),
+      startDatetime: DateTime.parse(
+        json['startDatetime'] ??
+            json['start_datetime'] ??
+            DateTime.now().toIso8601String(),
+      ),
+      endDatetime: DateTime.parse(
+        json['endDatetime'] ??
+            json['end_datetime'] ??
+            DateTime.now().toIso8601String(),
+      ),
       purpose: json['purpose'] ?? '',
-      status: json['status'] ?? 'Pending',
+      rawStatus: json['status'] ?? 'PENDING',
       passengers: json['passengers'] ?? 1,
-      createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+      vehicle: json['vehicle'] != null
+          ? VehicleModel.fromJson(json['vehicle'])
           : null,
-      updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
-          : null,
+      permissions: BookingPermissions.fromJson(json['permissions']),
     );
   }
 }
 
 // ==========================================
-// 📋 3. คลาสสำหรับเก็บข้อมูลบันทึกการใช้รถ (VehicleLog)
+// 📋 4. คลาสสำหรับเก็บข้อมูลบันทึกการใช้รถ (VehicleLog)
 // ==========================================
 class VehicleLogModel {
   final int id;
@@ -194,42 +230,44 @@ class VehicleLogModel {
     this.updatedAt,
   });
 
-  // 💡 แปลง JSON จาก API เป็น Object
   factory VehicleLogModel.fromJson(Map<String, dynamic> json) {
     return VehicleLogModel(
       id: json['id'],
-      vehicleBookingId: json['vehicleBookingId'],
-      checkoutById: json['checkoutById'],
-      checkoutTime: DateTime.parse(json['checkoutTime']),
-      checkoutMileage: json['checkoutMileage'],
-      checkoutFuelLevel: json['checkoutFuelLevel'],
-      returnById: json['returnById'],
+      vehicleBookingId: json['vehicleBookingId'] ?? json['vehicle_booking_id'],
+      checkoutById: json['checkoutById'] ?? json['checkout_by_id'],
+      checkoutTime: DateTime.parse(
+        json['checkoutTime'] ??
+            json['checkout_time'] ??
+            DateTime.now().toIso8601String(),
+      ),
+      checkoutMileage: json['checkoutMileage'] ?? json['checkout_mileage'] ?? 0,
+      checkoutFuelLevel:
+          json['checkoutFuelLevel'] ?? json['checkout_fuel_level'] ?? 0,
+      returnById: json['returnById'] ?? json['return_by_id'],
       returnTime: json['returnTime'] != null
-          ? DateTime.parse(json['returnTime'])
+          ? DateTime.tryParse(json['returnTime'])
           : null,
-      returnMileage: json['returnMileage'],
-      returnFuelLevel: json['returnFuelLevel'],
+      returnMileage: json['returnMileage'] ?? json['return_mileage'],
+      returnFuelLevel: json['returnFuelLevel'] ?? json['return_fuel_level'],
       remark: json['remark'],
       createdAt: json['createdAt'] != null
-          ? DateTime.parse(json['createdAt'])
+          ? DateTime.tryParse(json['createdAt'])
           : null,
       updatedAt: json['updatedAt'] != null
-          ? DateTime.parse(json['updatedAt'])
+          ? DateTime.tryParse(json['updatedAt'])
           : null,
     );
   }
 }
 
 // ==========================================
-// 🌍 4. ตัวแปร Global ส่วนกลางสำหรับเก็บข้อมูล
+// 🌍 5. ตัวแปร Global ส่วนกลางสำหรับเก็บข้อมูล
 // ==========================================
-String globalCurrentUserName = "MMK"; // จำลองชื่อผู้ใช้งานล็อกอิน
-int globalCurrentUserId = 1; // จำลอง ID ผู้ใช้งานล็อกอิน
+String globalCurrentUserName = "MMK";
+int globalCurrentUserId = 1;
 
-// 🚗 ตัวแปรเก็บข้อมูลรถยนต์ทั้งหมด
 final ValueNotifier<List<VehicleModel>> globalVehicles =
     ValueNotifier<List<VehicleModel>>([]);
 
-// 📋 ตัวแปรเก็บประวัติการจองรถทั้งหมดในแอป (เริ่มต้นเป็นลิสต์ว่าง)
 final ValueNotifier<List<VehicleBookingModel>> globalVehicleBookingHistory =
     ValueNotifier<List<VehicleBookingModel>>([]);

@@ -17,8 +17,14 @@ const authenticateToken = async (req, res, next) => {
   // 🚨 [Requirement 3] LOG: ตรวจสอบ Authorization Header ที่ได้รับจริงจาก Client ก่อนทำการ verify
   console.log(`[EVIDENCE] 3. Incoming Authorization Header from Client: "${authHeader}"`);
 
-  // 🟢 ทำ Clean/Trim Token ป้องกันการติดอัญประกาศ " หรือ whitespace จาก Client
+// 🟢 ทำ Clean/Trim Token ป้องกันการติดอัญประกาศ " หรือ whitespace จาก Client
   let token = authHeader && authHeader.split(' ')[1];
+  
+  // รองรับการรับ Token จาก Query Parameter (กรณีดาวน์โหลดไฟล์ผ่าน Browser)
+  if (!token && req.query && req.query.token) {
+    token = req.query.token;
+  }
+
   if (token) {
     token = token.replace(/^"(.*)"$/, '$1').trim();
   }
@@ -40,6 +46,21 @@ const authenticateToken = async (req, res, next) => {
     console.log(`[EVIDENCE] 4. decoded.sessionId: "${decoded.sessionId}"`);
 
     req.user = decoded;
+
+    // 💡 [Requirement Week 13] Guest Mode Validation
+    // ดักจับ Guest ก่อนเข้า Database เพราะ Guest จะไม่มี Record ในตาราง User
+    if (decoded.role && decoded.role.toUpperCase() === 'GUEST') {
+      req.user.role = 'GUEST';
+      
+      // ดักไม่ให้ Guest ทำการเขียน/แก้ไขข้อมูลใดๆ ผ่าน API (Read Only)
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        console.log(`[EVIDENCE] 403 Failure Cause: [GUEST_WRITE_ATTEMPT] Guest tried to use ${req.method} on ${req.originalUrl}`);
+        return res.status(403).json({ success: false, error: "กรุณา Login ก่อนใช้งาน (Guest สามารถอ่านข้อมูลได้อย่างเดียว)" }); 
+      }
+      
+      // ถ้าเป็น GET (อ่านข้อมูล) ให้ผ่านไปได้เลยโดยไม่ต้อง Query Database
+      return next();
+    }
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
@@ -98,14 +119,6 @@ const authenticateToken = async (req, res, next) => {
     req.user.role = user.role?.name || user.roles || decoded.role || 'USER';
     req.user.employeeCode = decoded.employeeCode;
 
-    // 💡 [Requirement Week 13] Guest Mode Validation
-    // ดักจับ Role GUEST ไม่ให้ทำการเขียน/แก้ไขข้อมูลใดๆ ผ่าน API
-    if (req.user.role === 'GUEST' && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
-      console.log(`[EVIDENCE] 403 Failure Cause: [GUEST_WRITE_ATTEMPT] Guest tried to use ${req.method} on ${req.originalUrl}`);
-      // ส่งข้อความกลับไป เพื่อให้ Frontend นำไปโชว์เป็น Popup ได้ทันที
-      return res.status(403).json({ success: false, error: "กรุณา Login ก่อนใช้งาน" }); 
-    }
-
     next();
 
   } catch (error) {
@@ -131,9 +144,21 @@ const requireRole = (allowedRoles) => {
     };
 };
 
+const isAdmin = (req, res, next) => {
+    const role = (req.user?.role || '').toUpperCase();
+    if (role !== 'ADMIN') {
+        return res.status(403).json({ 
+            success: false, 
+            error: "ปฏิเสธการเข้าถึง: สิทธิ์เฉพาะ Admin เท่านั้น" 
+        });
+    }
+    next();
+};
+
 module.exports = {
     JWT_SECRET,
     authenticateToken,
     verifyToken,
-    requireRole
+    requireRole,
+    isAdmin
 };

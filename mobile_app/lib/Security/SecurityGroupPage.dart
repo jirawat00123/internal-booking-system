@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'SecurityVehicleList.dart'; // โยงไปหน้าถ่ายรูปปล่อยรถ
+import '../Select.dart'; // โยงไปหน้า Welcome Security
 
 class SecurityGroupPage extends StatelessWidget {
   const SecurityGroupPage({super.key});
@@ -38,7 +39,12 @@ class SecurityGroupPage extends StatelessWidget {
                     alignment: Alignment.topRight,
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LoginSelectionPage(),
+                          ),
+                        );
                       },
                       icon: const Icon(
                         Icons.logout,

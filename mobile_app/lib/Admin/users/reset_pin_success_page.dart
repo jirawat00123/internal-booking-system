@@ -32,7 +32,7 @@ class ResetPinSuccessPage extends StatelessWidget {
                 const SizedBox(height: 32),
 
                 const Text(
-                  'รีเซ็ตรหัสผ่านพนักงานสำเร็จ',
+                  'รีเซ็ตรหัสผ่านผู้ใช้งานสำเร็จ',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20,
@@ -61,7 +61,7 @@ class ResetPinSuccessPage extends StatelessWidget {
                       elevation: 0,
                     ),
                     child: const Text(
-                      'กลับไปหน้าจัดการพนักงาน',
+                      'กลับไปหน้าจัดการผู้ใช้งาน',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

@@ -28,8 +28,8 @@ const fileFilter = (req, file, cb) => {
 
   console.log('[UploadMiddleware Debug] File received:', file.originalname);
   console.log('[UploadMiddleware Debug] MIME Type:', file.mimetype);
-  // Allowed extensions & mime types (Production Standard)
-  const allowedMimeTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+// Allowed extensions & mime types (Production Standard)
+  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'application/octet-stream'];
   const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];
   
   const ext = path.extname(file.originalname).toLowerCase();

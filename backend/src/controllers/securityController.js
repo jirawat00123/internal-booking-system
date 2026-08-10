@@ -49,7 +49,7 @@ exports.getInUseVehicles = async (req, res, next) => {
       include: {
         bookings: {
           where: {
-            status: 'In Progress'
+            status: 'IN_USE' // 💡 เปลี่ยนจาก 'In Progress' เป็น 'IN_USE'
           },
           include: {
             user: {
@@ -127,7 +127,7 @@ exports.checkOut = async (req, res, next) => {
       await tx.vehicleBooking.update({
         where: { id: bookingId },
         data: {
-          status: 'In Progress'
+          status: 'IN_USE' // 💡 เปลี่ยนสถานะการจองเป็น 'IN_USE' เพื่อให้ตรงกับแอป
         }
       });
 
@@ -146,7 +146,7 @@ exports.checkOut = async (req, res, next) => {
           vehicleBookingId: bookingId,
           changedById: guardId,
           action: 'CHECK_OUT',
-          statusSnapshot: 'In Progress',
+          statusSnapshot: 'IN_USE', // 💡 เปลี่ยน Snapshot ให้เป็น 'IN_USE' ตามกัน
           remark: 'เจ้าหน้าที่รักษาความปลอดภัยทำรายการปล่อยรถยนต์ออกจากบริษัทเรียบร้อย'
         }
       });

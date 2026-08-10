@@ -9,7 +9,7 @@ class AuthService {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   // 3. กำหนด Key เป็น Private Constant เพื่อป้องกันการพิมพ์ผิด
-  static const String _tokenKey = 'SECURE_AUTH_TOKEN';
+  static const String _tokenKey = 'jwt_token';
 
   // 4. Private Variable สำหรับเก็บ Token ไว้ใน Memory (Runtime) เพื่อจะได้ไม่ต้อง I/O อ่านจาก Storage ทุกครั้งที่เรียก API
   String? _accessToken;
@@ -24,6 +24,7 @@ class AuthService {
   Future<String?> getToken() async {
     // ถ้าใน Memory มีอยู่แล้วให้คืนค่าเลย ถ้าไม่มีค่อยไปดึงจาก Secure Storage
     _accessToken ??= await _storage.read(key: _tokenKey);
+    _accessToken ??= await _storage.read(key: 'token');
     return _accessToken;
   }
 
