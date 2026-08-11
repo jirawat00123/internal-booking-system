@@ -142,11 +142,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       };
 
       final roomResponseFuture = http.get(
-        Uri.parse('http://localhost:3001/api/bookings?page=1&limit=50'),
+        Uri.parse('http://192.168.88.25:3001/api/bookings?page=1&limit=50'),
         headers: headers,
       );
       final vehicleResponseFuture = http.get(
-        Uri.parse('http://localhost:3001/api/vehicle-bookings?page=1&limit=50'),
+        Uri.parse(
+          'http://192.168.88.25:3001/api/vehicle-bookings?page=1&limit=50',
+        ),
         headers: headers,
       );
 
@@ -320,7 +322,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           (newStatus == 'Cancelled' || newStatus == 'ยกเลิกแล้ว')) {
         // 🚀 ต้องใช้ API เส้น PATCH และห้อยท้ายด้วย /cancel (ตามโค้ด Node.js ของคุณ)
         String endpoint =
-            'http://localhost:3001/api/vehicle-bookings/${booking.id}/cancel';
+            'http://192.168.88.25:3001/api/vehicle-bookings/${booking.id}/cancel';
         response = await http.patch(
           Uri.parse(endpoint),
           headers: {
@@ -340,8 +342,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       else if (booking.type == 'จองรถ') {
         // 🎯 กำหนด baseUrl ตาม Platform ให้ถูกต้อง
         String baseUrl = kIsWeb
-            ? 'http://localhost:3001'
-            : 'http://10.0.2.2:3001';
+            ? 'http://192.168.88.25:3001'
+            : 'http://192.168.88.25:3001';
         String endpoint =
             '$baseUrl/api/vehicle-bookings/${booking.id}/complete';
 
@@ -356,7 +358,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       }
       // 💡 เงื่อนไขที่ 3: สำหรับระบบจองห้องประชุม
       else {
-        String endpoint = 'http://localhost:3001/api/bookings/${booking.id}';
+        String endpoint =
+            'http://192.168.88.25:3001/api/bookings/${booking.id}';
         response = await http.put(
           Uri.parse(endpoint),
           headers: {
@@ -603,7 +606,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                             .isNotEmpty // 💡 เอาเงื่อนไขจองรถออก เช็คแค่ว่ามีรูปหรือไม่
                         ? Image.network(
                             booking.imageUrl.startsWith('/uploads')
-                                ? 'http://localhost:3001${booking.imageUrl}'
+                                ? 'http://192.168.88.25:3001${booking.imageUrl}'
                                 : booking.imageUrl,
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => Icon(

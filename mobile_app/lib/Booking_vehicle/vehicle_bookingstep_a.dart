@@ -61,7 +61,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
       final String? token = prefs.getString('token');
 
       final response = await http.get(
-        Uri.parse('http://localhost:3001/api/vehicle-bookings'),
+        Uri.parse('http://192.168.88.25:3001/api/vehicle-bookings'),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -600,7 +600,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
             child: imagePath.isNotEmpty
                 ? (imagePath.startsWith('/uploads')
                       ? Image.network(
-                          'http://localhost:3001$imagePath',
+                          'http://192.168.88.25:3001$imagePath',
                           width: 100,
                           height: 70,
                           fit: BoxFit.cover,

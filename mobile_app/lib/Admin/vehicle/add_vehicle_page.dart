@@ -86,7 +86,9 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     });
 
     try {
-      final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+      final baseUrl = kIsWeb
+          ? 'http://192.168.88.25:3001'
+          : 'http://192.168.88.25:3001';
       final url = Uri.parse('$baseUrl/api/vehicles');
 
       final prefs = await SharedPreferences.getInstance();

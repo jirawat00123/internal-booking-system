@@ -8,12 +8,29 @@ services:
     restart: always
     environment:
       POSTGRES_USER: admin
-      POSTGRES_PASSWORD: password123
-      POSTGRES_DB: booking_system
+      POSTGRES_PASSWORD: pZRTXiL6pPoSOCqP
+      POSTGRES_DB: internalBookingDB
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: .
+    container_name: booking_backend
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    env_file:
+      - .env
+    volumes:
+      # 🟢 ผูกโฟลเดอร์ uploads ออกมาข้างนอก เพื่อให้รูปภาพ/ไฟล์ไม่หายเวลา Restart
+      - ./uploads:/app/uploads
+    depends_on:
+      - db
 
 volumes:
   pgdata:

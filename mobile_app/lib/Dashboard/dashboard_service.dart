@@ -10,7 +10,7 @@ class DashboardService {
   final FlutterSecureStorage _storage;
 
   DashboardService({
-    this.baseUrl = 'http://localhost:3001/api',
+    this.baseUrl = 'http://192.168.88.25:3001/api',
     FlutterSecureStorage? storage,
   }) : _storage = storage ?? const FlutterSecureStorage();
 

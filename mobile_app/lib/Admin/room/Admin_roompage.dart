@@ -56,7 +56,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
   Future<void> _deleteRoomFromServer(int roomId) async {
     // ⚠️ หมายเหตุ: เปลี่ยน localhost เป็น IP ของฝั่งเซิร์ฟเวอร์ตามที่ระบบจำลองคุณตั้งไว้
-    final url = Uri.parse('http://localhost:3001/api/rooms/$roomId');
+    final url = Uri.parse('http://192.168.88.25:3001/api/rooms/$roomId');
 
     try {
       // 💡 1. ดึง Token จากตัวแปรส่วนกลางเพื่อใช้ในการยืนยันสิทธิ์
@@ -135,8 +135,8 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     String newStatus,
   ) async {
     final String baseUrl = kIsWeb
-        ? 'http://localhost:3001'
-        : 'http://10.0.2.2:3001';
+        ? 'http://192.168.88.25:3001'
+        : 'http://192.168.88.25:3001';
     final url = Uri.parse('$baseUrl/api/rooms/${room.id}/status');
 
     try {
@@ -362,8 +362,8 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     try {
       // 💡 ปรับ Base URL ให้รองรับ Web และ Emulator อัตโนมัติ (พอร์ต 3001)
       final String baseUrl = kIsWeb
-          ? 'http://localhost:3001'
-          : 'http://10.0.2.2:3001';
+          ? 'http://192.168.88.25:3001'
+          : 'http://192.168.88.25:3001';
       String? token = await AuthService.instance
           .getToken(); // ดึง Token จาก AuthService
 
@@ -683,7 +683,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                     ? Image.network(
                         room.imagePath!.startsWith('http')
                             ? room.imagePath!
-                            : '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}${room.imagePath}',
+                            : '${kIsWeb ? "http://192.168.88.25:3001" : "http://192.168.88.25:3001"}${room.imagePath}',
                         height: 180, // ความสูงรูปภาพตามต้นแบบ
                         width: double.infinity,
                         fit: BoxFit.cover,

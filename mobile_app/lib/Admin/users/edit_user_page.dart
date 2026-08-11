@@ -40,8 +40,10 @@ class _EditUserPageState extends State<EditUserPage> {
     super.initState();
     nameController = TextEditingController(text: widget.employee.fullName);
     // 🟢 2. ดึงรหัสพนักงานเดิมมาแสดง (สมมติว่าตัวแปรชื่อ employeeCode หากพี่ตั้งชื่อใน Model เป็นอย่างอื่น ให้แก้ให้ตรงนะครับ)
-    empCodeController = TextEditingController(text: widget.employee.employeeCode ?? '');
-    
+    empCodeController = TextEditingController(
+      text: widget.employee.employeeCode ?? '',
+    );
+
     selectedDepartment = widget.employee.departmentName;
 
     selectedRole = 'User';
@@ -66,7 +68,9 @@ class _EditUserPageState extends State<EditUserPage> {
   void _showConfirmDialog(BuildContext context) {
     if (selectedDepartment == null ||
         selectedRole == null ||
-        empCodeController.text.trim().isEmpty || // 🟢 ตรวจสอบว่ากรอกรหัสพนักงานหรือยัง
+        empCodeController.text
+            .trim()
+            .isEmpty || // 🟢 ตรวจสอบว่ากรอกรหัสพนักงานหรือยัง
         nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -139,7 +143,8 @@ class _EditUserPageState extends State<EditUserPage> {
                             if (selectedRole == 'Security') roleId = 3;
 
                             final bodyData = jsonEncode({
-                              'employeeCode': empCodeController.text.trim(), // 🟢 ส่งรหัสพนักงานใหม่ (หากแก้ไข) ไปที่ Backend
+                              'employeeCode': empCodeController.text
+                                  .trim(), // 🟢 ส่งรหัสพนักงานใหม่ (หากแก้ไข) ไปที่ Backend
                               'fullName': nameController.text.trim(),
                               'departmentId': selectedDepartment == 'ไอที (IT)'
                                   ? 1
@@ -150,7 +155,7 @@ class _EditUserPageState extends State<EditUserPage> {
 
                             final response = await http.put(
                               Uri.parse(
-                                'http://localhost:3001/api/employees/${widget.employee.id}',
+                                'http://192.168.88.25:3001/api/employees/${widget.employee.id}',
                               ),
                               headers: {'Content-Type': 'application/json'},
                               body: bodyData,

@@ -183,8 +183,8 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       }
 
       String baseUrl = kIsWeb
-          ? 'http://localhost:3001'
-          : 'http://10.0.2.2:3001';
+          ? 'http://192.168.88.25:3001'
+          : 'http://192.168.88.25:3001';
 
       var request = http.MultipartRequest(
         'PUT',

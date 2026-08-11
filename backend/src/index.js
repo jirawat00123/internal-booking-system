@@ -44,7 +44,7 @@ const storage = multer.diskStorage({
       dir = path.join(__dirname, '../uploads', 'rooms');
     } else {
       // 🚀 แก้ไขเฉพาะ Vehicle: ถอย 2 ระดับเพื่อเซฟไฟล์ลงที่ backend/uploads/vehicles/ โดยตรง
-      dir = path.join(__dirname, '..//uploads', 'vehicles');
+      dir = path.join(__dirname, '../uploads', 'vehicles');
     }
     
     if (!fs.existsSync(dir)) {
@@ -77,16 +77,6 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('🔴 [Unhandled Rejection] Promise ไม่ถูกจัดการ:', reason);
 });
 
-// ==========================================
-// 🛠️ ตั้งค่า Middleware พื้นฐาน
-// ==========================================
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// ==========================================
-// 📁 เปิดสิทธิ์การอ่านไฟล์ภาพ (Serve Static Files)
-// ==========================================
 // ==========================================
 // 📁 เปิดสิทธิ์การอ่านไฟล์ภาพ (Serve Static Files)
 // ==========================================
@@ -642,21 +632,6 @@ app.use((req, res, next) => {
   res.status(404).json({
     error: 'Not Found',
     message: `ไม่พบเส้นทาง ${req.originalUrl} ในระบบ กรุณาตรวจสอบ URL อีกครั้ง`
-  });
-});
-
-app.use((err, req, res, next) => {
-  console.error('🔴 Centralized Error:', err.stack);
-
-  // ✅ เพิ่มการตรวจสอบสิทธิ์การส่ง Header (Minimal Change ตามหลัก Express.js)
-  // หากมีการส่ง Response หรือ Header ไปก่อนหน้านี้แล้ว ให้โยนต่อให้ Express Default Handler ปิดสตรีมอย่างปลอดภัย
-  if (res.headersSent) {
-    return next(err);
-  }
-
-  res.status(err.status || 500).json({
-    error: "เกิดข้อผิดพลาดภายในระบบหลังบ้าน กรุณาแจ้งผู้ดูแลระบบ",
-    developerMessage: err.message
   });
 });
 

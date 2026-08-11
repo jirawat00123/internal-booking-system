@@ -61,9 +61,9 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
 
     try {
       // 🟢 1. เลือก Base URL ให้ถูกต้องตาม Platform โดยอัตโนมัติ
-      String baseUrl = 'http://localhost:3001/api';
+      String baseUrl = 'http://192.168.88.25:3001/api';
       if (!kIsWeb && Platform.isAndroid) {
-        baseUrl = 'http://10.0.2.2:3001/api';
+        baseUrl = 'http://192.168.88.25:3001/api';
       }
       final url = Uri.parse('$baseUrl/login-pin');
 

@@ -175,7 +175,7 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
           final token = prefs.getString('token'); // ดึง Token ที่เคยบันทึกไว้
 
           final response = await http.post(
-            Uri.parse('http://localhost:3001/api/setup-pin'),
+            Uri.parse('http://192.168.88.25:3001/api/setup-pin'),
             headers: {
               'Content-Type': 'application/json',
               // ❌ ลบบรรทัด 'Authorization': 'Bearer $token' ทิ้งไปเลย

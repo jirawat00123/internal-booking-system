@@ -62,7 +62,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
     try {
       // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น 10.0.2.2 สำหรับมือถือจำลอง (Android Emulator)
       // (ถ้าคุณปิ่นรันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
-      final url = Uri.parse('http://localhost:3001/api/login-pin');
+      final url = Uri.parse('http://192.168.88.25:3001/api/login-pin');
 
       print(
         '📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...',

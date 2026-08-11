@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shimmer/shimmer.dart'; 
+import 'package:shimmer/shimmer.dart';
 
 import 'vehicle_bookingstep_a.dart';
 import '../../Booking_vehicle/Vehicle_model.dart';
@@ -22,13 +22,13 @@ class VehicleBooking extends StatefulWidget {
 class _VehicleBookingStep1PageState extends State<VehicleBooking> {
   bool isLoading = true;
 
-  int _selectedFilterIndex = 0; 
+  int _selectedFilterIndex = 0;
   // 🟢 เพิ่มตัวกรอง รถกระบะ
   final List<String> _filterOptions = [
-    'ทั้งหมด', 
-    'ว่างเท่านั้น', 
+    'ทั้งหมด',
+    'ว่างเท่านั้น',
     'รถตู้',
-    'รถกระบะ'
+    'รถกระบะ',
   ];
 
   @override
@@ -48,11 +48,11 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
       };
 
       final vehicleFuture = http.get(
-        Uri.parse('http://localhost:3001/api/vehicles'),
+        Uri.parse('http://192.168.88.25:3001/api/vehicles'),
         headers: headers,
       );
       final bookingFuture = http.get(
-        Uri.parse('http://localhost:3001/api/vehicle-bookings'),
+        Uri.parse('http://192.168.88.25:3001/api/vehicle-bookings'),
         headers: headers,
       );
 
@@ -61,7 +61,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
       if (responses[0].statusCode == 200) {
         final decodedData = jsonDecode(responses[0].body);
         List<dynamic> vehiclesData = [];
-        
+
         if (decodedData is List) {
           vehiclesData = decodedData;
         } else if (decodedData is Map) {
@@ -75,7 +75,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
         if (responses[1].statusCode == 200) {
           final bData = jsonDecode(responses[1].body);
           List<dynamic> bookingsData = [];
-          
+
           if (bData is List) {
             bookingsData = bData;
           } else if (bData is Map) {
@@ -88,14 +88,18 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
           for (int i = 0; i < fetchedList.length; i++) {
             var vehicle = fetchedList[i];
 
-            if ((vehicle.status ?? '').toString().toUpperCase() == 'MAINTENANCE') {
-               continue;
+            if ((vehicle.status ?? '').toString().toUpperCase() ==
+                'MAINTENANCE') {
+              continue;
             }
 
             var vBookings = bookingsData.where((b) {
-              int bVid = int.tryParse(b['vehicleId']?.toString() ??
-                      b['vehicle']?['id']?.toString() ??
-                      '0') ??
+              int bVid =
+                  int.tryParse(
+                    b['vehicleId']?.toString() ??
+                        b['vehicle']?['id']?.toString() ??
+                        '0',
+                  ) ??
                   0;
               return bVid == vehicle.id;
             }).toList();
@@ -124,17 +128,27 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                 if (s == 'cancelled' ||
                     s == 'completed' ||
                     s == 'ยกเลิกแล้ว' ||
-                    s == 'เสร็จสิ้น') return false;
+                    s == 'เสร็จสิ้น')
+                  return false;
 
                 try {
-                  String startStr = b['startDatetime']?.toString() ?? b['startDate']?.toString() ?? '';
-                  String endStr = b['endDatetime']?.toString() ?? b['endDate']?.toString() ?? '';
+                  String startStr =
+                      b['startDatetime']?.toString() ??
+                      b['startDate']?.toString() ??
+                      '';
+                  String endStr =
+                      b['endDatetime']?.toString() ??
+                      b['endDate']?.toString() ??
+                      '';
                   if (startStr.isEmpty || endStr.isEmpty) return false;
 
                   DateTime start = DateTime.parse(startStr).toLocal();
                   DateTime end = DateTime.parse(endStr).toLocal();
-                  DateTime startDate =
-                      DateTime(start.year, start.month, start.day);
+                  DateTime startDate = DateTime(
+                    start.year,
+                    start.month,
+                    start.day,
+                  );
                   DateTime endDate = DateTime(end.year, end.month, end.day);
 
                   if ((today.isAtSameMomentAs(startDate) ||
@@ -174,7 +188,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
   Widget _buildFilterBar() {
     return Container(
       width: double.infinity,
-      color: const Color(0xFFF8FAFC), 
+      color: const Color(0xFFF8FAFC),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -182,7 +196,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
           children: List.generate(_filterOptions.length, (index) {
             bool isSelected = _selectedFilterIndex == index;
             return Padding(
-              padding: const EdgeInsets.only(right: 12.0), 
+              padding: const EdgeInsets.only(right: 12.0),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 child: ChoiceChip(
@@ -191,18 +205,24 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                     style: TextStyle(
                       fontFamily: 'Kanit',
                       fontSize: 14,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                      color: isSelected ? Colors.white : const Color(0xFF003865),
+                      fontWeight: isSelected
+                          ? FontWeight.w600
+                          : FontWeight.normal,
+                      color: isSelected
+                          ? Colors.white
+                          : const Color(0xFF003865),
                     ),
                   ),
                   selected: isSelected,
-                  showCheckmark: false, 
+                  showCheckmark: false,
                   selectedColor: const Color(0xFF009CB4),
                   backgroundColor: Colors.white,
-                  elevation: isSelected ? 4 : 1, 
+                  elevation: isSelected ? 4 : 1,
                   shadowColor: Colors.black.withOpacity(0.1),
                   side: BorderSide(
-                    color: isSelected ? const Color(0xFF009CB4) : Colors.grey.shade300,
+                    color: isSelected
+                        ? const Color(0xFF009CB4)
+                        : Colors.grey.shade300,
                     width: 1,
                   ),
                   shape: RoundedRectangleBorder(
@@ -266,50 +286,57 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
               ),
             ),
           ),
-          
+
           if (!isLoading) _buildFilterBar(),
 
           Expanded(
             child: isLoading
                 ? ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: 4, 
+                    itemCount: 4,
                     itemBuilder: (context, index) => _buildShimmerCard(),
                   )
                 : ValueListenableBuilder<List<VehicleModel>>(
                     valueListenable: globalVehicles,
                     builder: (context, vehicles, child) {
-                      
                       final activeVehicles = vehicles.where((v) {
                         if (v.isDeleted == true) return false;
 
-                        if (_selectedFilterIndex == 1) { // ว่างเท่านั้น
-                          String rawStatus = (v.status ?? '').toString().trim().toUpperCase();
-                          bool isAvailable = (rawStatus == 'AVAILABLE' || rawStatus == 'ว่างพร้อมใช้งาน');
+                        if (_selectedFilterIndex == 1) {
+                          // ว่างเท่านั้น
+                          String rawStatus = (v.status ?? '')
+                              .toString()
+                              .trim()
+                              .toUpperCase();
+                          bool isAvailable =
+                              (rawStatus == 'AVAILABLE' ||
+                              rawStatus == 'ว่างพร้อมใช้งาน');
                           if (!isAvailable) return false;
-                        } 
-                        else if (_selectedFilterIndex == 2) { // รถตู้
+                        } else if (_selectedFilterIndex == 2) {
+                          // รถตู้
                           String vName = (v.vehicleName ?? '').toLowerCase();
-                          bool isVan = v.seats >= 7 || 
-                                       vName.contains('ตู้') || 
-                                       vName.contains('van') || 
-                                       vName.contains('commuter');
+                          bool isVan =
+                              v.seats >= 7 ||
+                              vName.contains('ตู้') ||
+                              vName.contains('van') ||
+                              vName.contains('commuter');
                           if (!isVan) return false;
                         }
                         // 🟢 เพิ่มลอจิกกรอง รถกระบะ
-                        else if (_selectedFilterIndex == 3) { 
+                        else if (_selectedFilterIndex == 3) {
                           String vName = (v.vehicleName ?? '').toLowerCase();
-                          bool isPickup = vName.contains('กระบะ') || 
-                                          vName.contains('pickup') || 
-                                          vName.contains('revo') || 
-                                          vName.contains('vigo') ||
-                                          vName.contains('d-max') ||
-                                          vName.contains('triton') ||
-                                          vName.contains('ranger');
+                          bool isPickup =
+                              vName.contains('กระบะ') ||
+                              vName.contains('pickup') ||
+                              vName.contains('revo') ||
+                              vName.contains('vigo') ||
+                              vName.contains('d-max') ||
+                              vName.contains('triton') ||
+                              vName.contains('ranger');
                           if (!isPickup) return false;
                         }
 
-                        return true; 
+                        return true;
                       }).toList();
 
                       if (activeVehicles.isEmpty) {
@@ -363,8 +390,8 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
         border: Border.all(color: Colors.grey.shade200, width: 1),
       ),
       child: Shimmer.fromColors(
-        baseColor: Colors.grey.shade200, 
-        highlightColor: Colors.grey.shade50, 
+        baseColor: Colors.grey.shade200,
+        highlightColor: Colors.grey.shade50,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -389,8 +416,9 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                         width: 80,
                         height: 24,
                         decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20)),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
                       ),
                     ],
                   ),
@@ -403,8 +431,9 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                     width: double.infinity,
                     height: 48,
                     decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12)),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ],
               ),
@@ -494,7 +523,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
 
     if (path.startsWith('/uploads')) {
       return Image.network(
-        'http://localhost:3001$path',
+        'http://192.168.88.25:3001$path',
         height: 160,
         width: double.infinity,
         fit: BoxFit.cover,
@@ -534,19 +563,25 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
     String displayStatus = 'Available';
     Color statusColor = const Color(0xFF10B981);
     Color statusBgColor = const Color(0xFFD1FAE5);
-    String buttonText = 'เลือกรถคันนี้'; 
+    String buttonText = 'เลือกรถคันนี้';
 
     if (rawStatus == 'MAINTENANCE' || rawStatus == 'ส่งซ่อม') {
       displayStatus = 'Maintenance';
-      statusColor = const Color(0xFFE65100); 
-      statusBgColor = const Color(0xFFFFF3E0); 
+      statusColor = const Color(0xFFE65100);
+      statusBgColor = const Color(0xFFFFF3E0);
       buttonText = 'รถส่งซ่อม';
-    } else if (rawStatus == 'IN_USE' || rawStatus == 'IN USE' || rawStatus == 'IN-USE' || rawStatus == 'กำลังใช้งาน') {
+    } else if (rawStatus == 'IN_USE' ||
+        rawStatus == 'IN USE' ||
+        rawStatus == 'IN-USE' ||
+        rawStatus == 'กำลังใช้งาน') {
       displayStatus = 'In Use';
       statusColor = const Color(0xFFEF4444);
       statusBgColor = const Color(0xFFFEE2E2);
       buttonText = 'รถกำลังใช้งาน';
-    } else if (rawStatus == 'RESERVED' || rawStatus == 'RESERVE' || rawStatus == 'PENDING' || rawStatus == 'จองแล้ว') {
+    } else if (rawStatus == 'RESERVED' ||
+        rawStatus == 'RESERVE' ||
+        rawStatus == 'PENDING' ||
+        rawStatus == 'จองแล้ว') {
       displayStatus = 'Reserve';
       statusColor = const Color(0xFFF59E0B);
       statusBgColor = const Color(0xFFFEF3C7);
@@ -565,7 +600,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
-        color: Colors.white, 
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200, width: 1),
         boxShadow: [
@@ -599,7 +634,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A8A), 
+                            color: Color(0xFF1E3A8A),
                             fontFamily: 'Kanit',
                           ),
                           maxLines: 1,
@@ -650,7 +685,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                       const Icon(
                         Icons.people_alt_outlined,
                         size: 16,
-                        color: Color(0xFF1D4ED8), 
+                        color: Color(0xFF1D4ED8),
                       ),
                       const SizedBox(width: 4),
                       Text(
@@ -683,7 +718,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isAvailable
                             ? const Color(0xFF009CB4)
-                            : Colors.grey.shade300, 
+                            : Colors.grey.shade300,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -738,10 +773,7 @@ class _ShowUpState extends State<ShowUp> with SingleTickerProviderStateMixin {
     _animOffset = Tween<Offset>(
       begin: const Offset(0.0, 0.2),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
     if (widget.delay == 0) {
       _controller.forward();
@@ -762,10 +794,7 @@ class _ShowUpState extends State<ShowUp> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _controller,
-      child: SlideTransition(
-        position: _animOffset,
-        child: widget.child,
-      ),
+      child: SlideTransition(position: _animOffset, child: widget.child),
     );
   }
 }

@@ -106,7 +106,9 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     });
 
     try {
-      final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+      final baseUrl = kIsWeb
+          ? 'http://192.168.88.25:3001'
+          : 'http://192.168.88.25:3001';
       // 🚨 เปลี่ยนเป็นยิงไปที่ /api/vehicles/:id ด้วย HTTP PUT
       final url = Uri.parse('$baseUrl/api/vehicles/${widget.vehicle.id}');
 
@@ -441,7 +443,9 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     // 2. ถ้าไม่มีรูปใหม่ ให้เช็กว่ารถเก่ามีรูปไหม
     if (widget.vehicle.uploadUrl != null &&
         widget.vehicle.uploadUrl!.isNotEmpty) {
-      final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+      final baseUrl = kIsWeb
+          ? 'http://192.168.88.25:3001'
+          : 'http://192.168.88.25:3001';
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Image.network(

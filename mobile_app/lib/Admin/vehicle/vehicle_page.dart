@@ -114,7 +114,9 @@ class _VehiclePageState extends State<VehiclePage> {
   Future<void> _fetchVehiclesFromApi() async {
     if (!mounted) return;
     setState(() => isLoading = true);
-    final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+    final baseUrl = kIsWeb
+        ? 'http://192.168.88.25:3001'
+        : 'http://192.168.88.25:3001';
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -253,7 +255,9 @@ class _VehiclePageState extends State<VehiclePage> {
     Vehicle vehicle,
     String newStatus,
   ) async {
-    final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+    final baseUrl = kIsWeb
+        ? 'http://192.168.88.25:3001'
+        : 'http://192.168.88.25:3001';
     final url = Uri.parse('$baseUrl/api/vehicles/${vehicle.id}');
 
     try {
@@ -494,7 +498,9 @@ class _VehiclePageState extends State<VehiclePage> {
   }
 
   Future<void> _deleteVehicleFromApi(BuildContext dialogContext, int id) async {
-    final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+    final baseUrl = kIsWeb
+        ? 'http://192.168.88.25:3001'
+        : 'http://192.168.88.25:3001';
     final url = Uri.parse('$baseUrl/api/vehicles/$id');
 
     try {
@@ -529,7 +535,9 @@ class _VehiclePageState extends State<VehiclePage> {
 
   String _getFullImageUrl(String? path) {
     if (path == null || path.isEmpty) return '';
-    final baseUrl = kIsWeb ? 'http://localhost:3001' : 'http://10.0.2.2:3001';
+    final baseUrl = kIsWeb
+        ? 'http://192.168.88.25:3001'
+        : 'http://192.168.88.25:3001';
     return '$baseUrl$path';
   }
 

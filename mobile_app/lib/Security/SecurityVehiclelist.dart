@@ -69,8 +69,8 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
       }
 
       final String baseUrl = kIsWeb
-          ? 'http://localhost:3001'
-          : 'http://10.0.2.2:3001';
+          ? 'http://192.168.88.25:3001'
+          : 'http://192.168.88.25:3001';
 
       final response = await http.get(
         Uri.parse('$baseUrl/api/vehicle-bookings?page=1&limit=100'),
@@ -308,7 +308,7 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
                     color: Colors.grey.shade200,
                     child: imageUrl.isNotEmpty
                         ? Image.network(
-                            '${kIsWeb ? "http://localhost:3001" : "http://10.0.2.2:3001"}$imageUrl',
+                            '${kIsWeb ? "http://192.168.88.25:3001" : "http://192.168.88.25:3001"}$imageUrl',
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => const Icon(
                               Icons.directions_car,

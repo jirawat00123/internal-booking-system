@@ -7,8 +7,8 @@ import '../auth_service.dart';
 class NotificationService {
   // กำหนด Base URL ตาม Platform ให้รองรับทั้ง Web และ Emulator
   final String _baseUrl = kIsWeb
-      ? 'http://localhost:3001'
-      : 'http://10.0.2.2:3001';
+      ? 'http://192.168.88.25:3001'
+      : 'http://192.168.88.25:3001';
 
   /// สร้าง Header พร้อมแนบ JWT Token เสมอ
   Future<Map<String, String>> _getHeaders() async {

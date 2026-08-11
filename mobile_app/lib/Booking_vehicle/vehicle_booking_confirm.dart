@@ -113,7 +113,7 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                               child: imagePath.isNotEmpty
                                   ? (imagePath.startsWith('/uploads')
                                         ? Image.network(
-                                            'http://localhost:3001$imagePath',
+                                            'http://192.168.88.25:3001$imagePath',
                                             width: 100,
                                             height: 70,
                                             fit: BoxFit.cover,
@@ -325,11 +325,11 @@ class VehicleBookingConfirmPage extends StatelessWidget {
 
                 // 💡 1. แทรก Print ตรวจสอบข้อมูลที่กำลังจะส่ง
                 print('--- DEBUG POST REQUEST ---');
-                print('URL: http://localhost:3001/api/vehicle-bookings');
+                print('URL: http://192.168.88.25:3001/api/vehicle-bookings');
                 print('Body: ${jsonEncode(bodyData)}');
 
                 final response = await http.post(
-                  Uri.parse('http://localhost:3001/api/vehicle-bookings'),
+                  Uri.parse('http://192.168.88.25:3001/api/vehicle-bookings'),
                   headers: {
                     'Content-Type': 'application/json',
                     'Authorization': 'Bearer $token',

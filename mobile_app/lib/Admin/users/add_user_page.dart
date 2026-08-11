@@ -13,15 +13,15 @@ class AddUserPage extends StatefulWidget {
 class _AddUserPageState extends State<AddUserPage> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController empCodeController = TextEditingController();
-  
-  final String baseUrl = 'http://localhost:3001/api';
+
+  final String baseUrl = 'http://192.168.88.25:3001/api';
 
   List<dynamic> departments = [];
   List<dynamic> roles = [];
 
   int? selectedDepartmentId;
   int? selectedRoleId;
-  bool selectedStatus = true; 
+  bool selectedStatus = true;
 
   bool isLoadingData = true;
   bool isSaving = false;
@@ -35,7 +35,7 @@ class _AddUserPageState extends State<AddUserPage> {
   @override
   void dispose() {
     nameController.dispose();
-    empCodeController.dispose(); 
+    empCodeController.dispose();
     super.dispose();
   }
 
@@ -77,7 +77,7 @@ class _AddUserPageState extends State<AddUserPage> {
   void _showConfirmDialog(BuildContext context) {
     if (selectedDepartmentId == null ||
         selectedRoleId == null ||
-        empCodeController.text.trim().isEmpty || 
+        empCodeController.text.trim().isEmpty ||
         nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -147,7 +147,7 @@ class _AddUserPageState extends State<AddUserPage> {
                     Expanded(
                       child: ElevatedButton(
                         onPressed: () async {
-                          Navigator.pop(dialogContext); 
+                          Navigator.pop(dialogContext);
                           await _saveEmployeeData();
                         },
                         style: ElevatedButton.styleFrom(
@@ -202,7 +202,7 @@ class _AddUserPageState extends State<AddUserPage> {
     setState(() => isSaving = true);
     try {
       final bodyData = jsonEncode({
-        'employeeCode': empCodeController.text.trim(), 
+        'employeeCode': empCodeController.text.trim(),
         'fullName': nameController.text.trim(),
         'departmentId': selectedDepartmentId,
         'roleId': selectedRoleId,
@@ -327,7 +327,7 @@ class _AddUserPageState extends State<AddUserPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '1. แผนกและสิทธิการใช้งาน', 
+                            '1. แผนกและสิทธิการใช้งาน',
                             style: TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,
@@ -459,7 +459,7 @@ class _AddUserPageState extends State<AddUserPage> {
                             controller: empCodeController,
                             // 🟢 ปรับสีของข้อความในช่องกรอกให้เป็นสีเทาซอฟต์ๆ
                             style: TextStyle(
-                              color: Colors.grey.shade600, 
+                              color: Colors.grey.shade600,
                               fontSize: 14,
                               fontFamily: 'Kanit',
                             ),

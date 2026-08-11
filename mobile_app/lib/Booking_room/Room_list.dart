@@ -1,20 +1,17 @@
 import 'dart:convert';
-import 'dart:async'; 
+import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:shimmer/shimmer.dart'; 
+import 'package:shimmer/shimmer.dart';
 
 import 'Room_model.dart';
-import 'Room_booking.dart'; 
+import 'Room_booking.dart';
 
 class RoomListScreen extends StatefulWidget {
   final bool isGuest;
-  const RoomListScreen({
-    super.key,
-    this.isGuest = false,
-  });
+  const RoomListScreen({super.key, this.isGuest = false});
 
   @override
   State<RoomListScreen> createState() => _RoomListScreenState();
@@ -32,8 +29,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
   Future<void> _fetchRoomsFromApi() async {
     try {
       final String baseUrl = kIsWeb
-          ? 'http://localhost:3001'
-          : 'http://10.0.2.2:3001';
+          ? 'http://192.168.88.25:3001'
+          : 'http://192.168.88.25:3001';
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 
@@ -112,7 +109,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC), 
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         backgroundColor: const Color(0xFF004381),
         elevation: 0,
@@ -134,7 +131,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
       body: Column(
         children: [
           _buildStepIndicator(),
-          
+
           Container(
             width: double.infinity,
             color: const Color(0xFF004381),
@@ -173,7 +170,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
                                 child: Center(
                                   child: Column(
                                     children: [
-                                      Icon(Icons.meeting_room, size: 80, color: Colors.grey.shade300),
+                                      Icon(
+                                        Icons.meeting_room,
+                                        size: 80,
+                                        color: Colors.grey.shade300,
+                                      ),
                                       const SizedBox(height: 16),
                                       const Text(
                                         'ไม่มีห้องประชุมที่พร้อมใช้งาน',
@@ -244,7 +245,14 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   const SizedBox(height: 8),
                   Container(height: 16, width: 120, color: Colors.white),
                   const SizedBox(height: 20),
-                  Container(height: 46, width: double.infinity, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14))),
+                  Container(
+                    height: 46,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -322,8 +330,11 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 
   Widget _buildRoomCard(MeetingRoom room) {
-    String rawStatus = (room.status ?? '').toString().toUpperCase().replaceAll(' ', '_');
-    
+    String rawStatus = (room.status ?? '').toString().toUpperCase().replaceAll(
+      ' ',
+      '_',
+    );
+
     bool isAvailable = rawStatus == 'AVAILABLE' || rawStatus == 'ว่าง';
     bool isReserved = rawStatus == 'RESERVED' || rawStatus == 'PENDING';
     bool isInUse = rawStatus == 'IN_USE' || rawStatus == 'กำลังใช้งาน';
@@ -333,18 +344,18 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
     if (isAvailable) {
       displayStatus = 'Available';
-      statusColor = const Color(0xFF2EC4B6); 
+      statusColor = const Color(0xFF2EC4B6);
     } else if (isReserved) {
       displayStatus = 'Reserved';
-      statusColor = Colors.orange; 
+      statusColor = Colors.orange;
     } else if (isInUse) {
       displayStatus = 'In Use';
-      statusColor = const Color(0xFFE11D48); 
+      statusColor = const Color(0xFFE11D48);
     } else {
-      displayStatus = 'In Use'; 
-      statusColor = const Color(0xFFE11D48); 
+      displayStatus = 'In Use';
+      statusColor = const Color(0xFFE11D48);
     }
-    
+
     Widget _buildImage(String? imagePath) {
       if (imagePath == null || imagePath.isEmpty) {
         return Container(
@@ -355,8 +366,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
       }
 
       final String baseUrl = kIsWeb
-          ? 'http://localhost:3001'
-          : 'http://10.0.2.2:3001';
+          ? 'http://192.168.88.25:3001'
+          : 'http://192.168.88.25:3001';
       final imageUrl = imagePath.startsWith('http')
           ? imagePath
           : '$baseUrl$imagePath';
@@ -482,7 +493,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   height: 46,
                   child: ElevatedButton(
                     // 🟢 ปลดล็อกปุ่ม ไม่เช็ก isAvailable แล้ว ให้ทุกคนกดเข้าไปจองล่วงหน้าได้เสมอ
-                    onPressed: widget.isGuest 
+                    onPressed: widget.isGuest
                         ? null
                         : () async {
                             final result = await Navigator.push(
@@ -592,10 +603,7 @@ class _ShowUpState extends State<ShowUp> with SingleTickerProviderStateMixin {
     _animOffset = Tween<Offset>(
       begin: const Offset(0.0, 0.2),
       end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutCubic,
-    ));
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
     if (widget.delay == 0) {
       _controller.forward();
@@ -616,10 +624,7 @@ class _ShowUpState extends State<ShowUp> with SingleTickerProviderStateMixin {
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _controller,
-      child: SlideTransition(
-        position: _animOffset,
-        child: widget.child,
-      ),
+      child: SlideTransition(position: _animOffset, child: widget.child),
     );
   }
 }
