@@ -16,7 +16,7 @@ RUN npx prisma generate
 COPY . .
 
 # สร้างโฟลเดอร์ uploads รอไว้กรณีไม่มี
-RUN mkdir -p uploads
+RUN mkdir -p src/uploads
 
 EXPOSE 3001
 

@@ -58,6 +58,12 @@ class MeetingRoom {
   }
 
   factory MeetingRoom.fromJson(Map<String, dynamic> json) {
+    final rawImagePath =
+        json['uploadUrl'] ??
+        json['upload_url'] ??
+        json['imagePath'] ??
+        json['image_path'];
+
     return MeetingRoom(
       id: json['id'].toString(),
       roomName: json['roomName'] ?? json['room_name'] ?? '',
@@ -65,7 +71,9 @@ class MeetingRoom {
       capacity: json['capacity'] is int
           ? json['capacity']
           : int.tryParse(json['capacity'].toString()) ?? 0,
-      imagePath: json['uploadUrl'] ?? json['upload_url'] ?? '',
+      imagePath: rawImagePath is String && rawImagePath.trim().isNotEmpty
+          ? rawImagePath.trim()
+          : null,
       status: json['status'] ?? 'AVAILABLE',
     );
   }

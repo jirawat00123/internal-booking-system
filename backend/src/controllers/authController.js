@@ -233,31 +233,67 @@ const getPermissionsByRole = (roleName) => {
 // ==========================================
 const login = async (req, res) => {
   try {
-    const { employeeCode, pin } = req.body;
+    const { employeeCode, pin, expectedRole } = req.body;
 
-    if (!employeeCode || !pin) {
+    if (!pin) {
       return res.status(400).json({ 
         success: false, 
-        error: "กรุณาระบุรหัสพนักงานและรหัส PIN" 
+        error: "กรุณาระบุรหัส PIN" 
       });
     }
 
-    const employee = await prisma.employee.findUnique({
-      where: { employeeCode: employeeCode },
-      include: {
-        users: {
-          include: { role: true }
+    let user = null;
+    let employee = null;
+    let effectiveRole = 'USER';
+
+    if (employeeCode) {
+      // 🟢 กรณีระบุรหัสพนักงาน (User Login Flow: เลือกแผนก/เลือกชื่อ แล้วใส่ PIN)
+      // กำหนดสิทธิ์การใช้งานเป็น USER เสมอ เพื่อให้ Admin ที่เข้าหน้านี้ได้เมนูและสิทธิ์ User
+      employee = await prisma.employee.findUnique({
+        where: { employeeCode: employeeCode },
+        include: {
+          users: {
+            include: { role: true }
+          }
+        }
+      });
+
+      if (!employee || !employee.users || employee.users.length === 0) {
+        return res.status(401).json({ success: false, error: "รหัสพนักงานหรือรหัส PIN ไม่ถูกต้อง" });
+      }
+
+      user = employee.users[0];
+      effectiveRole = 'USER'; // บังคับให้เป็น USER เสมอ
+    } else {
+      // 🟢 กรณีไม่ระบุรหัสพนักงาน (Admin PIN-Only Login Flow: กรอก PIN อย่างเดียว)
+      const targetRole = expectedRole ? expectedRole.toUpperCase() : 'ADMIN';
+      const users = await prisma.user.findMany({
+        where: { 
+          pin: { not: null },
+          isActive: true,
+          role: { name: targetRole }
+        },
+        include: {
+          role: true,
+          employee: true
+        }
+      });
+
+      for (const candidate of users) {
+        if (candidate.pin && await verifyPin(candidate.pin, pin.toString())) {
+          user = candidate;
+          employee = candidate.employee;
+          effectiveRole = targetRole;
+          break;
         }
       }
-    });
 
-    if (!employee || !employee.users || employee.users.length === 0) {
-      return res.status(401).json({ success: false, error: "รหัสพนักงานหรือรหัส PIN ไม่ถูกต้อง" });
+      if (!user) {
+        return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์แอดมิน" });
+      }
     }
 
-    const user = employee.users[0];
-
-    if (!employee.isActive || !user.isActive) {
+    if ((employee && !employee.isActive) || !user.isActive) {
       return res.status(403).json({ success: false, error: "บัญชีนี้ถูกระงับการใช้งาน" });
     }
 
@@ -269,19 +305,20 @@ const login = async (req, res) => {
       });
     }
 
-    const isPinValid = await verifyPin(user.pin, pin.toString());
-    if (!isPinValid) {
-      return res.status(401).json({ success: false, error: "รหัสพนักงานหรือรหัส PIN ไม่ถูกต้อง" });
+    if (employeeCode) {
+      const isPinValid = await verifyPin(user.pin, pin.toString());
+      if (!isPinValid) {
+        return res.status(401).json({ success: false, error: "รหัสพนักงานหรือรหัส PIN ไม่ถูกต้อง" });
+      }
     }
 
     const newSessionId = uuidv4(); 
-    const roleNameUpper = (user.role?.name || 'USER').toUpperCase();
-    const userPermissions = getPermissionsByRole(roleNameUpper);
+    const userPermissions = getPermissionsByRole(effectiveRole);
 
     const tokenPayload = {
       userId: user.id,
-      employeeCode: employee.employeeCode,
-      role: roleNameUpper,
+      employeeCode: employee?.employeeCode || user.employeeCode,
+      role: effectiveRole,
       sessionId: newSessionId 
     };
 
@@ -308,7 +345,7 @@ const login = async (req, res) => {
         entityId: parseInt(user.id, 10),
         entityType: "USER",
         userId: parseInt(user.id, 10),
-        details: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${roleNameUpper})`
+        details: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${effectiveRole})`
       }
     }).catch(err => {
       console.error("❌ AuditLog Error [LOGIN_SYSTEM]:", err.message);
@@ -319,11 +356,12 @@ const login = async (req, res) => {
       message: "เข้าสู่ระบบสำเร็จ",
       token,
       permissions: userPermissions,
+      role: effectiveRole, // ส่ง role ออกมาตรงนี้ด้วย เพื่อให้ Flutter อ่านค่าได้ง่ายขึ้น
       user: {
         id: user.id,
-        employeeCode: employee.employeeCode,
-        fullName: employee.fullName,
-        role: roleNameUpper,
+        employeeCode: employee?.employeeCode || user.employeeCode,
+        fullName: employee?.fullName || user.fullName,
+        role: effectiveRole,
         pinResetRequired: user.pinResetRequired,
         permissions: userPermissions
       }
@@ -336,6 +374,7 @@ const login = async (req, res) => {
 };
 module.exports = {
   login,
+  loginPin: login,
   setupPin,
   changePin,
   resetUserPin

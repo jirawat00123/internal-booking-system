@@ -1,25 +1,55 @@
 const multer = require('multer');
 const path = require('path');
-const crypto = require('crypto');
 const fs = require('fs');
 
-// 1. Storage Config (UUID File Name + Destination)
-const uploadDir = path.join(__dirname, '../../../uploads/');
+// 1. Storage Config (Root Upload Directory)
+// 💡 ชี้ไปที่ root uploads ให้ตรงกับ Express Static และ Docker Volume
+const uploadDir = path.join(__dirname, '../../uploads');
+
 if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true }); // recursive: true ช่วยสร้างโฟลเดอร์ย่อยทั้งหมดที่ขาดหายไป
+  fs.mkdirSync(uploadDir, { recursive: true });
   console.log(`[UploadMiddleware] 📁 Auto-created missing directory at: ${uploadDir}`);
 }
 
-// 1. Storage Config (UUID File Name + Destination)
+// 1. Storage Config (Dynamic Path & File Name)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // ➕ 3. เปลี่ยนมาเรียกใช้ตัวแปร uploadDir แทน เพื่อให้ตรงกับจุดที่เราสร้างโฟลเดอร์ไว้
-    cb(null, uploadDir); 
+    const url = req.baseUrl || req.originalUrl || '';
+
+    // กำหนดโฟลเดอร์ปลายทางตาม Route ที่เรียกใช้ (Single Source of Truth)
+    let subFolder = 'attachments';
+
+    if (url.includes('/rooms')) {
+      subFolder = 'rooms';
+    } else if (url.includes('/vehicles')) {
+      subFolder = 'vehicles';
+    }
+
+    const dest = path.join(uploadDir, subFolder);
+
+    // ตรวจสอบและสร้าง Sub-folder หากยังไม่มี
+    if (!fs.existsSync(dest)) {
+      fs.mkdirSync(dest, { recursive: true });
+    }
+
+    cb(null, dest);
   },
   filename: (req, file, cb) => {
+    const url = req.baseUrl || req.originalUrl || '';
+
+    // กำหนด Prefix ตามประเภทของข้อมูล
+    let prefix = 'file_';
+
+    if (url.includes('/rooms')) {
+      prefix = 'room_';
+    } else if (url.includes('/vehicles')) {
+      prefix = 'vehicle_';
+    }
+
     const extension = path.extname(file.originalname).toLowerCase();
-    const uuidFileName = crypto.randomUUID() + extension;
-    cb(null, uuidFileName);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+
+    cb(null, `${prefix}${uniqueSuffix}${extension}`);
   }
 });
 

@@ -4,7 +4,7 @@ import 'package:mobile_app/Security/SecurityPin.dart';
 import 'package:mobile_app/Admin_pin.dart';
 import 'package:mobile_app/Digitel.dart';
 import 'package:mobile_app/main.dart';
-import 'Notification/notification_badge.dart';
+// ลบ import 'Notification/notification_badge.dart'; ออกเนื่องจากไม่ได้ถูกเรียกใช้งานในไฟล์นี้
 
 class LoginSelectionPage extends StatelessWidget {
   const LoginSelectionPage({super.key});
@@ -146,7 +146,9 @@ class LoginSelectionPage extends StatelessWidget {
                                   title: 'Guest',
                                   subtitle: 'ผู้ใช้งานทั่วไป',
                                   onTap: () {
-                                    print("Guest user selected");
+                                    debugPrint(
+                                      "Guest user selected",
+                                    ); // เปลี่ยนจาก print เป็น debugPrint ตามมาตรฐาน Flutter ที่ดีกว่าสำหรับ Production
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(

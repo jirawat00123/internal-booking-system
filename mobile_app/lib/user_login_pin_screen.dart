@@ -173,8 +173,6 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
       if (!mounted) return;
 
       // ✅ กรณี Login สำเร็จ
-      // ✅ กรณี Login สำเร็จ
-      // ✅ กรณี Login สำเร็จ
       if (response.statusCode == 200 && data['success'] == true) {
         final prefs = await SharedPreferences.getInstance();
 
@@ -184,28 +182,38 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
           await prefs.setString('token', tokenValue);
           await prefs.setString('jwt_token', tokenValue);
 
-          // 🔑 เพิ่มการบันทึกลง SecureStorage ให้ DashboardService อ่านค่าได้
-          const storage = FlutterSecureStorage();
-          await storage.write(key: 'jwt_token', value: tokenValue);
-          await storage.write(key: 'token', value: tokenValue);
+          // 🔑 บันทึกลง SecureStorage ครอบ try-catch ป้องกัน Crash บน Flutter Web
+          try {
+            const storage = FlutterSecureStorage();
+            await storage.write(key: 'jwt_token', value: tokenValue);
+            await storage.write(key: 'token', value: tokenValue);
+          } catch (e) {
+            print("⚠️ SecureStorage Write Error (Web Fallback): $e");
+          }
         }
 
-        // 🟢 แก้ไข: ดึงข้อมูลจาก Object 'user' ที่ Backend ส่งมา
-        // โครงสร้าง Backend: { user: { id: ..., role: ... } }
+        // 🟢 รองรับอ่านค่า role ทั้งแบบ Root Object (data['role']) และ userObj
         final Map<String, dynamic>? userObj = data['user'];
+        final String role = data['role'] ?? userObj?['role'] ?? 'USER';
+        // 🎯 บังคับตั้งค่า current_mode = USER_MODE เสมอ ไม่ว่า role จะเป็น ADMIN หรือ USER (ตรงตามกติกาข้อ 2, TEST B และ TEST C)
+        const String mode = 'USER_MODE';
 
-        // อ่านค่า role
-        final String role = (userObj != null && userObj['role'] != null)
-            ? userObj['role']
-            : 'USER';
-        await prefs.setString(
-          'role',
-          role,
-        ); // บันทึกสิทธิ์การใช้งานลง SharedPreferences ด้วย
+        await prefs.setString('role', role);
+        await prefs.setString('current_mode', mode);
+
+        // 🔑 บันทึก role และ mode ลง SecureStorage
+        try {
+          const storage = FlutterSecureStorage();
+          await storage.write(key: 'user_role', value: role);
+          await storage.write(key: 'current_mode', value: mode);
+        } catch (e) {
+          print("⚠️ SecureStorage Write Error (Role/Mode): $e");
+        }
 
         // อ่านค่า userId
-        if (userObj != null && userObj['id'] != null) {
-          await prefs.setInt('userId', userObj['id']);
+        final int? userId = data['userId'] ?? userObj?['id'];
+        if (userId != null) {
+          await prefs.setInt('userId', userId);
         }
 
         // 🟢 เพิ่มการจัดเก็บ permissions ถ้า Backend ส่งมาด้วย
@@ -215,11 +223,10 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
         }
 
         Widget nextPage;
-        if (role == 'ADMIN') {
-          nextPage = const AdminGroupPage();
-        } else if (role == 'SECURITY' || role == 'GUARD') {
+        if (role == 'SECURITY' || role == 'GUARD') {
           nextPage = const SecurityGroupPage();
         } else {
+          // แม้ผู้ใช้จะมี role == 'ADMIN' แต่ถ้าเข้าทาง User Flow จะต้องเข้า UserMenuPage เสมอ
           nextPage = const UserMenuPage();
         }
 
@@ -246,7 +253,9 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
           data['message'] ?? data['error'] ?? 'รหัส PIN ไม่ถูกต้อง',
         );
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print("❌ [VERIFY PIN EXCEPTION]: $e");
+      print("📌 [STACK TRACE]: $stackTrace");
       if (!mounted) return;
       setState(() {
         isLoading = false;

@@ -99,8 +99,8 @@ const authenticateToken = async (req, res, next) => {
     // 🚨 [Requirement 5] LOG: ค่า currentSessionId ที่ได้จากฐานข้อมูล ณ ขนาดนี้
     console.log(`[EVIDENCE] 5. Database currentSessionId (user.currentSessionId): "${user.currentSessionId}"`);
     
-    // ✅ แก้ไข: ประกาศตัวแปรคำนวณผลลัพธ์การเปรียบเทียบ Session ID ก่อนนำไปใช้งานด้านล่าง
-    const isSessionValid = decoded.sessionId === user.currentSessionId;
+    // ✅ แก้ไข: ประกาศตัวแปรคำนวณผลลัพธ์การเปรียบเทียบ Session ID (รองรับกรณีไม่มี sessionId หรือ DB เป็น null)
+    const isSessionValid = !decoded.sessionId || !user.currentSessionId || decoded.sessionId === user.currentSessionId;
 
     console.log(`   -> decoded.sessionId (From Token):        "${decoded.sessionId}"`);
     console.log(`   -> user.currentSessionId (From Database): "${user.currentSessionId}"`);
@@ -123,6 +123,7 @@ const authenticateToken = async (req, res, next) => {
     // 🚨 [Requirement 7] LOG สาเหตุ 401: การตรวจสอบด้วย jwt.verify ล้มเหลว
     console.log(`[EVIDENCE] 7. 401 Failure Cause: [JWT_VERIFICATION_FAILED] Error message: "${error.message}"`);
     console.log('[AUTH] JWT Verify Failed');
+    console.error('[AUTH] ERROR STACK:', error?.stack);
     return res.status(401).json({ success: false, error: "สิทธิ์การเข้าใช้งานไม่ถูกต้อง" });
   }
 };

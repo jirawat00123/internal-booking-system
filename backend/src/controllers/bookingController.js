@@ -91,7 +91,7 @@ exports.createBooking = async (req, res, next) => {
     const startDatetime = req.body?.startDatetime;
     const endDatetime = req.body?.endDatetime;
     const title = req.body?.title || req.body?.purpose;
-    const rawUserId = req.body?.userId || req.body?.user_id || (req.user ? req.user.userId : null);
+    const rawUserId = req.body?.userId || req.body?.user_id || (req.user ? (req.user.userId || req.user.id) : null);
 
     if (!roomId || !rawUserId || !startDatetime || !endDatetime || !title) {
       return res.status(400).json({ 
@@ -137,11 +137,6 @@ exports.createBooking = async (req, res, next) => {
           status: BookingStatus.PENDING // เปลี่ยนกลับเป็น PENDING เพื่อรออนุมัติ
         },
         include: { room: true }
-      });
-
-      await tx.room.update({
-        where: { id: parseInt(roomId) },
-        data: { status: 'RESERVED' },
       });
 
       // 🟢 บันทึก AuditLog ภายใน Transaction เพื่อเป็น Single Source of Truth
@@ -228,7 +223,7 @@ exports.getBookingHistory = async (req, res, next) => {
     const bookingsWithPermissions = history.map(booking => {
       const isOwner = currentUserId === booking.userId;
       const isAdmin = currentUserRole === 'ADMIN';
-      const isPendingOrApproved = [BookingStatus.PENDING, BookingStatus.RESERVED, BookingStatus.APPROVED].includes(booking.status);
+      const isPendingOrApproved = [BookingStatus.PENDING, BookingStatus.APPROVED].includes(booking.status);
 
       return {
         ...booking,

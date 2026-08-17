@@ -1,13 +1,11 @@
 // src/routes/vehicles.js
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const uploadMiddleware = require('../middlewares/uploadMiddleware');
 
 // นำเข้า Middleware
 const authMiddleware = require('../middlewares/auth');
-const verifyToken = authMiddleware.verifyToken;
+const verifyToken = authMiddleware.authenticateToken || authMiddleware.verifyToken;
 const requireRole = authMiddleware.requireRole;
 const isAdmin = authMiddleware.isAdmin; // ✅ นำเข้า isAdmin สำหรับสิทธิ์ Admin Management Module (Week 14)
 
@@ -22,61 +20,15 @@ const checkHandler = (handler, name) => {
     if (typeof handler !== 'function') {
         console.error(`❌ ERROR: ตัวแปรหรือฟังก์ชัน "${name}" มีค่าเป็น undefined หรือไม่ใช่ฟังก์ชัน!`);
         console.error(`👉 กรุณาเช็กในไฟล์ Controller หรือ Middleware ว่าสะกดชื่อถูกต้อง หรือได้ทำการ module.exports ออกมาแล้วหรือยัง`);
-        return (req, res) => res.status(500).json({ 
-            error: `ฟังก์ชัน ${name} ยังไม่ได้ถูกติดตั้งหรือเขียนไม่ถูกต้องในระบบ Backend` 
-        });
+        return (req, res) => {
+            console.error(`❌ [checkHandler Execution Error] Function "${name}" is undefined or not a function.`);
+            return res.status(500).json({ 
+                error: `ฟังก์ชัน ${name} ยังไม่ได้ถูกติดตั้งหรือเขียนไม่ถูกต้องในระบบ Backend` 
+            });
+        };
     }
     return handler;
 };
-
-// ==========================================
-// 🛠️ ตั้งค่า Multer สำหรับอัปโหลดรูปภาพ
-// ==========================================
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        // ✅ บังคับใช้ __dirname เพื่อให้ถอยกลับไปหา backend/uploads/vehicles อย่างแม่นยำเสมอ
-        const dir = path.join(__dirname, '../../uploads/vehicles'); 
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-        }
-        cb(null, dir);
-    },
-    filename: function (req, file, cb) {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'vehicle_' + uniqueSuffix + path.extname(file.originalname).toLowerCase());
-    }
-});
-
-const fileFilter = (req, file, cb) => {
-    // 4. เพิ่ม Debug Log ก่อนเข้าเงื่อนไข (เพื่อหา Evidence)
-    console.log('--- Debug Multer fileFilter ---');
-    console.log('Fieldname:', file.fieldname);
-    console.log('Originalname:', file.originalname);
-    console.log('Mimetype:', file.mimetype);
-    console.log('-------------------------------');
-
-    const allowedTypes = /jpeg|jpg|png/;
-    
-    // ตรวจสอบนามสกุลไฟล์อย่างเข้มงวด
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    
-    // ตรวจสอบ Mimetype ว่าเป็นรูปภาพ หรือเป็น octet-stream จาก Flutter Web
-    const isImageMimetype = allowedTypes.test(file.mimetype);
-    const isFlutterWebBinary = file.mimetype === 'application/octet-stream' || file.mimetype === 'binary/octet-stream';
-    
-    // เงื่อนไข: นามสกุลต้องถูกต้องเสมอ และ (Mimetype ต้องเป็นรูปภาพ หรือเป็น Binary จาก Web)
-    if (extname && (isImageMimetype || isFlutterWebBinary)) {
-        return cb(null, true);
-    } else {
-        return cb(new Error('รองรับเฉพาะไฟล์รูปภาพ (png, jpg, jpeg) เท่านั้น'));
-    }
-};
-
-const upload = multer({ 
-    storage: storage,
-    fileFilter: fileFilter,
-    limits: { fileSize: 5 * 1024 * 1024 }
-});
 
 // ==========================================
 // 🚗 แมปปิ้งเส้นทาง API ไปยัง Controller (ผ่านตัวกรองตรวจสอบบั๊ก)
@@ -84,7 +36,15 @@ const upload = multer({
 
 // 🔒 บังคับตรวจสอบ Token (Guest & User: Read Only)
 router.get('/', 
+    (req, res, next) => {
+        console.log('[TRACE] GET /api/vehicles ROUTE HIT');
+        next();
+    },
     checkHandler(verifyToken, 'verifyToken'),
+    (req, res, next) => {
+        console.log('[TRACE] Calling vehicleController.getVehicles');
+        next();
+    },
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
 );
 
@@ -106,7 +66,7 @@ router.get('/history',
 router.post('/', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(isAdmin, 'isAdmin'), 
-    upload.single('image'), 
+    uploadMiddleware.single('image'), 
     checkHandler(vehicleController.createVehicle, 'vehicleController.createVehicle')
 );
 
@@ -120,7 +80,7 @@ router.get('/:id',
 router.put('/:id', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(isAdmin, 'isAdmin'), 
-    upload.single('image'), 
+    uploadMiddleware.single('image'), 
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
 );
 

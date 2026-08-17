@@ -24,6 +24,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
+      TZ: Asia/Bangkok
     env_file:
       - .env
     volumes:

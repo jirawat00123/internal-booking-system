@@ -194,11 +194,12 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       request.headers.addAll({'Authorization': 'Bearer $token'});
 
       // ❌ ลบการส่งข้อมูล parkingSlot ออกไปแล้ว
-      request.fields['status'] = 'In_Use';
+      request.fields['status'] =
+          'IN_USE'; // 🟢 เปลี่ยนเป็นตัวพิมพ์ใหญ่ตาม API Contract ใหม่
 
       request.files.add(
         http.MultipartFile.fromBytes(
-          '/* เปลี่ยนเป็นชื่อฟิลด์รูปหน้ารถของ Backend */', // เช่น 'checkoutFrontPhoto' หรือ 'images'
+          'frontImage', // 🟢 เปลี่ยนชื่อฟิลด์ให้ตรงกับ Backend Controller
           await frontImage!.readAsBytes(),
           filename: frontImage!.name,
         ),
@@ -206,7 +207,7 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
 
       request.files.add(
         http.MultipartFile.fromBytes(
-          '/* เปลี่ยนเป็นชื่อฟิลด์รูปหลังรถของ Backend */', // เช่น 'checkoutBackPhoto' หรือ 'images'
+          'backImage', // 🟢 เปลี่ยนชื่อฟิลด์ให้ตรงกับ Backend Controller
           await backImage!.readAsBytes(),
           filename: backImage!.name,
         ),
@@ -214,7 +215,7 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
 
       request.files.add(
         http.MultipartFile.fromBytes(
-          '/* เปลี่ยนเป็นชื่อฟิลด์รูปเลขไมล์ของ Backend */', // เช่น 'checkoutMileagePhoto' หรือ 'images'
+          'plateImage', // 🟢 เปลี่ยนชื่อฟิลด์ให้ตรงกับ Backend Controller
           await plateImage!.readAsBytes(),
           filename: plateImage!.name,
         ),

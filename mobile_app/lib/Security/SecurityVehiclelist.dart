@@ -85,23 +85,22 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
           setState(() {
             // 1. รอปล่อยรถออก (คำขอที่ได้รับอนุมัติแล้ว หรือรอปล่อย)
             pendingVehicles = allBookings.where((b) {
-              String status = b['status']?.toString().toLowerCase() ?? '';
-              return status == 'approved' ||
-                  status == 'pending' ||
-                  status == 'reserved' ||
-                  status == 'ถูกจองไว้อยู่';
+              String status = b['status']?.toString().toUpperCase() ?? '';
+              // 🟢 เจ้าหน้าที่รักษาความปลอดภัยควรเห็นเฉพาะรายการที่ "อนุมัติแล้ว" (APPROVED) เพื่อทำการปล่อยรถ
+              // ไม่ควรดึงรายการที่ยัง "รออนุมัติ" (PENDING) มาให้ รปภ. กดปล่อยรถได้
+              return status == 'APPROVED';
             }).toList();
 
             // 2. กำลังใช้งาน (รับรถเข้า)
             inUseVehicles = allBookings.where((b) {
-              String status = b['status']?.toString().toLowerCase() ?? '';
-              return status == 'in_use' || status == 'กำลังใช้งาน';
+              String status = b['status']?.toString().toUpperCase() ?? '';
+              return status == 'IN_USE';
             }).toList();
 
             // 3. เสร็จสิ้น (ประวัติ)
             historyVehicles = allBookings.where((b) {
-              String status = b['status']?.toString().toLowerCase() ?? '';
-              return status == 'completed' || status == 'เสร็จสิ้น';
+              String status = b['status']?.toString().toUpperCase() ?? '';
+              return status == 'COMPLETED';
             }).toList();
 
             isLoading = false;
@@ -287,7 +286,7 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
         ? Colors.amber
         : (isInUse ? Colors.blue : Colors.grey.shade400);
     String badgeText = isPending
-        ? 'รออนุมัติ'
+        ? 'รอปล่อยรถ' // 🟢 เปลี่ยนข้อความให้สอดคล้องกับสถานะ APPROVED
         : (isInUse ? 'กำลังใช้งาน' : 'เสร็จสิ้น');
 
     return Card(

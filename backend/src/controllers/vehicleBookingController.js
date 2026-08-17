@@ -14,7 +14,7 @@ exports.createBooking = async (req, res) => {
         }
 
         const finalPassengers = parseInt(passengerCount || passengers) || 1;
-        const finalUserId = userId ? parseInt(userId) : req.user.userId; 
+        const finalUserId = parseInt(req.user.userId, 10);
 
         const reqStart = new Date(startDatetime);
         const reqEnd = new Date(endDatetime);
@@ -43,11 +43,6 @@ exports.createBooking = async (req, res) => {
             if (conflictingBooking) {
                 throw new Error('TIME_OVERLAP');
             }
-
-            await tx.vehicle.update({
-                where: { id: parseInt(vehicleId) },
-                data: { status: VehicleStatus.RESERVED } 
-            });
 
             const booking = await tx.vehicleBooking.create({
                 data: {
@@ -124,7 +119,7 @@ exports.getBookings = async (req, res) => {
         const bookingsWithPermissions = bookings.map(booking => {
             const isOwner = currentUserId === booking.userId;
             const isAdmin = currentUserRole === 'ADMIN';
-            const isPendingOrApproved = [BookingStatus.RESERVED, BookingStatus.PENDING, BookingStatus.APPROVED].includes(booking.status);
+            const isPendingOrApproved = [BookingStatus.PENDING, BookingStatus.APPROVED].includes(booking.status);
 
             return {
                 ...booking,
@@ -164,11 +159,15 @@ exports.updateBookingStatus = async (req, res) => {
         }
 
         if (req.user.role === 'ADMIN') {
-            // อนุญาต
-        } else if (req.user.role === 'USER' && existingBooking.userId === parseInt(req.user.userId, 10)) {
-            // อนุญาต
+            // อนุญาตให้ Admin จัดการสถานะ
+        } else if (
+            req.user.role === 'USER' &&
+            existingBooking.userId === parseInt(req.user.userId, 10) &&
+            ['CANCELLED'].includes(status?.toUpperCase())
+        ) {
+            // USER สามารถยกเลิกเฉพาะ Booking ของตัวเอง
         } else {
-            return res.status(403).json({ success: false, error: 'คุณไม่มีสิทธิ์แก้ไขหรือยกเลิกการจองของผู้อื่น' });
+            return res.status(403).json({ success: false, error: 'คุณไม่มีสิทธิ์แก้ไขสถานะการจองนี้' });
         }
 
         const validStatus = BookingStatus[status?.toUpperCase()];
@@ -177,6 +176,28 @@ exports.updateBookingStatus = async (req, res) => {
         }
 
         const updatedBooking = await prisma.$transaction(async (tx) => {
+            if (validStatus === BookingStatus.APPROVED) {
+                const conflictingBooking = await tx.vehicleBooking.findFirst({
+                    where: {
+                        id: { not: bookingId },
+                        vehicleId: existingBooking.vehicleId,
+                        status: {
+                            notIn: [
+                                BookingStatus.CANCELLED,
+                                BookingStatus.COMPLETED,
+                                BookingStatus.REJECTED
+                            ]
+                        },
+                        startDatetime: { lt: existingBooking.endDatetime },
+                        endDatetime: { gt: existingBooking.startDatetime }
+                    }
+                });
+
+                if (conflictingBooking) {
+                    throw new Error('TIME_OVERLAP');
+                }
+            }
+
             const booking = await tx.vehicleBooking.update({
                 where: { id: bookingId },
                 data: { status: validStatus }
@@ -192,11 +213,6 @@ exports.updateBookingStatus = async (req, res) => {
                 await tx.vehicle.update({
                     where: { id: existingBooking.vehicleId },
                     data: { status: VehicleStatus.IN_USE }
-                });
-            } else if (validStatus === BookingStatus.APPROVED || validStatus === BookingStatus.RESERVED) {
-                await tx.vehicle.update({
-                    where: { id: existingBooking.vehicleId },
-                    data: { status: VehicleStatus.RESERVED }
                 });
             }
 
@@ -227,6 +243,14 @@ exports.updateBookingStatus = async (req, res) => {
         res.status(200).json({ success: true, data: updatedBooking, message: "อัปเดตสถานะสำเร็จ" });
     } catch (error) {
         console.error("Update Booking Status Error:", error);
+
+        if (error.message === 'TIME_OVERLAP') {
+            return res.status(409).json({
+                success: false,
+                error: "ไม่สามารถอนุมัติการจองได้ เนื่องจากช่วงเวลาซ้อนกับรายการจองอื่น"
+            });
+        }
+
         res.status(500).json({ success: false, error: "ไม่สามารถอัปเดตสถานะได้" });
     }
 };
@@ -391,7 +415,34 @@ exports.approveVehicleBooking = async (req, res) => {
         const booking = await prisma.vehicleBooking.findUnique({ where: { id: bookingId } });
         if (!booking) return res.status(404).json({ success: false, error: "ไม่พบการจอง" });
 
+        if (booking.status !== BookingStatus.PENDING) {
+            return res.status(409).json({
+                success: false,
+                error: "รายการจองนี้ไม่อยู่ในสถานะรออนุมัติ"
+            });
+        }
+
         const updatedBooking = await prisma.$transaction(async (tx) => {
+            const conflictingBooking = await tx.vehicleBooking.findFirst({
+                where: {
+                    id: { not: bookingId },
+                    vehicleId: booking.vehicleId,
+                    status: {
+                        notIn: [
+                            BookingStatus.CANCELLED,
+                            BookingStatus.COMPLETED,
+                            BookingStatus.REJECTED
+                        ]
+                    },
+                    startDatetime: { lt: booking.endDatetime },
+                    endDatetime: { gt: booking.startDatetime }
+                }
+            });
+
+            if (conflictingBooking) {
+                throw new Error('TIME_OVERLAP');
+            }
+
             const updated = await tx.vehicleBooking.update({
                 where: { id: bookingId },
                 data: { status: BookingStatus.APPROVED }
@@ -423,6 +474,14 @@ exports.approveVehicleBooking = async (req, res) => {
         return res.status(200).json({ success: true, data: updatedBooking, message: "อนุมัติสำเร็จ" });
     } catch (error) {
         console.error("Approve Vehicle Error:", error);
+
+        if (error.message === 'TIME_OVERLAP') {
+            return res.status(409).json({
+                success: false,
+                error: "ไม่สามารถอนุมัติการจองได้ เนื่องจากช่วงเวลาซ้อนกับรายการจองอื่น"
+            });
+        }
+
         return res.status(500).json({ success: false, error: "ไม่สามารถอนุมัติได้" });
     }
 };
@@ -438,6 +497,13 @@ exports.rejectVehicleBooking = async (req, res) => {
 
         const booking = await prisma.vehicleBooking.findUnique({ where: { id: bookingId } });
         if (!booking) return res.status(404).json({ success: false, error: "ไม่พบการจอง" });
+
+        if (booking.status !== BookingStatus.PENDING) {
+            return res.status(409).json({
+                success: false,
+                error: "รายการจองนี้ไม่อยู่ในสถานะรออนุมัติ"
+            });
+        }
 
         const updatedBooking = await prisma.$transaction(async (tx) => {
             const updated = await tx.vehicleBooking.update({
@@ -481,3 +547,4 @@ exports.rejectVehicleBooking = async (req, res) => {
 };
 
 exports.getHistory = exports.getBookings;
+exports.returnVehicle = exports.completeVehicleBooking;

@@ -8,6 +8,7 @@ import 'edit_vehicle_page.dart';
 
 import 'add_vehicle_page.dart';
 import 'deletevehicle_successpage.dart';
+import '../../../../auth_service.dart';
 
 class Vehicle {
   final dynamic id;
@@ -114,13 +115,18 @@ class _VehiclePageState extends State<VehiclePage> {
   Future<void> _fetchVehiclesFromApi() async {
     if (!mounted) return;
     setState(() => isLoading = true);
-    final baseUrl = kIsWeb
-        ? 'http://192.168.88.25:3001'
-        : 'http://192.168.88.25:3001';
+    final baseUrl = AuthService.baseUrl;
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? '';
+      // 🟢 ดึง Token จากทั้ง 'token' และ 'jwt_token' เพื่อรองรับทุก Key ป้องกัน 401
+      final token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+
+      debugPrint(
+        '🔐 VEHICLE PAGE TOKEN = ${token.isEmpty ? "EMPTY" : "EXISTS"}',
+      );
+      debugPrint('🔐 VEHICLE PAGE TOKEN LENGTH = ${token.length}');
 
       final headers = {
         'Content-Type': 'application/json',
@@ -150,9 +156,17 @@ class _VehiclePageState extends State<VehiclePage> {
           vehicleData = decodedData['data'];
         }
 
-        List<Vehicle> fetchedList = vehicleData
-            .map((json) => Vehicle.fromJson(json))
-            .toList();
+        List<Vehicle> fetchedList = vehicleData.map((json) {
+          final vehicle = Vehicle.fromJson(json);
+
+          debugPrint(
+            '🚗 VEHICLE ${vehicle.id} | '
+            '${vehicle.vehicleName} | '
+            'uploadUrl=${vehicle.uploadUrl}',
+          );
+
+          return vehicle;
+        }).toList();
 
         if (responses[1].statusCode == 200) {
           final bData = jsonDecode(responses[1].body);
@@ -233,7 +247,8 @@ class _VehiclePageState extends State<VehiclePage> {
               });
 
               if (isReservedToday) {
-                fetchedList[i] = vehicle.copyWith(status: 'RESERVED');
+                // 🟢 ใช้ hasFutureBooking แทนการแก้ไข status เพื่อไม่ให้กระทบ Business Logic ของ Vehicle
+                fetchedList[i] = vehicle.copyWith(hasFutureBooking: true);
               }
             }
           }
@@ -255,9 +270,7 @@ class _VehiclePageState extends State<VehiclePage> {
     Vehicle vehicle,
     String newStatus,
   ) async {
-    final baseUrl = kIsWeb
-        ? 'http://192.168.88.25:3001'
-        : 'http://192.168.88.25:3001';
+    final baseUrl = AuthService.baseUrl;
     final url = Uri.parse('$baseUrl/api/vehicles/${vehicle.id}');
 
     try {
@@ -313,7 +326,6 @@ class _VehiclePageState extends State<VehiclePage> {
   void _showQuickStatusDialog(BuildContext context, Vehicle vehicle) {
     final Map<String, String> statusOptions = {
       'AVAILABLE': 'ว่าง (Available)',
-      'RESERVED': 'ถูกจอง (Reserved)',
       'IN_USE': 'กำลังใช้งาน (In Use)',
       'MAINTENANCE': 'ส่งซ่อม (Maintenance)',
     };
@@ -321,7 +333,6 @@ class _VehiclePageState extends State<VehiclePage> {
     String currentRawStatus = vehicle.status.trim().toUpperCase();
     if (currentRawStatus == 'IN USE' || currentRawStatus == 'IN-USE')
       currentRawStatus = 'IN_USE';
-    if (currentRawStatus == 'RESERVE') currentRawStatus = 'RESERVED';
 
     String selectedStatus = statusOptions.containsKey(currentRawStatus)
         ? currentRawStatus
@@ -498,9 +509,7 @@ class _VehiclePageState extends State<VehiclePage> {
   }
 
   Future<void> _deleteVehicleFromApi(BuildContext dialogContext, int id) async {
-    final baseUrl = kIsWeb
-        ? 'http://192.168.88.25:3001'
-        : 'http://192.168.88.25:3001';
+    final baseUrl = AuthService.baseUrl;
     final url = Uri.parse('$baseUrl/api/vehicles/$id');
 
     try {
@@ -535,9 +544,7 @@ class _VehiclePageState extends State<VehiclePage> {
 
   String _getFullImageUrl(String? path) {
     if (path == null || path.isEmpty) return '';
-    final baseUrl = kIsWeb
-        ? 'http://192.168.88.25:3001'
-        : 'http://192.168.88.25:3001';
+    final baseUrl = AuthService.baseUrl;
     return '$baseUrl$path';
   }
 
@@ -848,13 +855,6 @@ class _VehiclePageState extends State<VehiclePage> {
                       ),
                     ),
                     DropdownMenuItem(
-                      value: 'RESERVED',
-                      child: Text(
-                        'ถูกจอง (Reserved)',
-                        style: TextStyle(fontFamily: 'Kanit'),
-                      ),
-                    ),
-                    DropdownMenuItem(
                       value: 'IN_USE',
                       child: Text(
                         'กำลังใช้งาน (In Use)',
@@ -900,7 +900,6 @@ class _VehiclePageState extends State<VehiclePage> {
                               rawStatus == 'IN-USE' ||
                               rawStatus == 'กำลังใช้งาน')
                             rawStatus = 'IN_USE';
-                          if (rawStatus == 'RESERVE') rawStatus = 'RESERVED';
 
                           return rawStatus == selectedFilterStatus;
                         }).toList();
@@ -971,11 +970,11 @@ class _VehiclePageState extends State<VehiclePage> {
       displayStatus = 'In Use';
       statusColor = const Color(0xFFEF4444);
       statusBgColor = const Color(0xFFFEE2E2);
-    } else if (rawStatus == 'RESERVED' ||
-        rawStatus == 'RESERVE' ||
+    } else if (vehicle.hasFutureBooking ||
         rawStatus == 'PENDING' ||
         rawStatus == 'จองแล้ว') {
-      displayStatus = 'Reserve';
+      // 🟢 นำ rawStatus == 'RESERVED' ออก และใช้ vehicle.hasFutureBooking แสดงผล UI แทน
+      displayStatus = 'Reserved';
       statusColor = const Color(0xFFF59E0B);
       statusBgColor = const Color(0xFFFEF3C7);
     } else {

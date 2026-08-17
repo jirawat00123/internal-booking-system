@@ -125,14 +125,6 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
       });
 
       if (overlappingVehicle) throw new Error('OVERLAP');
-
-      // 🔥 3.3 อัปเดตสถานะรถเป็น RESERVED ทันที
-      await tx.vehicle.update({
-        where: { id: parsedVehicleId },
-        data: { status: 'RESERVED' }
-      });
-
-      // 🟢 3.4 บันทึกข้อมูลลงฐานข้อมูล (เปลี่ยนเป็น PENDING เพื่อรออนุมัติ)
       return await tx.vehicleBooking.create({
         data: {
           vehicleId: parsedVehicleId,
@@ -366,11 +358,24 @@ upload.any(),
 
     console.log("===== [6] Booking Found =====");
     console.log("===== [7] Updating Booking =====");
-    // 2. อัปเดตสถานะเป็น IN_USE (ตามที่ Flutter ส่งมา หรือบังคับ Enum)
-    const updatedBooking = await prisma.vehicleBooking.update({
-      where: { id: bookingId },
-      data: { status: status ? status.toUpperCase() : 'IN_USE' }
+    
+    // 2. มัดรวมการอัปเดต Booking และ Vehicle ด้วย Transaction
+    const updatedData = await prisma.$transaction(async (tx) => {
+      // 2.1 อัปเดตสถานะการจองเป็น IN_USE
+      const updatedBooking = await tx.vehicleBooking.update({
+        where: { id: bookingId },
+        data: { status: status ? status.toUpperCase() : 'IN_USE' }
+      });
+
+      // 2.2 อัปเดตสถานะรถยนต์เป็น IN_USE 
+      await tx.vehicle.update({
+        where: { id: bookingExists.vehicleId },
+        data: { status: 'IN_USE' }
+      });
+
+      return updatedBooking;
     });
+    const updatedBooking = updatedData;
 
     console.log("===== [8] Updating Attachments (if any) =====");
     // 3. บันทึกรูปภาพลงฐานข้อมูล Attachment

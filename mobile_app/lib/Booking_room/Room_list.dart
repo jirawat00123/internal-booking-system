@@ -32,7 +32,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
           ? 'http://192.168.88.25:3001'
           : 'http://192.168.88.25:3001';
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? '';
+      // 🟢 ดึง Token จากทั้ง 'token' และ 'jwt_token' เพื่อรองรับทุก Key
+      final token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
 
       final response = await http.get(
         Uri.parse('$baseUrl/api/rooms'),
@@ -46,13 +48,27 @@ class _RoomListScreenState extends State<RoomListScreen> {
         final body = jsonDecode(response.body);
         final List roomsData = body is List ? body : (body['data'] ?? []);
 
+        debugPrint('🏢 Rooms API response: ${response.body}');
+
         final activeRooms = roomsData.where((e) {
           return e['isDeleted'] == false || e['isDeleted'] == 'false';
         }).toList();
 
+        debugPrint('🏢 Active rooms count: ${activeRooms.length}');
+
+        for (final room in activeRooms) {
+          debugPrint('🏢 Room ID: ${room['id']}');
+          debugPrint('🏢 Room Name: ${room['roomName']}');
+          debugPrint('🖼️ uploadUrl: ${room['uploadUrl']}');
+        }
+
         globalMeetingRooms.value = activeRooms
             .map((e) => MeetingRoom.fromJson(e))
             .toList();
+
+        for (final room in globalMeetingRooms.value) {
+          debugPrint('🖼️ Parsed imagePath [${room.id}]: ${room.imagePath}');
+        }
       } else if (response.statusCode == 401) {
         if (mounted) {
           await prefs.clear();
@@ -357,31 +373,38 @@ class _RoomListScreenState extends State<RoomListScreen> {
     }
 
     Widget _buildImage(String? imagePath) {
-      if (imagePath == null || imagePath.isEmpty) {
+      if (imagePath == null || imagePath.trim().isEmpty) {
         return Container(
           height: 180,
+          width: double.infinity,
           color: Colors.grey[300],
           child: const Icon(Icons.image, size: 50, color: Colors.grey),
         );
       }
 
-      final String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
-      final imageUrl = imagePath.startsWith('http')
+      final String baseUrl = 'http://192.168.88.25:3001';
+      final String imageUrl = imagePath.startsWith('http')
           ? imagePath
-          : '$baseUrl$imagePath';
+          : Uri.parse('$baseUrl$imagePath').toString();
+
+      debugPrint('🖼️ Room image URL: $imageUrl');
 
       return Image.network(
         imageUrl,
         height: 180,
         width: double.infinity,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => Container(
-          height: 180,
-          color: Colors.grey[300],
-          child: const Icon(Icons.broken_image, size: 50, color: Colors.grey),
-        ),
+        errorBuilder: (context, error, stackTrace) {
+          debugPrint('❌ Room image failed: $imageUrl');
+          debugPrint('❌ Image error: $error');
+
+          return Container(
+            height: 180,
+            width: double.infinity,
+            color: Colors.grey[300],
+            child: const Icon(Icons.broken_image, size: 50, color: Colors.grey),
+          );
+        },
       );
     }
 

@@ -12,7 +12,7 @@ if (!PEPPER) {
 const applyPepper = (pin) => {
   return crypto
     .createHmac('sha256', PEPPER)
-    .update(pin)
+    .update(String(pin).trim())
     .digest('hex');
 };
 
@@ -29,18 +29,15 @@ const hashPin = async (pin) => {
 };
 
 // ฟังก์ชันตรวจสอบ PIN
-// 🟢 แก้ไข 1: สลับลำดับ Parameter เป็น (hashedPin, plainPin) ให้ตรงกับที่ Controller เรียกใช้
-const verifyPin = async (hashedPin, plainPin) => { 
-  // 🟢 แก้ไข 2: เพิ่มการดักจับค่าว่างทั้งสองตัว
-  if (!hashedPin || !plainPin) return false; 
-  
+const verifyPin = async (hashedPin, plainPin) => {
+  if (!hashedPin || !plainPin) return false;
+
   try {
-    const pepperedPin = applyPepper(plainPin);
-    // 🟢 แก้ไข 3: ครอบ try-catch ป้องกันกรณี Argon2 โยน Error เนื่องจากรูปแบบ Hash ผิด
+    const pepperedPin = applyPepper(String(plainPin).trim());
     return await argon2.verify(hashedPin, pepperedPin);
   } catch (error) {
     console.error('Argon2 Verify Error:', error.message);
-    return false; // บล็อกการเข้าสู่ระบบทันทีหากเกิดข้อผิดพลาด
+    return false;
   }
 };
 

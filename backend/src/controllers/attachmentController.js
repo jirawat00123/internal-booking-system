@@ -67,7 +67,7 @@ const downloadFile = async (req, res) => {
     const attachment = await attachmentService.getAttachmentById(id, userId, roleId);
 
     // 2. Path Traversal Protection
-    const baseUploadDir = path.join(__dirname, '../../../uploads/');
+    const baseUploadDir = path.join(__dirname, '../../uploads/');
     const absolutePath = path.resolve(baseUploadDir, attachment.filePath);
 
     // Zero Trust: ตรวจสอบอีกครั้งว่า Path ปลายทางยังคงอยู่ภายใต้ uploads/ (ป้องกัน UUID Injection หรือ ../)

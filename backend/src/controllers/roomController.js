@@ -6,7 +6,7 @@ const checkFutureRoomBookings = async (roomId) => {
   const now = new Date();
   const futureBooking = await prisma.roomBooking.findFirst({
     where: {
-      roomId: parseInt(roomId),
+      roomId: parseInt(roomId, 10),
       endDatetime: { gt: now },
       status: { notIn: ['CANCELLED', 'REJECTED'] } 
     }
@@ -54,7 +54,7 @@ exports.getAllRooms = async (req, res, next) => {
         include: {
           bookings: {
             where: {
-              status: { in: ['APPROVED', 'RESERVED', 'IN_USE'] }
+              status: { in: ['APPROVED', 'PENDING'] }
             }
           }
         },
@@ -123,8 +123,13 @@ exports.createRoom = async (req, res, next) => {
   try {
     const { roomName, capacity, location, status } = req.body;
     // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่ง URL/Path มาใน req.body
-    // 🟢 แก้ไข Path ให้ตรงกับโฟลเดอร์ uploads/rooms
-    const uploadUrl = req.file ? `/uploads/rooms/${req.file.filename}` : req.body.uploadUrl || null;
+    let uploadUrl = null;
+    if (req.file) {
+      uploadUrl = '/uploads/rooms/' + req.file.filename;
+    } else if (req.body.uploadUrl) {
+      const fileName = req.body.uploadUrl.split(/[\/\\]/).pop();
+      uploadUrl = fileName ? '/uploads/rooms/' + fileName : null;
+    }
 
     if (!roomName || !capacity) {
       return res.status(400).json({
@@ -205,10 +210,13 @@ exports.updateRoom = async (req, res, next) => {
     }
 
     if (req.file) {
-      // 🟢 แก้ไข Path ให้ตรงกับโฟลเดอร์ uploads/rooms
-      uploadUrl = `/uploads/rooms/${req.file.filename}`;
+      // ประกอบ Web URL Path โดยใช้ filename เพื่อให้พร้อมสำหรับ Frontend นำไปใช้งาน
+      uploadUrl = '/uploads/rooms/' + req.file.filename;
     } else if (req.body.uploadUrl) {
-      uploadUrl = req.body.uploadUrl;
+      const fileName = req.body.uploadUrl.split(/[\/\\]/).pop();
+      if (fileName) {
+        uploadUrl = '/uploads/rooms/' + fileName;
+      }
     }
 
     const updateData = {};

@@ -1,13 +1,41 @@
 import 'package:mobile_app/Admin/users/users_page.dart';
 import 'package:mobile_app/Admin/vehicle/vehicle_page.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '/Admin/room/Admin_roompage.dart';
 import 'Select.dart';
 import 'Book_history.dart'; // นำเข้าหน้า BookingHistoryScreen
+import 'digitel.dart'; // นำเข้าหน้า UserMenuPage สำหรับการสลับโหมด
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ
 
-class AdminGroupPage extends StatelessWidget {
+class AdminGroupPage extends StatefulWidget {
   const AdminGroupPage({super.key});
+
+  @override
+  State<AdminGroupPage> createState() => _AdminGroupPageState();
+}
+
+class _AdminGroupPageState extends State<AdminGroupPage> {
+  @override
+  void initState() {
+    super.initState();
+    _checkModeGuard();
+  }
+
+  // 🛡️ ป้องกันกรณีผู้ใช้ที่ไม่ได้อยู่โหมด ADMIN หลุดเข้ามาในหน้านี้ (Route Guard)
+  Future<void> _checkModeGuard() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentMode = prefs.getString('current_mode');
+
+    if (currentMode != 'ADMIN_MODE' && mounted) {
+      debugPrint('🚨 [Guard] Unauthorized access. Kick back to User Menu.');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const UserMenuPage()),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,42 +64,106 @@ class AdminGroupPage extends StatelessWidget {
 
                   Align(
                     alignment: Alignment.topRight,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const LoginSelectionPage(),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // 🌟 ปุ่มใหม่: สลับเป็น User Mode
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setString('current_mode', 'USER_MODE');
+
+                            try {
+                              const storage = FlutterSecureStorage();
+                              await storage.write(
+                                key: 'current_mode',
+                                value: 'USER_MODE',
+                              );
+                            } catch (e) {
+                              print("⚠️ SecureStorage Write Error (Mode): $e");
+                            }
+
+                            if (!context.mounted) return;
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const UserMenuPage(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.swap_horiz,
+                            color: Colors.white,
+                            size: 16,
                           ),
-                        );
-                      },
-                      icon: const Icon(
-                        Icons.logout,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      label: const Text(
-                        'ออกจากระบบ',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontFamily: 'Kanit',
+                          label: const Text(
+                            'โหมดผู้ใช้',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: Colors.orange.withValues(
+                              alpha: 0.8,
+                            ),
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 6,
+                            ),
+                            minimumSize: Size.zero,
+                          ),
                         ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: 0.2),
-                        side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.5),
+                        const SizedBox(width: 8),
+                        // ปุ่มออกจากระบบ (เดิม)
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const LoginSelectionPage(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(
+                            Icons.logout,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                          label: const Text(
+                            'ออกจากระบบ',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.2,
+                            ),
+                            side: BorderSide(
+                              color: Colors.white.withValues(alpha: 0.5),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 6,
+                            ),
+                            minimumSize: Size.zero,
+                          ),
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 6,
-                        ),
-                        minimumSize: Size.zero,
-                      ),
+                      ],
                     ),
                   ),
 

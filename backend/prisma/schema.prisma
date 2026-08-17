@@ -22,8 +22,8 @@ model Position {
   id           Int        @id @default(autoincrement())
   positionName String     @map("position_name")
   departmentId Int        @map("department_id")
-  department   Department @relation(fields: [departmentId], references: [id])
   employees    Employee[]
+  department   Department @relation(fields: [departmentId], references: [id])
 
   @@index([departmentId])
   @@map("positions")
@@ -33,12 +33,12 @@ model Employee {
   id           Int        @id @default(autoincrement())
   employeeCode String     @unique @map("employee_code")
   fullName     String     @map("full_name")
-  avatarUrl    String?    @map("avatar_url")
-  phone        String?    @map("phone")
-  email        String?    @unique @map("email")
   positionId   Int        @map("position_id")
   departmentId Int        @map("departments_id")
   isActive     Boolean    @default(true) @map("is_active")
+  avatarUrl    String?    @map("avatar_url")
+  email        String?    @unique @map("email")
+  phone        String?    @map("phone")
   department   Department @relation(fields: [departmentId], references: [id])
   position     Position   @relation(fields: [positionId], references: [id])
   users        User[]
@@ -59,19 +59,22 @@ model User {
   id                  Int              @id @default(autoincrement())
   employeeId          Int              @map("employee_id")
   roleId              Int              @map("role_id")
-  pin                 String?          @map("pin_hash")
-  pinInitialized      Boolean          @default(false) @map("pin_initialized")
-  pinChangedAt        DateTime?        @map("pin_changed_at")
-  pinResetRequired    Boolean          @default(false) @map("pin_reset_required")
-  failedLoginAttempts Int              @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime?        @map("locked_until")
-  lastLoginAt         DateTime?        @map("last_login_at")
   active              Boolean          @default(true)
-  isDeleted           Boolean          @default(false) @map("is_deleted")
-  currentSessionId    String?          @map("current_session_id")
   createdAt           DateTime         @default(now()) @map("created_at")
+  currentSessionId    String?          @map("current_session_id")
+  pinChangedAt        DateTime?        @map("pin_changed_at")
+  pinInitialized      Boolean          @default(false) @map("pin_initialized")
+  pinResetRequired    Boolean          @default(false) @map("pin_reset_required")
+  pin                 String?          @map("pin_hash")
+  failedLoginAttempts Int              @default(0) @map("failed_login_attempts")
+  lastLoginAt         DateTime?        @map("last_login_at")
+  lockedUntil         DateTime?        @map("locked_until")
   updatedAt           DateTime         @default(now()) @updatedAt @map("updated_at")
+  isDeleted           Boolean          @default(false) @map("is_deleted")
+  attachments         Attachment[]
   auditLogs           AuditLog[]
+  sentNotifications   Notification[]   @relation("NotificationActor")
+  notifications       Notification[]
   roomBookings        RoomBooking[]
   employee            Employee         @relation(fields: [employeeId], references: [id])
   role                Role             @relation(fields: [roleId], references: [id])
@@ -79,9 +82,6 @@ model User {
   vehicleLogsCheckOut VehicleLog[]     @relation("CheckoutByUser")
   vehicleLogsReturn   VehicleLog[]     @relation("ReturnByUser")
   managedVehicles     Vehicle[]        @relation("VehicleManager")
-  attachments         Attachment[]
-  notifications       Notification[]
-  sentNotifications   Notification[]   @relation("NotificationActor")
 
   @@index([employeeId])
   @@index([roleId])
@@ -90,15 +90,14 @@ model User {
 
 model AuditLog {
   id         Int      @id @default(autoincrement())
-  userId     Int?     @map("user_id")
   action     String
   module     String
+  createdAt  DateTime @default(now()) @map("created_at")
+  userId     Int?     @map("user_id")
+  details    String?
   entityId   Int?     @map("entity_id")
   entityType String?  @map("entity_type")
-  details    String?  @db.Text
-  createdAt  DateTime @default(now()) @map("created_at")
-
-  user User? @relation(fields: [userId], references: [id])
+  user       User?    @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([module])
@@ -110,17 +109,17 @@ model AuditLog {
 
 model Room {
   id          Int            @id @default(autoincrement())
-  roomCode    String?        @unique @map("room_code")
-  roomName    String         @map("room_name")
-  floor       String?        @map("floor")
-  location    String
   capacity    Int
-  description String?        @map("description") @db.Text
+  location    String
+  roomName    String         @map("room_name")
   status      RoomStatus     @default(AVAILABLE)
-  uploadUrl   String?        @map("upload_url")
-  isDeleted   Boolean        @default(false) @map("is_deleted")
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
+  uploadUrl   String?        @map("upload_url")
+  isDeleted   Boolean        @default(false) @map("is_deleted")
+  description String?        @map("description")
+  floor       String?        @map("floor")
+  roomCode    String?        @unique @map("room_code")
   bookings    RoomBooking[]
   facilities  RoomFacility[]
 
@@ -129,18 +128,18 @@ model Room {
 
 model RoomBooking {
   id            Int           @id @default(autoincrement())
-  bookingCode   String?       @unique @default(uuid()) @map("booking_code")
-  userId        Int           @map("user_id")
   roomId        Int           @map("room_id")
-  purpose       String
-  status        BookingStatus @default(PENDING)
   createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  purpose       String
   endDatetime   DateTime      @map("end_datetime")
   startDatetime DateTime      @map("start_datetime")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  userId        Int           @map("user_id")
+  status        BookingStatus @default(PENDING)
+  bookingCode   String?       @unique @default(uuid()) @map("booking_code")
   attachments   Attachment[]
-  room          Room          @relation(fields: [roomId], references: [id], onDelete: Restrict)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  room          Room          @relation(fields: [roomId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([roomId])
@@ -150,25 +149,25 @@ model RoomBooking {
 
 model Vehicle {
   id             Int               @id @default(autoincrement())
-  vehicleCode    String?           @unique @map("vehicle_code")
-  vehicleName    String            @map("vehicle_name")
-  plateNumber    String            @unique @map("license_plate")
-  province       String?           @map("province")
   brand          String
-  model          String
-  color          String?           @map("color")
-  year           Int?              @map("year")
-  seats          Int               @default(4)
-  currentMileage Int               @default(0) @map("current_mileage")
-  status         VehicleStatus     @default(AVAILABLE)
-  uploadUrl      String?           @map("upload_url")
-  managerId      Int?              @map("manager_id")
-  manager        User?             @relation("VehicleManager", fields: [managerId], references: [id])
-  isDeleted      Boolean           @default(false) @map("is_deleted")
   createdAt      DateTime          @default(now()) @map("created_at")
+  model          String
   updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at")
+  uploadUrl      String?           @map("upload_url")
+  status         VehicleStatus     @default(AVAILABLE)
+  isDeleted      Boolean           @default(false) @map("is_deleted")
+  plateNumber    String            @unique @map("license_plate")
+  seats          Int               @default(4)
+  vehicleName    String            @map("vehicle_name")
+  province       String?           @map("province")
+  color          String?           @map("color")
+  currentMileage Int               @default(0) @map("current_mileage")
+  managerId      Int?              @map("manager_id")
+  vehicleCode    String?           @unique @map("vehicle_code")
+  year           Int?              @map("year")
   bookings       VehicleBooking[]
   documents      VehicleDocument[]
+  manager        User?             @relation("VehicleManager", fields: [managerId], references: [id])
 
   @@index([managerId])
   @@map("vehicles")
@@ -176,17 +175,17 @@ model Vehicle {
 
 model VehicleBooking {
   id            Int           @id @default(autoincrement())
-  bookingCode   String?       @unique @default(uuid()) @map("booking_code")
   vehicleId     Int           @map("vehicle_id")
-  userId        Int           @map("user_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
   destination   String
-  startDatetime DateTime      @map("start_datetime")
   endDatetime   DateTime      @map("end_datetime")
   purpose       String
-  status        BookingStatus @default(PENDING)
-  createdAt     DateTime      @default(now()) @map("created_at")
+  startDatetime DateTime      @map("start_datetime")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   passengers    Int           @default(1) @map("passengers")
+  userId        Int           @map("user_id")
+  bookingCode   String?       @unique @default(uuid()) @map("booking_code")
+  status        BookingStatus @default(PENDING)
   attachments   Attachment[]
   user          User          @relation("BookingUser", fields: [userId], references: [id])
   vehicle       Vehicle       @relation(fields: [vehicleId], references: [id])
@@ -199,21 +198,21 @@ model VehicleBooking {
 
 model VehicleLog {
   id                 Int            @id @default(autoincrement())
-  vehicleBookingId   Int            @map("vehicle_booking_id")
-  checkoutById       Int            @map("checkout_by")
-  checkoutTime       DateTime       @map("checkout_time")
+  createdAt          DateTime       @default(now()) @map("created_at")
   checkoutMileage    Int            @map("checkout_mileage")
+  checkoutTime       DateTime       @map("checkout_time")
+  remark             String?
+  returnMileage      Int?           @map("return_mileage")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+  vehicleBookingId   Int            @map("vehicle_booking_id")
+  returnTime         DateTime?      @map("return_time")
+  checkoutById       Int            @map("checkout_by")
   checkoutFuelLevel  Int            @map("checkout_fuel_level")
   returnById         Int?           @map("return_by")
-  returnTime         DateTime?      @map("return_time")
-  returnMileage      Int?           @map("return_mileage")
   returnFuelLevel    Int?           @map("return_fuel_level")
-  returnMileagePhoto String?        @map("return_mileage_photo")
-  returnFrontPhoto   String?        @map("return_front_photo")
   returnBackPhoto    String?        @map("return_back_photo")
-  remark             String?
-  createdAt          DateTime       @default(now()) @map("created_at")
-  updatedAt          DateTime       @updatedAt @map("updated_at")
+  returnFrontPhoto   String?        @map("return_front_photo")
+  returnMileagePhoto String?        @map("return_mileage_photo")
   checkoutBy         User           @relation("CheckoutByUser", fields: [checkoutById], references: [id])
   returnBy           User?          @relation("ReturnByUser", fields: [returnById], references: [id])
   booking            VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
@@ -226,20 +225,20 @@ model VehicleLog {
 
 model Attachment {
   id               Int             @id @default(autoincrement())
-  entityType       String          @map("entity_type")
-  entityId         Int             @map("entity_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
   fileName         String          @map("file_name")
   filePath         String          @unique @map("file_path")
   fileType         String          @map("file_type")
-  uploadedById     Int             @map("uploaded_by")
-  createdAt        DateTime        @default(now()) @map("created_at")
-  updatedAt        DateTime        @updatedAt @map("updated_at")
   vehicleBookingId Int?            @map("vehicle_booking_id")
+  entityId         Int             @map("entity_id")
+  entityType       String          @map("entity_type")
   roomBookingId    Int?            @map("room_booking_id")
+  uploadedById     Int             @map("uploaded_by")
+  isDeleted        Boolean         @default(false) @map("is_deleted")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
   bookingRoom      RoomBooking?    @relation(fields: [roomBookingId], references: [id], onDelete: Cascade)
   uploadedBy       User            @relation(fields: [uploadedById], references: [id])
   bookingVehicle   VehicleBooking? @relation(fields: [vehicleBookingId], references: [id], onDelete: Cascade)
-  isDeleted        Boolean         @default(false) @map("is_deleted")
 
   @@index([vehicleBookingId])
   @@index([roomBookingId])
@@ -265,8 +264,8 @@ model Facility {
 model RoomFacility {
   roomId     Int      @map("room_id")
   facilityId Int      @map("facility_id")
-  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   facility   Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   @@id([roomId, facilityId])
   @@index([roomId])
@@ -288,18 +287,17 @@ model DocumentType {
 }
 
 model VehicleDocument {
-  id             Int       @id @default(autoincrement())
-  vehicleId      Int       @map("vehicle_id")
-  documentTypeId Int       @map("document_type_id")
-  documentNumber String?   @map("document_number")
-  issueDate      DateTime? @map("issue_date")
-  expiryDate     DateTime? @map("expiry_date")
-  remark         String?   @map("remark") @db.Text
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-
-  vehicle      Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  documentType DocumentType @relation(fields: [documentTypeId], references: [id], onDelete: Restrict)
+  id             Int          @id @default(autoincrement())
+  vehicleId      Int          @map("vehicle_id")
+  documentTypeId Int          @map("document_type_id")
+  documentNumber String?      @map("document_number")
+  issueDate      DateTime?    @map("issue_date")
+  expiryDate     DateTime?    @map("expiry_date")
+  remark         String?      @map("remark")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  documentType   DocumentType @relation(fields: [documentTypeId], references: [id])
+  vehicle        Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
   @@index([vehicleId])
   @@index([documentTypeId])
@@ -307,33 +305,23 @@ model VehicleDocument {
   @@map("vehicle_documents")
 }
 
-// 🟢 🆕 เพิ่ม Model สำหรับ Notification Center
 model Notification {
-  id Int @id @default(autoincrement())
-
-  userId  Int  @map("user_id")
-  actorId Int? @map("actor_id")
-
-  title   String
-  message String @db.Text
-
-  type NotificationType
-
-  action String? @map("action")
-
-  entityType String? @map("entity_type")
-  entityId   Int?    @map("entity_id")
-
-  targetRoute String? @map("target_route")
-
-  isRead Boolean   @default(false) @map("is_read")
-  readAt DateTime? @map("read_at")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  actor User? @relation("NotificationActor", fields: [actorId], references: [id])
+  id          Int              @id @default(autoincrement())
+  userId      Int              @map("user_id")
+  actorId     Int?             @map("actor_id")
+  title       String
+  message     String
+  type        NotificationType
+  action      String?          @map("action")
+  entityType  String?          @map("entity_type")
+  entityId    Int?             @map("entity_id")
+  targetRoute String?          @map("target_route")
+  isRead      Boolean          @default(false) @map("is_read")
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id])
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
   @@index([entityType, entityId])
@@ -344,8 +332,6 @@ model Notification {
 
 enum RoomStatus {
   AVAILABLE
-  IN_USE      @map("IN USE")
-  RESERVED
   MAINTENANCE
   INACTIVE
 }
@@ -353,22 +339,21 @@ enum RoomStatus {
 enum VehicleStatus {
   AVAILABLE
   IN_USE      @map("IN USE")
-  RESERVED
   MAINTENANCE
   INACTIVE
+  RESERVED
 }
 
 enum BookingStatus {
   PENDING
   APPROVED
   REJECTED
-  RESERVED
-  IN_USE    @map("IN USE")
   CANCELLED
   COMPLETED
+  IN_USE    @map("IN USE")
+  EXPIRED
 }
 
-// 🟢 🆕 เพิ่ม Enum สำหรับแยกประเภท Notification
 enum NotificationType {
   BOOKING
   APPROVAL

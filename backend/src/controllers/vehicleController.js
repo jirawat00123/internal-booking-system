@@ -6,7 +6,11 @@ const path = require('path');
 
 // Helper Function: สำหรับลบไฟล์รูปภาพอย่างปลอดภัย
 const safeDeleteFile = async (filePath) => {
-    if (filePath && fs.existsSync(filePath)) {
+    if (!filePath || typeof filePath !== 'string') {
+        return;
+    }
+
+    if (fs.existsSync(filePath)) {
         try {
             await fs.promises.unlink(filePath);
         } catch (err) {
@@ -18,6 +22,7 @@ const safeDeleteFile = async (filePath) => {
 // 1. ดึงข้อมูลรถยนต์ทั้งหมด
 exports.getVehicles = async (req, res) => {
     try {
+        console.log('[TRACE] vehicleController.getVehicles START');
         // 1. รับ Query Parameters
         const { search, status, page, limit } = req.query;
         
@@ -28,8 +33,12 @@ exports.getVehicles = async (req, res) => {
         // 2. สร้าง เงื่อนไขการกรอง (Filter)
         const whereClause = { isDeleted: false };
 
+        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE'];
         if (status) {
-            whereClause.status = status;
+            const upperStatus = status.toUpperCase();
+            if (allowedStatuses.includes(upperStatus)) {
+                whereClause.status = upperStatus;
+            }
         }
 
         // 3. เงื่อนไขการค้นหา (Search) 
@@ -43,6 +52,7 @@ exports.getVehicles = async (req, res) => {
         }
 
         // 4. Query Database (ดึงข้อมูลรถพร้อมเช็กคิวจองที่ยังไม่เสร็จสิ้น)
+        console.log(`[TRACE] vehicleController.getVehicles BEFORE PRISMA (Local Path: ${__dirname})`);
         const [totalItems, vehiclesList] = await Promise.all([
             prisma.vehicle.count({ where: whereClause }),
             prisma.vehicle.findMany({
@@ -50,7 +60,7 @@ exports.getVehicles = async (req, res) => {
                 include: {
                     bookings: {
                         where: {
-                            status: { in: ['APPROVED', 'RESERVED', 'IN_USE'] }
+                            status: { in: ['APPROVED', 'IN_USE'] }
                         }
                     }
                 },
@@ -60,12 +70,12 @@ exports.getVehicles = async (req, res) => {
             })
         ]);
 
-        // คำนวณสถานะรถแบบ Real-time (ถ้ามีคิวจองค้างอยู่ให้ถือว่าเป็น RESERVED)
+        // คำนวณสถานะการมีคิวจองในอนาคต (hasFutureBooking) สำหรับ UI โดยไม่แก้ไข vehicle.status
         const vehicles = vehiclesList.map(vehicle => {
             const hasActiveBooking = vehicle.bookings && vehicle.bookings.length > 0;
             return {
                 ...vehicle,
-                status: (vehicle.status === 'AVAILABLE' && hasActiveBooking) ? 'RESERVED' : vehicle.status
+                hasFutureBooking: hasActiveBooking
             };
         });
 
@@ -81,8 +91,9 @@ exports.getVehicles = async (req, res) => {
             }
         });
     } catch (error) {
-        console.error("Get Vehicles Error:", error);
-        return res.status(500).json({ success: false, error: "ระบบขัดข้องในการดึงข้อมูลรถ" });
+        console.error('[GET /api/vehicles] ERROR:', error);
+        console.error('[GET /api/vehicles] STACK:', error?.stack);
+        return res.status(500).json({ success: false, error: error.message || "ระบบขัดข้องในการดึงข้อมูลรถ" });
     }
 };
 
@@ -113,7 +124,18 @@ exports.createVehicle = async (req, res) => {
         }
         
         // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่งเป็น Base64/URL ผ่าน req.body
-        const uploadUrl = req.file ? `/uploads/vehicles/${req.file.filename}` : req.body.uploadUrl || null;
+        // ประกอบ Web URL Path โดยใช้ filename เพื่อให้พร้อมสำหรับ Frontend นำไปใช้งาน
+                let uploadUrl = req.file
+            ? '/uploads/vehicles/' + req.file.filename
+            : (req.body.uploadUrl || null);
+
+        if (
+            uploadUrl &&
+            uploadUrl.startsWith('/uploads/') &&
+            !uploadUrl.startsWith('/uploads/vehicles/')
+        ) {
+            uploadUrl = uploadUrl.replace('/uploads/', '/uploads/vehicles/');
+        }
 
         const newVehicle = await prisma.vehicle.create({
             data: {
@@ -187,7 +209,7 @@ exports.updateVehicle = async (req, res) => {
 
         // 🟢 ตรวจสอบ Enum สถานะที่อนุญาต (ถ้ามีการส่ง status มาเพื่ออัปเดต)
         if (status) {
-            const allowedStatuses = ['AVAILABLE', 'IN_USE', 'RESERVED', 'MAINTENANCE', 'INACTIVE'];
+            const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE'];
             if (!allowedStatuses.includes(status)) {
                 if (req.file) await safeDeleteFile(req.file.path);
                 return res.status(400).json({ success: false, error: "สถานะรถยนต์ไม่ถูกต้อง" });
@@ -208,15 +230,39 @@ exports.updateVehicle = async (req, res) => {
             }
         }
 
+        if (seats !== undefined) {
+            const seatNumber = parseInt(seats, 10);
+            if (isNaN(seatNumber) || seatNumber <= 0) {
+                if (req.file) await safeDeleteFile(req.file.path);
+                return res.status(400).json({ success: false, error: "จำนวนที่นั่งต้องเป็นตัวเลขและมากกว่า 0 ขึ้นไป" });
+            }
+        }
+
         let newUploadUrl = existingVehicle.uploadUrl;
         if (req.file) {
-            newUploadUrl = `/uploads/vehicles/${req.file.filename}`;
+            // ประกอบ Web URL Path โดยใช้ filename เพื่อให้พร้อมสำหรับ Frontend นำไปใช้งาน
+            newUploadUrl = '/uploads/vehicles/' + req.file.filename;
             if (existingVehicle.uploadUrl) {
-                const oldFilePath = path.join(process.cwd(), existingVehicle.uploadUrl);
+                const oldFilePath = path.join(
+                    __dirname,
+                    '..',
+                    '..',
+                    existingVehicle.uploadUrl.replace(/^\/uploads\//, 'uploads/')
+                );
                 await safeDeleteFile(oldFilePath);
             }
-        } else if (req.body.uploadUrl) {
+                } else if (req.body.uploadUrl) {
             newUploadUrl = req.body.uploadUrl; // รองรับกรณีส่ง path มาตรงๆ
+
+            if (
+                newUploadUrl.startsWith('/uploads/') &&
+                !newUploadUrl.startsWith('/uploads/vehicles/')
+            ) {
+                newUploadUrl = newUploadUrl.replace(
+                    '/uploads/',
+                    '/uploads/vehicles/'
+                );
+            }
         }
 
         const updatedVehicle = await prisma.vehicle.update({
@@ -226,7 +272,7 @@ exports.updateVehicle = async (req, res) => {
                 plateNumber: plateNumber || existingVehicle.plateNumber,
                 brand: brand || existingVehicle.brand,
                 model: model || existingVehicle.model,
-                seats: seats ? parseInt(seats, 10) : existingVehicle.seats,
+                seats: seats !== undefined ? parseInt(seats, 10) : existingVehicle.seats,
                 status: status || existingVehicle.status,
                 uploadUrl: newUploadUrl
             }
@@ -278,7 +324,7 @@ exports.deleteVehicle = async (req, res) => {
         });
 
         if (futureBookings.length > 0) {
-            return res.status(400).json({ 
+            return res.status(409).json({ 
                 success: false, 
                 error: "ไม่สามารถลบรถคันนี้ได้ เนื่องจากมีคิวจองใช้งานในอนาคต",
                 futureBookingsCount: futureBookings.length
@@ -324,7 +370,7 @@ exports.updateVehicleStatus = async (req, res) => {
         }
 
         // 🟢 1. ตรวจสอบ Enum สถานะที่อนุญาต
-        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'RESERVED', 'MAINTENANCE', 'INACTIVE'];
+        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE'];
         if (!status || !allowedStatuses.includes(status)) {
             return res.status(400).json({ success: false, error: "สถานะรถยนต์ไม่ถูกต้อง" });
         }
@@ -345,7 +391,7 @@ exports.updateVehicleStatus = async (req, res) => {
             });
 
             if (futureBookings.length > 0) {
-                return res.status(400).json({ 
+                return res.status(409).json({ 
                     success: false, 
                     error: `ไม่สามารถเปลี่ยนสถานะเป็น ${status} ได้ เนื่องจากมีรายการจองในอนาคตค้างอยู่ ${futureBookings.length} รายการ`
                 });

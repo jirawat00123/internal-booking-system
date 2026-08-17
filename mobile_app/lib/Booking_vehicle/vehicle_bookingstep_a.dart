@@ -6,6 +6,7 @@ import 'vehicle_bookingstep_b.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../auth_service.dart';
 
 class VehicleBookingStep2Page extends StatefulWidget {
   final VehicleModel? vehicle;
@@ -23,7 +24,6 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
 
   DateTime startDate = DateTime.now();
   DateTime endDate = DateTime.now().add(const Duration(days: 2));
-  TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
 
   int passengerCount = 4;
 
@@ -61,7 +61,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
       final String? token = prefs.getString('token');
 
       final response = await http.get(
-        Uri.parse('http://192.168.88.25:3001/api/vehicle-bookings'),
+        Uri.parse('${AuthService.baseUrl}/api/vehicle-bookings'),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -148,9 +148,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
     return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/$shortYear";
   }
 
-  String _formatTime(TimeOfDay time) {
-    return "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
-  }
+  // ลบฟังก์ชัน _formatTime ออกเนื่องจากยกเลิกการระบุเวลา
 
   void _onNextPressed() {
     if (_formKey.currentState!.validate()) {
@@ -162,7 +160,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
             destination: destinationController.text,
             startDate: _formatDateThai(startDate),
             endDate: _formatDateThai(endDate),
-            timeRange: "${_formatTime(startTime)} น.",
+            timeRange: "",
             passengerCount: passengerCount,
             driverType: 'ขับขี่เอง',
           ),
@@ -210,34 +208,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
     }
   }
 
-  Future<void> _selectTime(BuildContext context) async {
-    final TimeOfDay? picked = await showTimePicker(
-      context: context,
-      initialTime: startTime,
-      initialEntryMode: TimePickerEntryMode.inputOnly,
-      builder: (context, child) {
-        return Theme(
-          data: ThemeData(
-            useMaterial3: true,
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF009CB4),
-              brightness: Brightness.light,
-            ),
-          ),
-          child: MediaQuery(
-            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
-            child: child!,
-          ),
-        );
-      },
-    );
-
-    if (picked != null) {
-      setState(() {
-        startTime = picked;
-      });
-    }
-  }
+  // ลบฟังก์ชัน _selectTime ออกเนื่องจากยกเลิกการระบุเวลา
 
   @override
   Widget build(BuildContext context) {
@@ -382,14 +353,6 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 20),
-                          _buildLabel('เวลาที่ต้องการใช้งาน'),
-                          const SizedBox(height: 8),
-                          _buildClickableField(
-                            text: "${_formatTime(startTime)} น.",
-                            rightIcon: Icons.access_time,
-                            onTap: () => _selectTime(context),
                           ),
                           const SizedBox(height: 30),
 
@@ -600,7 +563,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
             child: imagePath.isNotEmpty
                 ? (imagePath.startsWith('/uploads')
                       ? Image.network(
-                          'http://192.168.88.25:3001$imagePath',
+                          '${AuthService.baseUrl}$imagePath',
                           width: 100,
                           height: 70,
                           fit: BoxFit.cover,

@@ -48,7 +48,8 @@ class WelcomeApp extends StatelessWidget {
                   ),
                 ],
               ),
-              child: child,
+              // เพิ่มการจัดการกรณี child เป็น null ป้องกัน Error ในบางสถานการณ์
+              child: child ?? const SizedBox.shrink(),
             ),
           ),
         );
@@ -66,10 +67,8 @@ class WelcomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginSelectionPage()),
-        );
+        // เปลี่ยนมาใช้ Named Route เพื่อให้สอดคล้องกับที่ลงทะเบียนไว้ใน WelcomeApp
+        Navigator.pushNamed(context, '/login');
       },
       child: Scaffold(
         body: Container(

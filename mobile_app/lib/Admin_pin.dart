@@ -61,35 +61,34 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
 
     try {
       // 🟢 1. เลือก Base URL ให้ถูกต้องตาม Platform โดยอัตโนมัติ
-      String baseUrl = 'http://192.168.88.25:3001/api';
-      if (!kIsWeb && Platform.isAndroid) {
-        baseUrl = 'http://192.168.88.25:3001/api';
-      }
+      const String baseUrl = 'http://192.168.88.25:3001/api';
       final url = Uri.parse('$baseUrl/login-pin');
 
       debugPrint('📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน ($url)...');
 
-      // 🟢 2. อ่าน SharedPreferences และ Token (ประกาศจุดนี้จุดเดียว)
+      // 🟢 2. อ่าน SharedPreferences และ Token
       final prefs = await SharedPreferences.getInstance();
       final String? existingToken = prefs.getString('token');
+      final String? employeeCode =
+          prefs.getString('employeeCode') ?? prefs.getString('employee_code');
 
       // 🟢 3. ตรวจสอบว่ามี Token ในเซสชันก่อนยิง API
 
-      // 🟢 4. ยิง API ยืนยัน PIN
+      // 🟢 4. ยิง API ยืนยัน PIN (แนบ employeeCode ไปยัง Backend เพื่อแก้ไขปัญหา employeeCode = undefined)
       final response = await http
           .post(
             url,
-            headers: {
-              'Content-Type': 'application/json',
-              // แนบ Header เฉพาะกรณีที่มี Token เท่านั้น
-              if (existingToken != null && existingToken.isNotEmpty)
-                'Authorization': 'Bearer $existingToken',
-            },
-            body: jsonEncode({'pin': pin, 'expectedRole': 'ADMIN'}),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'employeeCode': employeeCode,
+              'pin': pin,
+              'expectedRole': 'ADMIN',
+            }),
           )
           .timeout(const Duration(seconds: 5));
 
       debugPrint('📱 [Flutter] หลังบ้านตอบกลับ Code: ${response.statusCode}');
+      debugPrint('📱 [Flutter] Response Body: ${response.body}');
 
       if (!mounted) return;
 
@@ -109,10 +108,21 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
               await prefs.setString('token', newToken);
               await prefs.setString('jwt_token', newToken);
 
-              // 🔑 บันทึกลง SecureStorage ให้ DashboardService อ่านค่าได้
-              const storage = FlutterSecureStorage();
-              await storage.write(key: 'jwt_token', value: newToken);
-              await storage.write(key: 'token', value: newToken);
+              // 🌟 บันทึก Role และ Mode เพื่อใช้ควบคุมหน้าจอ Navigation
+              await prefs.setString('role', role);
+              await prefs.setString('current_mode', 'ADMIN_MODE');
+              debugPrint(
+                '🎯 [Login Flow] Success: Set current_mode = ADMIN_MODE',
+              ); // 🟢 เพิ่ม Log ยืนยันการตั้งค่า Mode ตาม Test A
+
+              // 🔑 บันทึกลง SecureStorage ให้ DashboardService อ่านค่าได้ (ข้ามเมื่อทำงานบน Web/HTTP)
+              if (!kIsWeb) {
+                const storage = FlutterSecureStorage();
+                await storage.write(key: 'jwt_token', value: newToken);
+                await storage.write(key: 'token', value: newToken);
+                await storage.write(key: 'user_role', value: role);
+                await storage.write(key: 'current_mode', value: 'ADMIN_MODE');
+              }
 
               // 🟢 บันทึก permissions ลง SharedPreferences สำหรับควบคุม UI Action
               final permissions =

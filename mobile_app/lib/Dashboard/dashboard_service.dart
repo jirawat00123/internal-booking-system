@@ -4,15 +4,16 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../auth_service.dart';
 
 class DashboardService {
   final String baseUrl;
   final FlutterSecureStorage _storage;
 
-  DashboardService({
-    this.baseUrl = 'http://192.168.88.25:3001/api',
-    FlutterSecureStorage? storage,
-  }) : _storage = storage ?? const FlutterSecureStorage();
+  DashboardService({String? baseUrl, FlutterSecureStorage? storage})
+    : baseUrl = baseUrl ?? '${AuthService.baseUrl}/api',
+      _storage = storage ?? const FlutterSecureStorage();
 
   Future<String?> _getToken() async {
     // ค้นหา Token จาก Key ที่เป็นไปได้ทั้งหมด
@@ -20,6 +21,23 @@ class DashboardService {
     token ??= await _storage.read(key: 'token');
     token ??= await _storage.read(key: 'auth_token');
     token ??= await _storage.read(key: 'accessToken');
+
+    // สำรอง: อ่านจาก SharedPreferences (รองรับกรณี Web Browser / SharedPreferences)
+    if (token == null || token.isEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        token =
+            prefs.getString('token') ??
+            prefs.getString('jwt_token') ??
+            prefs.getString('auth_token') ??
+            prefs.getString('accessToken');
+      } catch (_) {}
+    }
+
+    // Clean Token ป้องกันเครื่องหมายอัญประกาศและช่องว่างส่วนเกิน
+    if (token != null) {
+      token = token.replaceAll('"', '').trim();
+    }
 
     if (kDebugMode) {
       if (token != null && token.isNotEmpty) {
@@ -38,7 +56,8 @@ class DashboardService {
     final headers = <String, String>{'Content-Type': 'application/json'};
 
     if (token != null && token.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $token';
+      final authHeader = token.startsWith('Bearer ') ? token : 'Bearer $token';
+      headers['Authorization'] = authHeader;
     }
 
     return headers;

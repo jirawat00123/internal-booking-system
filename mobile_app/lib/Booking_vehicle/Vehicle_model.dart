@@ -142,8 +142,6 @@ class VehicleBookingModel {
   // 🟢 แสดงข้อความสถานะภาษาไทยตามค่าจาก Backend
   String get currentStatus {
     switch (rawStatus) {
-      case 'RESERVED':
-        return 'จองแล้ว';
       case 'IN_USE':
         return 'กำลังใช้งาน';
       case 'COMPLETED':

@@ -7,6 +7,7 @@ import 'Admin_editroom.dart';
 import '../../Booking_room/Room_model.dart';
 import '../../AdminGroupPage.dart'; // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ์
 import '../../auth_service.dart'; // นำเข้าคลาส AuthService เพื่อดึง Token สำหรับการลบห้องประชุม
+import 'package:shared_preferences/shared_preferences.dart'; // 🟢 เพิ่ม import สำหรับดึง Token บน Web
 // 💡 รายการข้อมูลส่วนกลาง ValueNotifier
 
 class MobileFrameContainer extends StatelessWidget {
@@ -61,6 +62,11 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     try {
       // 💡 1. ดึง Token จากตัวแปรส่วนกลางเพื่อใช้ในการยืนยันสิทธิ์
       String? token = await AuthService.instance.getToken();
+      // 🟢 ดึงข้อมูลสำรองจาก SharedPreferences หากรันบน Web แล้ว AuthService คืนค่า null
+      if (token == null || token.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        token = prefs.getString('token') ?? prefs.getString('jwt_token');
+      }
 
       // 💡 2. แนบ Authorization Header ไปพร้อมกับ HTTP DELETE request เพื่อผ่านด่านหลังบ้าน
       final response = await http.delete(
@@ -366,6 +372,12 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
           : 'http://192.168.88.25:3001';
       String? token = await AuthService.instance
           .getToken(); // ดึง Token จาก AuthService
+
+      // 🟢 ดึงข้อมูลสำรองจาก SharedPreferences หากรันบน Web แล้ว AuthService คืนค่า null
+      if (token == null || token.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        token = prefs.getString('token') ?? prefs.getString('jwt_token');
+      }
 
       final response = await http.get(
         Uri.parse('$baseUrl/api/rooms'),

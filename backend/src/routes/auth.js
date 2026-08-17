@@ -170,7 +170,13 @@ router.post('/login', async (req, res) => {
 // ==========================================
 router.post('/login-pin', async (req, res) => {
   try {
-    const { pin, expectedRole, employeeCode } = req.body; 
+    const { pin, expectedRole, employeeCode } = req.body;
+
+    console.log("========== [LOGIN-PIN DEBUG] ==========");
+    console.log("[LOGIN-PIN] employeeCode =", employeeCode);
+    console.log("[LOGIN-PIN] expectedRole =", expectedRole);
+    console.log("[LOGIN-PIN] hasPin =", !!pin);
+    console.log("========================================");
 
     if (!pin) {
       return res.status(400).json({ success: false, message: 'กรุณาส่งข้อมูล PIN' });
@@ -184,81 +190,66 @@ router.post('/login-pin', async (req, res) => {
     let assignedDept = "ไม่ระบุแผนก";
 
     if (employeeCode) {
+        // 🔐 กรณีส่ง employeeCode มาด้วย ให้ค้นหาจากรหัสพนักงานก่อน
         const employee = await prisma.employee.findUnique({
-            where: { employeeCode: String(employeeCode).trim() },
-            include: {
-                users: { include: { role: true } },
-                position: { include: { department: true } }
-            }
+          where: { employeeCode: String(employeeCode).trim() },
+          include: {
+            users: { include: { role: true } },
+            position: { include: { department: true } }
+          }
         });
 
         if (!employee || !employee.users || employee.users.length === 0) {
-            return res.status(404).json({ success: false, message: 'ไม่พบผู้ใช้งานนี้ในระบบ' });
+          return res.status(404).json({ success: false, message: 'ไม่พบรหัสพนักงานนี้ในระบบ' });
         }
 
-        const userAccount = employee.users[0];
-        
-        if (!userAccount.active) {
-            return res.status(403).json({ success: false, message: 'บัญชีผู้ใช้งานถูกระงับ' });
+        const matchedUser = employee.users[0];
+
+        if (!matchedUser.active || (matchedUser.lockedUntil && matchedUser.lockedUntil > new Date())) {
+          return res.status(403).json({ success: false, message: 'บัญชีถูกระงับการใช้งานชั่วคราว' });
         }
 
-        // 🛡️ เช็กสถานะการล็อก
-        if (userAccount.lockedUntil && userAccount.lockedUntil > new Date()) {
-          const remainingTime = Math.ceil((userAccount.lockedUntil - new Date()) / 60000);
-          return res.status(403).json({ success: false, message: `บัญชีถูกระงับชั่วคราว ลองใหม่ในอีก ${remainingTime} นาที` });
+        if (!matchedUser.pin || !(await verifyPin(matchedUser.pin, inputPin))) {
+          return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง' });
         }
 
-        // 🚨 [EVIDENCE LOGS]
-        console.log("[LOGIN-PIN] Input PIN:", inputPin);
-        console.log("[LOGIN-PIN] Has Hash in DB:", !!userAccount.pin);
-
-        // 🟢 ตรวจสอบ PIN (Hash จาก DB, Plain PIN จาก User)
-        const isPinValid = await verifyPin(userAccount.pin, inputPin);
-        
-        console.log("[LOGIN-PIN] Verify Result:", isPinValid);
-
-        if (!isPinValid) {
-            console.log("[LOGIN-PIN] Login Failed: 401 Unauthorized");
-
-            const attempts = (userAccount.failedLoginAttempts || 0) + 1;
-            let updateData = { failedLoginAttempts: attempts };
-
-            if (attempts >= MAX_LOGIN_ATTEMPTS) {
-              updateData.lockedUntil = new Date(Date.now() + LOCK_TIME_MINUTES * 60000);
-            }
-
-            await prisma.user.update({
-              where: { id: userAccount.id },
-              data: updateData
-            });
-
-            if (attempts >= MAX_LOGIN_ATTEMPTS) {
-              return res.status(401).json({ success: false, message: `ใส่ PIN ผิดเกินกำหนด บัญชีถูกระงับ ${LOCK_TIME_MINUTES} นาที` });
-            }
-            return res.status(401).json({ success: false, message: `รหัส PIN ไม่ถูกต้อง (ผิดครั้งที่ ${attempts}/${MAX_LOGIN_ATTEMPTS})` });
-        }
-
-        console.log("[LOGIN-PIN] Login Success");
-
-        actualUserId = userAccount.id;
-        actualUserName = employee.fullName;
+        actualUserId = matchedUser.id;
+        actualUserName = employee.fullName || "ไม่ระบุชื่อ";
         actualEmployeeCode = employee.employeeCode;
-        assignedRole = userAccount.role ? userAccount.role.name : 'USER';
+        assignedRole = matchedUser.role ? matchedUser.role.name : (matchedUser.roles || 'USER');
         assignedDept = employee.position?.department?.departmentName || "ไม่ระบุแผนก";
 
-        if (expectedRole && assignedRole !== expectedRole) {
-            return res.status(403).json({ success: false, message: `เข้าไม่ได้! คุณไม่มีสิทธิ์เป็น ${expectedRole}` });
+        if (expectedRole && assignedRole.toUpperCase() !== expectedRole.toUpperCase()) {
+          return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
         }
-
     } else {
-        // Fallback: กรณีไม่ส่ง employeeCode มา
+        // 🔐 กรณีไม่ส่ง employeeCode มา ให้ค้นหา User จาก PIN โดยตรง
         const activeUsers = await prisma.user.findMany({
-          where: { active: true, pin: { not: null } },
-          include: { role: true, employee: { include: { position: { include: { department: true } } } } }
+          where: {
+            active: true,
+            pin: { not: null }
+          },
+          include: {
+            role: true,
+            employee: {
+              include: {
+                position: {
+                  include: {
+                    department: true
+                  }
+                }
+              }
+            }
+          }
         });
 
         let matchedUser = null;
+
         for (const user of activeUsers) {
+          if (user.lockedUntil && user.lockedUntil > new Date()) {
+            continue;
+          }
+
           if (user.pin && (await verifyPin(user.pin, inputPin))) {
             matchedUser = user;
             break;
@@ -266,26 +257,42 @@ router.post('/login-pin', async (req, res) => {
         }
 
         if (!matchedUser) {
-          return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง หรือบัญชีถูกระงับ' });
+          return res.status(401).json({
+            success: false,
+            message: 'รหัส PIN ไม่ถูกต้อง หรือบัญชีถูกระงับ'
+          });
         }
 
-        if (matchedUser.lockedUntil && matchedUser.lockedUntil > new Date()) {
-          return res.status(403).json({ success: false, message: 'บัญชีนี้อยู่ระหว่างถูกระงับชั่วคราว' });
+        assignedRole = matchedUser.role
+          ? matchedUser.role.name
+          : (matchedUser.roles || 'USER');
+
+        assignedDept =
+          matchedUser.employee?.position?.department?.departmentName ||
+          "ไม่ระบุแผนก";
+
+        if (
+          expectedRole &&
+          assignedRole.toUpperCase() !== expectedRole.toUpperCase()
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}`
+          });
         }
 
-        assignedRole = matchedUser.role ? matchedUser.role.name : (matchedUser.roles || 'USER');
-        assignedDept = matchedUser.employee?.position?.department?.departmentName || "ไม่ระบุแผนก";
-        
-        const isSecurityGroup = (expectedRole === 'GUARD' || expectedRole === 'SECURITY') && 
-                                (assignedRole === 'GUARD' || assignedRole === 'SECURITY');
-
-        if (expectedRole && assignedRole !== expectedRole && !isSecurityGroup) {
-          return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
-        }
+        console.log("[LOGIN-PIN] Matched User ID:", matchedUser.id);
+        console.log("[LOGIN-PIN] Matched Role:", assignedRole);
+        console.log("[LOGIN-PIN] Input PIN:", inputPin);
+        console.log("[LOGIN-PIN] Has Hash in DB:", !!matchedUser.pin);
+        console.log("[LOGIN-PIN] Verify Result:", true);
+        console.log("[LOGIN-PIN] Login Success");
 
         actualUserId = matchedUser.id;
-        actualUserName = matchedUser.employee?.fullName || "ไม่ระบุชื่อ";
-        actualEmployeeCode = matchedUser.employee?.employeeCode || "";
+        actualUserName =
+          matchedUser.employee?.fullName || "ไม่ระบุชื่อ";
+        actualEmployeeCode =
+          matchedUser.employee?.employeeCode || "";
     }
 
     const newSessionId = crypto.randomUUID();

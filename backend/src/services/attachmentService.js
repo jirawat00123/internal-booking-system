@@ -28,7 +28,7 @@ const createAttachmentRecord = async (file, entityType, entityId, userId) => {
           entityType: entityType,
           entityId: parsedEntityId,
           fileName: file.originalname,  // ชื่อไฟล์ต้นฉบับ สำหรับให้ User ดู
-          filePath: file.filename,      // ชื่อไฟล์ UUID ที่เก็บจริงบน Disk
+          filePath: path.join('attachments', file.filename), // Path สัมพัทธ์จาก uploads ไปยังไฟล์จริง
           fileType: file.mimetype,
           uploadedById: parseInt(userId, 10),
           roomBookingId: roomBookingId,
@@ -62,10 +62,6 @@ const getAttachmentById = async (attachmentId, userId, roleId) => {
   });
 
   if (!attachment || attachment.isDeleted) {
-    throw new Error('ATTACHMENT_NOT_FOUND');
-  }
-
-  if (!attachment) {
     throw new Error('ATTACHMENT_NOT_FOUND');
   }
 
@@ -131,7 +127,22 @@ const deleteAttachmentById = async (attachmentId, userId, roleId) => {
     where: { id: id },
     data: { isDeleted: true }
   });
-    // ไม่ throw error ให้ระบบพัง เพราะ DB ลบสำเร็จแล้ว
+
+  // 4. ลบ Physical File หลังจาก Soft Delete สำเร็จ
+  const baseUploadDir = path.join(__dirname, '../../uploads');
+  const absolutePath = path.resolve(baseUploadDir, attachment.filePath);
+
+  if (!absolutePath.startsWith(path.resolve(baseUploadDir))) {
+    throw new Error('FORBIDDEN_ACCESS');
+  }
+
+  try {
+    await fs.unlink(absolutePath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error(`[AttachmentService] Failed to delete physical file: ${error.message}`);
+    }
+  }
 
   return true;
 };

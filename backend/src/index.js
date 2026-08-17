@@ -1,5 +1,4 @@
 require('dotenv').config();
-const fs = require('fs');
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -33,36 +32,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const multer = require('multer');
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const isRoom = req.originalUrl.includes('/rooms');
-    
-    let dir;
-    if (isRoom) {
-      // 🔒 ห้ามแก้ Rooms: ปล่อยให้ใช้ Path เดิมที่ทำงานได้ปกติ
-      dir = path.join(__dirname, '../uploads', 'rooms');
-    } else {
-      // 🚀 แก้ไขเฉพาะ Vehicle: ถอย 2 ระดับเพื่อเซฟไฟล์ลงที่ backend/uploads/vehicles/ โดยตรง
-      dir = path.join(__dirname, '../uploads', 'vehicles');
-    }
-    
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    cb(null, dir); 
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const isRoom = req.originalUrl.includes('/rooms');
-    const prefix = isRoom ? 'room_' : 'vehicle_';
-    
-    cb(null, prefix + uniqueSuffix + path.extname(file.originalname)); 
-  }
+// 📝 บันทึก Log ของ Request ที่วิ่งเข้ามาใน Terminal ทุกคำขอ
+app.use((req, res, next) => {
+  console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${req.originalUrl} - IP: ${req.ip || req.socket.remoteAddress}`);
+  next();
 });
-
-
-const upload = multer({ storage: storage });
 
 // 📖 นำเข้า Swagger
 const swaggerUi = require('swagger-ui-express');
@@ -80,41 +54,8 @@ process.on('unhandledRejection', (reason, promise) => {
 // ==========================================
 // 📁 เปิดสิทธิ์การอ่านไฟล์ภาพ (Serve Static Files)
 // ==========================================
-// 💡 แก้เป็น __dirname เพื่อบังคับให้ Path อ้างอิงจากไฟล์ index.js เสมอ (backend/src/../uploads = backend/uploads)
+// ล็อก Path ให้ชี้ตรงไปที่ uploads ของ Container (/app/uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-// 💡 อัปเกรด Middleware เพื่อดักจับรายละเอียดเชิงลึกเมื่อหาไฟล์ไม่พบ
-app.use('/uploads', async (req, res) => {
-  // req.path จะได้ค่าเช่น /vehicles/vehicle_xxxxx.jpg
-  const expectedAbsolutePath = path.join(__dirname, '../uploads', req.path);
-  const fileExists = fs.existsSync(expectedAbsolutePath);
-  
-  let vehicleId = 'N/A';
-  let dbUploadUrl = req.originalUrl;
-
-  try {
-    // 💡 ค้นหาข้อมูลจาก Database เพื่อแมพว่ารูปนี้เป็นของรถคันไหน
-    const vehicle = await prisma.vehicle.findFirst({
-      where: { uploadUrl: req.originalUrl }
-    });
-    
-    if (vehicle) {
-      vehicleId = vehicle.id;
-      dbUploadUrl = vehicle.uploadUrl;
-    }
-  } catch (error) {
-    // ดักไว้เผื่อ schema ใช้ชื่อคอลัมน์ต่างออกไป
-  }
-
-  // 💡 พิมพ์ Log ตาม Requirement 100%
-  console.error(`🔴 Image file missing details:`);
-  console.error(`   - Vehicle ID: ${vehicleId}`);
-  console.error(`   - Database upload_url: ${dbUploadUrl}`);
-  console.error(`   - Expected absolute path: ${expectedAbsolutePath}`);
-  console.error(`   - Exists on disk: ${fileExists}`);
-
-  res.status(404).json({ success: false, error: 'Image file not found' });
-});
 // ==========================================
 // 📑 ตั้งค่าหน้าปกคู่มือ API (Swagger)
 // ==========================================
@@ -399,85 +340,6 @@ app.get('/', (req, res) => {
 // ==========================================
 const { authenticateToken, isAdmin, requireRole } = require('./middlewares/auth');
 
-// [GET] ดึงข้อมูลห้องประชุม (บังคับใช้ Token)
-app.get('/api/rooms', authenticateToken, async (req, res) => {
-  try {
-    const rooms = await prisma.room.findMany({
-      orderBy: { roomName: 'asc' },
-    });
-    return res.status(200).json(rooms);
-  } catch (error) {
-    console.error('Error fetching rooms:', error);
-    return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลห้องประชุม' });
-  }
-});
-
-// [POST] สร้างห้องประชุม (สิทธิ์ Admin เท่านั้น)
-app.post('/api/rooms', authenticateToken, isAdmin, upload.single('image'), async (req, res) => {
-  try {
-    const { roomName, capacity, location, status } = req.body;
-
-    if (!roomName) {
-      return res.status(400).json({ message: 'กรุณากรอกชื่อห้องประชุม' });
-    }
-
-    let uploadUrl = null;
-    if (req.file) {
-      // 💡 ระบุ Sub-folder 'rooms' ให้ตรงกับที่ Multer บันทึกไฟล์ลงไป
-      uploadUrl = `/uploads/rooms/${req.file.filename}`;
-    }
-
-    const newRoom = await prisma.room.create({
-      data: {
-        roomName: roomName.trim(),
-        capacity: parseInt(capacity, 10) || 0,
-        location: location ? location.trim() : '',
-        status: status || 'AVAILABLE', 
-        uploadUrl: uploadUrl,          
-      }
-    });
-
-    return res.status(201).json({ success: true, message: 'สร้างห้องประชุมสำเร็จ', room: newRoom });
-  } catch (error) {
-    console.error('Error creating room:', error);
-    return res.status(500).json({ message: 'ไม่สามารถบันทึกห้องประชุมลงฐานข้อมูลได้' });
-  }
-});
-
-// ✨ [DELETE] ลบห้องประชุม (สิทธิ์ Admin เท่านั้น)
-app.delete('/api/rooms/:id', authenticateToken, isAdmin, async (req, res) => {
-  const { id } = req.params;
-  const roomIdInt = parseInt(id, 10);
-
-  try {
-    console.log(`\n🚨กำลังทำ SOFT DELETE ห้องหมายเลข: ${roomIdInt}🚨\n`);
-
-    const updatedRoom = await prisma.room.update({
-      where: { 
-        id: roomIdInt 
-      },
-      data: { 
-        isDeleted: true 
-      }
-    });
-
-    return res.status(200).json({ 
-      success: true, 
-      message: 'ลบห้องประชุมออกจากฐานข้อมูลสำเร็จ (Soft Delete)',
-      data: updatedRoom
-    });
-    
-  } catch (error) {
-    console.error('Error deleting room:', error);
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({ message: 'ไม่พบข้อมูลห้องประชุมที่ต้องการลบในระบบ' });
-    }
-    
-    return res.status(500).json({ message: 'เกิดข้อผิดพลาด ไม่สามารถลบข้อมูลออกจากฐานข้อมูลได้' });
-  }
-});
-
 // [GET] รถยนต์ว่าง (บังคับใช้ Token)
 app.get('/api/vehicles/available', authenticateToken, async (req, res) => {
   try {
@@ -495,8 +357,7 @@ app.get('/api/vehicles/available', authenticateToken, async (req, res) => {
   }
 });
 
-// [POST] จองรถยนต์
-// [POST] จองรถยนต์ (อัปเดตเวอร์ชันล็อกสถานะรถยนต์ 100%) (บังคับใช้ Token)
+// [POST] จองรถยนต์ (อัปเดตสอดคล้องกับ Enum ใหม่) (บังคับใช้ Token)
 app.post('/api/vehicle-bookings/book', authenticateToken, async (req, res) => {
   const { vehicleId, userId, startDate, endDate, purpose, destination, passengers } = req.body;
 
@@ -536,7 +397,7 @@ app.post('/api/vehicle-bookings/book', authenticateToken, async (req, res) => {
     const overlappingBooking = await prisma.vehicleBooking.findFirst({
       where: {
         vehicleId: parsedVehicleId,
-        status: { notIn: ['CANCELLED', 'REJECTED', 'Cancelled', 'Rejected'] }, 
+        status: { notIn: ['CANCELLED', 'REJECTED'] }, 
         OR: [
           { startDatetime: { lt: end }, endDatetime: { gt: start } }
         ]
@@ -551,36 +412,24 @@ app.post('/api/vehicle-bookings/book', authenticateToken, async (req, res) => {
       });
     }
 
-    // 👑 4. ใช้ Prisma $transaction มัดรวมการเปลี่ยนสถานะรถ + สร้างใบจองเข้าด้วยกัน
-    const transactionResult = await prisma.$transaction(async (tx) => {
-      
-      // 🔥 สเตปเด็ด: อัปเดตสถานะรถยนต์ในตาราง Vehicle ให้เป็น RESERVED ทันที!
-      await tx.vehicle.update({
-        where: { id: parsedVehicleId },
-        data: { status: 'RESERVED' }
-      });
-
-      // สเตปปกติ: บันทึกใบจองลงตาราง VehicleBooking
-      const booking = await tx.vehicleBooking.create({
-        data: {
-          vehicleId: parsedVehicleId,
-          userId: parsedUserId,
-          startDatetime: start,
-          endDatetime: end,    
-          purpose: purpose.trim(),
-          destination: destination ? destination.trim() : purpose.trim(), 
-          passengers: passengers ? parseInt(passengers, 10) : 1,
-          status: 'Pending'
-        }
-      });
-
-      return booking;
+    // 4. บันทึกใบจองลงตาราง VehicleBooking (ใช้ Enum PENDING ตัวพิมพ์ใหญ่)
+    const booking = await prisma.vehicleBooking.create({
+      data: {
+        vehicleId: parsedVehicleId,
+        userId: parsedUserId,
+        startDatetime: start,
+        endDatetime: end,    
+        purpose: purpose.trim(),
+        destination: destination ? destination.trim() : purpose.trim(), 
+        passengers: passengers ? parseInt(passengers, 10) : 1,
+        status: 'PENDING'
+      }
     });
 
     return res.status(201).json({ 
       success: true, 
-      message: 'ส่งคำขอจองรถยนต์สำเร็จและเปลี่ยนสถานะรถเป็น RESERVED เรียบร้อยแล้ว', 
-      booking: transactionResult 
+      message: 'ส่งคำขอจองรถยนต์สำเร็จเรียบร้อยแล้ว', 
+      booking: booking 
     });
 
   } catch (error) {
@@ -604,26 +453,27 @@ app.get('/api/vehicle-logs', authenticateToken, requireRole(['ADMIN', 'GUARD']),
 });
 
 // ==========================================
-// 🔌 เชื่อมต่อ Routes กลุ่มเดิมที่เหลือ
+// 🔌 เชื่อมต่อ Routes (เรียงจาก Specific Routes ไปยัง Generic Routes)
 // ==========================================
-app.use('/api', authRoutes);              
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/vehicle-bookings', vehicleBookingsRouter);
 app.use('/api/bookings', bookingRoutes);  
 app.use('/api/resources', resourceRoutes); 
 app.use('/api/rooms', roomRoutes);
-app.use('/api', employeeRoutes); 
-app.use('/api/vehicles', vehicleRoutes);
-app.use('/api/vehicle-bookings', vehicleBookingsRouter);
 app.use('/api/security', securityRoutes);
 app.use('/api/attachments', attachmentRoutes);
 app.use('/api/calendar', calendarRoutes);
 
-// 🚀 [เพิ่ม] ผูก Route สำหรับ Users และ Monitor Mode
+// 🚀 ผูก Route สำหรับ Users และ Monitor Mode
 app.use('/api/users', userRoutes);
 app.use('/api/admin/users', userRoutes); // รองรับทั้ง /api/users และ /api/admin/users
 app.use('/api/monitor', monitorRoutes);
 app.use('/api/reports', reportRoutes);
-
 app.use('/api/notifications', notificationRoutes);
+
+// ⚠️ Generic Routes ดักจับภายหลัง (ลงทะเบียน /api ท้ายสุดเพื่อป้องกัน Route Shadowing)
+app.use('/api', authRoutes);              
+app.use('/api', employeeRoutes);
 
 // ==========================================
 // 🚨 Error Handlers

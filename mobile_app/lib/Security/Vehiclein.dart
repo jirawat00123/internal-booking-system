@@ -192,7 +192,8 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
       request.headers.addAll({'Authorization': 'Bearer $token'});
 
       // 🎯 เปลี่ยนสถานะเป็น Completed (เสร็จสิ้นการใช้งาน)
-      request.fields['status'] = 'Completed';
+      request.fields['status'] =
+          'COMPLETED'; // 🟢 เปลี่ยนเป็นตัวพิมพ์ใหญ่ตาม API Contract ใหม่
 
       request.files.add(
         http.MultipartFile.fromBytes(

@@ -166,14 +166,14 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           DateTime end = DateTime.parse(item['endDatetime']).toLocal();
 
           String rawStatus = item['status'] ?? 'ถูกจองไว้อยู่';
-          if (rawStatus.toLowerCase() == 'pending') rawStatus = 'ถูกจองไว้อยู่';
+          if (rawStatus.toUpperCase() == 'PENDING') rawStatus = 'ถูกจองไว้อยู่';
           // 💡 เติมสถานะของห้องประชุมให้แปลงเป็นภาษาไทย เพื่อให้เงื่อนไขปุ่ม "กำลังใช้งาน" ทำงานได้ถูกต้อง
-          if (rawStatus.toLowerCase() == 'approved' ||
-              rawStatus.toLowerCase() == 'in_use' ||
-              rawStatus.toLowerCase() == 'active')
+          if (rawStatus.toUpperCase() == 'APPROVED' ||
+              rawStatus.toUpperCase() == 'IN_USE' ||
+              rawStatus.toUpperCase() == 'ACTIVE')
             rawStatus = 'กำลังใช้งาน';
-          if (rawStatus.toLowerCase() == 'completed') rawStatus = 'เสร็จสิ้น';
-          if (rawStatus.toLowerCase() == 'cancelled') rawStatus = 'ยกเลิกแล้ว';
+          if (rawStatus.toUpperCase() == 'COMPLETED') rawStatus = 'เสร็จสิ้น';
+          if (rawStatus.toUpperCase() == 'CANCELLED') rawStatus = 'ยกเลิกแล้ว';
 
           // ค้นหาชื่อ User ของห้องประชุม
 
@@ -230,14 +230,14 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           ).toLocal();
 
           String rawStatus = item['status'] ?? 'ถูกจองไว้อยู่';
-          if (rawStatus.toLowerCase() == 'pending') rawStatus = 'ถูกจองไว้อยู่';
+          if (rawStatus.toUpperCase() == 'PENDING') rawStatus = 'ถูกจองไว้อยู่';
           // 💡 เผื่อ Backend ส่งคำว่า active มา
-          if (rawStatus.toLowerCase() == 'approved' ||
-              rawStatus.toLowerCase() == 'in_use' ||
-              rawStatus.toLowerCase() == 'active')
+          if (rawStatus.toUpperCase() == 'APPROVED' ||
+              rawStatus.toUpperCase() == 'IN_USE' ||
+              rawStatus.toUpperCase() == 'ACTIVE')
             rawStatus = 'กำลังใช้งาน';
-          if (rawStatus.toLowerCase() == 'completed') rawStatus = 'เสร็จสิ้น';
-          if (rawStatus.toLowerCase() == 'cancelled') rawStatus = 'ยกเลิกแล้ว';
+          if (rawStatus.toUpperCase() == 'COMPLETED') rawStatus = 'เสร็จสิ้น';
+          if (rawStatus.toUpperCase() == 'CANCELLED') rawStatus = 'ยกเลิกแล้ว';
 
           // 💡 1. ดึงชื่อผู้ทำรายการจากการจองรถ (ใช้ fullName ตาม Database Schema)
           String userName = 'ไม่ระบุชื่อ';
@@ -353,7 +353,10 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $token',
           },
-          body: jsonEncode({"status": newStatus}),
+          // 🟢 แมปค่าเป็น COMPLETED (พิมพ์ใหญ่) ตาม API Contract ใหม่
+          body: jsonEncode({
+            "status": newStatus == 'เสร็จสิ้น' ? 'COMPLETED' : newStatus,
+          }),
         );
       }
       // 💡 เงื่อนไขที่ 3: สำหรับระบบจองห้องประชุม
@@ -687,44 +690,49 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             ),
             const SizedBox(height: 16),
 
-            // เวลาการจอง
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.access_time,
-                    size: 16,
-                    color: Colors.blueGrey,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'เวลาการจอง',
-                    style: TextStyle(
-                      fontSize: 13,
+            // เวลาการจอง (แสดงเฉพาะห้องประชุม)
+            if (booking.type == 'ห้องประชุม') ...[
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.access_time,
+                      size: 16,
                       color: Colors.blueGrey,
-                      fontFamily: 'Kanit',
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF009CB4),
-                      fontFamily: 'Kanit',
+                    const SizedBox(width: 8),
+                    const Text(
+                      'เวลาการจอง',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.blueGrey,
+                        fontFamily: 'Kanit',
+                      ),
                     ),
-                  ),
-                ],
+                    const Spacer(),
+                    Text(
+                      '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF009CB4),
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
 
             // 💡 สร้างตัวแปรเช็คความเป็นเจ้าของ และเพิ่ม Debug Log
             Builder(
@@ -1040,11 +1048,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               ? booking.date
                               : '${booking.date} - ${booking.endDate}',
                         ),
-                        const SizedBox(height: 12),
-                        _buildPopupDetailRow(
-                          'เวลา',
-                          '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
-                        ),
+                        if (booking.type == 'ห้องประชุม') ...[
+                          const SizedBox(height: 12),
+                          _buildPopupDetailRow(
+                            'เวลา',
+                            '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         _buildPopupDetailRow('ผู้ทำรายการ', booking.bookerName),
                         const SizedBox(height: 12),

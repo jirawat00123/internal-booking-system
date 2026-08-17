@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 
 // Middlewares
-// (สมมติว่าไฟล์ auth.js export middleware function ออกมาโดยตรง หรือต้อง destructure ตามของเดิมที่คุณมี)
 const { authenticateToken } = require('../middlewares/auth');
 const uploadMiddleware = require('../middlewares/uploadMiddleware');
 
@@ -14,16 +13,12 @@ const attachmentController = require('../controllers/attachmentController');
  * @desc    Upload a new file with strict validation
  * @access  Private (JWT Required)
  */
-// ตัวอย่างสมมติว่าฟังก์ชันในระบบของคุณชื่อ verifyToken
-const { verifyToken } = require('../middlewares/auth'); 
-
-// ...
 
 router.post(
   '/upload',
-  authenticateToken,                // <--- เปลี่ยนเป็น Function ที่ดึงมา
-  uploadMiddleware.single('file'),  
-  attachmentController.uploadFile   
+  authenticateToken,
+  uploadMiddleware.single('file'),
+  attachmentController.uploadFile
 );
 
 /**
@@ -33,8 +28,8 @@ router.post(
  */
 router.get(
   '/:id',
-  authenticateToken,                // <--- เปลี่ยนเป็น Function ที่ดึงมา
-  attachmentController.downloadFile 
+  authenticateToken,
+  attachmentController.downloadFile
 );
 
 /**

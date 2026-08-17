@@ -5,7 +5,7 @@ const { hashPin } = require('./src/services/pinService'); // [source: 2]
 
 const prisma = new PrismaClient();
 
-async function fixAndInspectAdmin() {
+async function fixAndInspectUser() {
     const targetPin = '852000';
     
     try {
@@ -13,39 +13,36 @@ async function fixAndInspectAdmin() {
         const hashedPin = await hashPin(targetPin);
         console.log('[1/3] Generated Peppered-Argon2 Hash Successfully!');
 
-        // 2. ค้นหา Admin ทั้งหมด
-        const adminUsers = await prisma.user.findMany({
+        // 2. ค้นหา User ที่ต้องการแก้ PIN โดยตรง
+        const targetUser = await prisma.user.findUnique({
             where: {
-                role: {
-                    name: { equals: 'ADMIN', mode: 'insensitive' }
-                }
+                id: 56
             },
-            include: { employee: true }
+            include: { employee: true, role: true }
         });
 
-        if (adminUsers.length === 0) {
-            console.error('❌ No Admin user found!');
+        if (!targetUser) {
+            console.error('❌ User ID 56 not found!');
             return;
         }
 
-        // 3. อัปเดต Hash และ Reset สถานะความปลอดภัยให้ Admin ทุกคน
-        for (const admin of adminUsers) {
-            await prisma.user.update({
-                where: { id: admin.id },
-                data: {
-                    pin: hashedPin,
-                    pinInitialized: true,
-                    pinResetRequired: false,
-                    failedLoginAttempts: 0,
-                    lockedUntil: null,
-                    active: true
-                }
-            });
-            console.log(`[2/3] ✅ Updated PIN & Unlocked User ID: ${admin.id} (${admin.employee?.firstName || 'Admin'})`);
-        }
+        // 3. อัปเดต Hash และ Reset สถานะความปลอดภัยให้ User ID 56
+        await prisma.user.update({
+            where: { id: targetUser.id },
+            data: {
+                pin: hashedPin,
+                pinInitialized: true,
+                pinResetRequired: false,
+                failedLoginAttempts: 0,
+                lockedUntil: null,
+                active: true
+            }
+        });
+
+        console.log(`[2/3] ✅ Updated PIN & Unlocked User ID: ${targetUser.id} (${targetUser.employee?.fullName || 'User'})`);
 
         console.log('\n=== [3/3] COMPLETE ===');
-        console.log('🔑 PIN "852000" is now correctly Peppered & Hashed!');
+        console.log(`🔑 PIN "852000" is now correctly Peppered & Hashed for User ID: ${targetUser.id}`);
 
     } catch (error) {
         console.error('❌ Error:', error);
@@ -54,4 +51,4 @@ async function fixAndInspectAdmin() {
     }
 }
 
-fixAndInspectAdmin();
+fixAndInspectUser();

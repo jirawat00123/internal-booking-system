@@ -1,0 +1,368 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Department {
+  id             Int        @id @default(autoincrement())
+  departmentCode String?    @map("department_code")
+  departmentName String     @map("department_name")
+  employee       Employee[]
+  positions      Position[]
+
+  @@map("departments")
+}
+
+model Position {
+  id           Int        @id @default(autoincrement())
+  positionName String     @map("position_name")
+  departmentId Int        @map("department_id")
+  employees    Employee[]
+  department   Department @relation(fields: [departmentId], references: [id])
+
+  @@index([departmentId])
+  @@map("positions")
+}
+
+model Employee {
+  id           Int        @id @default(autoincrement())
+  employeeCode String     @unique @map("employee_code")
+  fullName     String     @map("full_name")
+  positionId   Int        @map("position_id")
+  departmentId Int        @map("departments_id")
+  isActive     Boolean    @default(true) @map("is_active")
+  avatarUrl    String?    @map("avatar_url")
+  email        String?    @unique @map("email")
+  phone        String?    @map("phone")
+  department   Department @relation(fields: [departmentId], references: [id])
+  position     Position   @relation(fields: [positionId], references: [id])
+  users        User[]
+
+  @@index([positionId])
+  @@map("employees")
+}
+
+model Role {
+  id    Int    @id @default(autoincrement())
+  name  String
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id                  Int              @id @default(autoincrement())
+  employeeId          Int              @map("employee_id")
+  roleId              Int              @map("role_id")
+  active              Boolean          @default(true)
+  createdAt           DateTime         @default(now()) @map("created_at")
+  currentSessionId    String?          @map("current_session_id")
+  pinChangedAt        DateTime?        @map("pin_changed_at")
+  pinInitialized      Boolean          @default(false) @map("pin_initialized")
+  pinResetRequired    Boolean          @default(false) @map("pin_reset_required")
+  pin                 String?          @map("pin_hash")
+  failedLoginAttempts Int              @default(0) @map("failed_login_attempts")
+  lastLoginAt         DateTime?        @map("last_login_at")
+  lockedUntil         DateTime?        @map("locked_until")
+  updatedAt           DateTime         @default(now()) @updatedAt @map("updated_at")
+  isDeleted           Boolean          @default(false) @map("is_deleted")
+  attachments         Attachment[]
+  auditLogs           AuditLog[]
+  sentNotifications   Notification[]   @relation("NotificationActor")
+  notifications       Notification[]
+  roomBookings        RoomBooking[]
+  employee            Employee         @relation(fields: [employeeId], references: [id])
+  role                Role             @relation(fields: [roleId], references: [id])
+  vehicleBookings     VehicleBooking[] @relation("BookingUser")
+  vehicleLogsCheckOut VehicleLog[]     @relation("CheckoutByUser")
+  vehicleLogsReturn   VehicleLog[]     @relation("ReturnByUser")
+  managedVehicles     Vehicle[]        @relation("VehicleManager")
+
+  @@index([employeeId])
+  @@index([roleId])
+  @@map("users")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  action     String
+  module     String
+  createdAt  DateTime @default(now()) @map("created_at")
+  userId     Int?     @map("user_id")
+  details    String?
+  entityId   Int?     @map("entity_id")
+  entityType String?  @map("entity_type")
+  user       User?    @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([module])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@map("audit_logs")
+}
+
+model Room {
+  id          Int            @id @default(autoincrement())
+  capacity    Int
+  location    String
+  roomName    String         @map("room_name")
+  status      RoomStatus     @default(AVAILABLE)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  uploadUrl   String?        @map("upload_url")
+  isDeleted   Boolean        @default(false) @map("is_deleted")
+  description String?        @map("description")
+  floor       String?        @map("floor")
+  roomCode    String?        @unique @map("room_code")
+  bookings    RoomBooking[]
+  facilities  RoomFacility[]
+
+  @@map("rooms")
+}
+
+model RoomBooking {
+  id            Int           @id @default(autoincrement())
+  roomId        Int           @map("room_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  purpose       String
+  endDatetime   DateTime      @map("end_datetime")
+  startDatetime DateTime      @map("start_datetime")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  userId        Int           @map("user_id")
+  status        BookingStatus @default(PENDING)
+  bookingCode   String?       @unique @default(uuid()) @map("booking_code")
+  attachments   Attachment[]
+  room          Room          @relation(fields: [roomId], references: [id])
+  user          User          @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([roomId])
+  @@index([startDatetime, endDatetime])
+  @@map("room_bookings")
+}
+
+model Vehicle {
+  id             Int               @id @default(autoincrement())
+  brand          String
+  createdAt      DateTime          @default(now()) @map("created_at")
+  model          String
+  updatedAt      DateTime          @default(now()) @updatedAt @map("updated_at")
+  uploadUrl      String?           @map("upload_url")
+  status         VehicleStatus     @default(AVAILABLE)
+  isDeleted      Boolean           @default(false) @map("is_deleted")
+  plateNumber    String            @unique @map("license_plate")
+  seats          Int               @default(4)
+  vehicleName    String            @map("vehicle_name")
+  province       String?           @map("province")
+  color          String?           @map("color")
+  currentMileage Int               @default(0) @map("current_mileage")
+  managerId      Int?              @map("manager_id")
+  vehicleCode    String?           @unique @map("vehicle_code")
+  year           Int?              @map("year")
+  bookings       VehicleBooking[]
+  documents      VehicleDocument[]
+  manager        User?             @relation("VehicleManager", fields: [managerId], references: [id])
+
+  @@index([managerId])
+  @@map("vehicles")
+}
+
+model VehicleBooking {
+  id            Int           @id @default(autoincrement())
+  vehicleId     Int           @map("vehicle_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  destination   String
+  endDatetime   DateTime      @map("end_datetime")
+  purpose       String
+  startDatetime DateTime      @map("start_datetime")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+  passengers    Int           @default(1) @map("passengers")
+  userId        Int           @map("user_id")
+  bookingCode   String?       @unique @default(uuid()) @map("booking_code")
+  status        BookingStatus @default(PENDING)
+  attachments   Attachment[]
+  user          User          @relation("BookingUser", fields: [userId], references: [id])
+  vehicle       Vehicle       @relation(fields: [vehicleId], references: [id])
+  vehicleLogs   VehicleLog[]
+
+  @@index([vehicleId])
+  @@index([userId])
+  @@map("vehicle_bookings")
+}
+
+model VehicleLog {
+  id                 Int            @id @default(autoincrement())
+  createdAt          DateTime       @default(now()) @map("created_at")
+  checkoutMileage    Int            @map("checkout_mileage")
+  checkoutTime       DateTime       @map("checkout_time")
+  remark             String?
+  returnMileage      Int?           @map("return_mileage")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+  vehicleBookingId   Int            @map("vehicle_booking_id")
+  returnTime         DateTime?      @map("return_time")
+  checkoutById       Int            @map("checkout_by")
+  checkoutFuelLevel  Int            @map("checkout_fuel_level")
+  returnById         Int?           @map("return_by")
+  returnFuelLevel    Int?           @map("return_fuel_level")
+  returnBackPhoto    String?        @map("return_back_photo")
+  returnFrontPhoto   String?        @map("return_front_photo")
+  returnMileagePhoto String?        @map("return_mileage_photo")
+  checkoutBy         User           @relation("CheckoutByUser", fields: [checkoutById], references: [id])
+  returnBy           User?          @relation("ReturnByUser", fields: [returnById], references: [id])
+  booking            VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
+
+  @@index([vehicleBookingId])
+  @@index([checkoutById])
+  @@index([returnById])
+  @@map("vehicle_logs")
+}
+
+model Attachment {
+  id               Int             @id @default(autoincrement())
+  createdAt        DateTime        @default(now()) @map("created_at")
+  fileName         String          @map("file_name")
+  filePath         String          @unique @map("file_path")
+  fileType         String          @map("file_type")
+  vehicleBookingId Int?            @map("vehicle_booking_id")
+  entityId         Int             @map("entity_id")
+  entityType       String          @map("entity_type")
+  roomBookingId    Int?            @map("room_booking_id")
+  uploadedById     Int             @map("uploaded_by")
+  isDeleted        Boolean         @default(false) @map("is_deleted")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  bookingRoom      RoomBooking?    @relation(fields: [roomBookingId], references: [id], onDelete: Cascade)
+  uploadedBy       User            @relation(fields: [uploadedById], references: [id])
+  bookingVehicle   VehicleBooking? @relation(fields: [vehicleBookingId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleBookingId])
+  @@index([roomBookingId])
+  @@index([uploadedById])
+  @@index([entityType, entityId])
+  @@map("attachments")
+}
+
+model Facility {
+  id           Int            @id @default(autoincrement())
+  name         String         @unique @map("name")
+  icon         String?        @map("icon")
+  displayOrder Int            @default(0) @map("display_order")
+  category     String?        @map("category")
+  isActive     Boolean        @default(true) @map("is_active")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  rooms        RoomFacility[]
+
+  @@map("facilities")
+}
+
+model RoomFacility {
+  roomId     Int      @map("room_id")
+  facilityId Int      @map("facility_id")
+  facility   Facility @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, facilityId])
+  @@index([roomId])
+  @@index([facilityId])
+  @@map("room_facilities")
+}
+
+model DocumentType {
+  id           Int               @id @default(autoincrement())
+  name         String            @unique @map("name")
+  icon         String?           @map("icon")
+  displayOrder Int               @default(0) @map("display_order")
+  isActive     Boolean           @default(true) @map("is_active")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  documents    VehicleDocument[]
+
+  @@map("document_types")
+}
+
+model VehicleDocument {
+  id             Int          @id @default(autoincrement())
+  vehicleId      Int          @map("vehicle_id")
+  documentTypeId Int          @map("document_type_id")
+  documentNumber String?      @map("document_number")
+  issueDate      DateTime?    @map("issue_date")
+  expiryDate     DateTime?    @map("expiry_date")
+  remark         String?      @map("remark")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  documentType   DocumentType @relation(fields: [documentTypeId], references: [id])
+  vehicle        Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId])
+  @@index([documentTypeId])
+  @@index([expiryDate])
+  @@map("vehicle_documents")
+}
+
+model Notification {
+  id          Int              @id @default(autoincrement())
+  userId      Int              @map("user_id")
+  actorId     Int?             @map("actor_id")
+  title       String
+  message     String
+  type        NotificationType
+  action      String?          @map("action")
+  entityType  String?          @map("entity_type")
+  entityId    Int?             @map("entity_id")
+  targetRoute String?          @map("target_route")
+  isRead      Boolean          @default(false) @map("is_read")
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  actor       User?            @relation("NotificationActor", fields: [actorId], references: [id])
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([entityType, entityId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+enum RoomStatus {
+  AVAILABLE
+  IN_USE      @map("IN USE")
+  RESERVED
+  MAINTENANCE
+  INACTIVE
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  IN_USE      @map("IN USE")
+  RESERVED
+  MAINTENANCE
+  INACTIVE
+}
+
+enum BookingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+  RESERVED
+  IN_USE    @map("IN USE")
+}
+
+enum NotificationType {
+  BOOKING
+  APPROVAL
+  REMINDER
+  DOCUMENT
+  SECURITY
+  SYSTEM
+  VEHICLE
+  ROOM
+}

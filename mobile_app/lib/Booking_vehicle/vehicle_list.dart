@@ -9,6 +9,7 @@ import 'package:shimmer/shimmer.dart';
 
 import 'vehicle_bookingstep_a.dart';
 import '../../Booking_vehicle/Vehicle_model.dart';
+import '../../auth_service.dart';
 
 class VehicleBooking extends StatefulWidget {
   final bool isGuest;
@@ -40,7 +41,9 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
   Future<void> _fetchVehicles() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final String? token = prefs.getString('token');
+      // 🟢 ดึง Token จากทั้ง 'token' และ 'jwt_token' เพื่อป้องกัน Error 401 บน Web
+      final String? token =
+          prefs.getString('token') ?? prefs.getString('jwt_token');
 
       final headers = {
         'Content-Type': 'application/json',
@@ -48,11 +51,11 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
       };
 
       final vehicleFuture = http.get(
-        Uri.parse('http://192.168.88.25:3001/api/vehicles'),
+        Uri.parse('${AuthService.baseUrl}/api/vehicles'),
         headers: headers,
       );
       final bookingFuture = http.get(
-        Uri.parse('http://192.168.88.25:3001/api/vehicle-bookings'),
+        Uri.parse('${AuthService.baseUrl}/api/vehicle-bookings'),
         headers: headers,
       );
 
@@ -164,7 +167,8 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
               });
 
               if (isReservedToday) {
-                fetchedList[i] = vehicle.copyWith(status: 'RESERVED');
+                // 🟢 ใช้ hasFutureBooking แทนการแก้ไข status เพื่อไม่ให้กระทบ Business Logic ของ Vehicle
+                fetchedList[i] = vehicle.copyWith(hasFutureBooking: true);
               }
             }
           }
@@ -308,9 +312,11 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                               .toString()
                               .trim()
                               .toUpperCase();
+                          // 🟢 ตรวจสอบว่าต้องไม่มีการจองในวันนี้ (hasFutureBooking == false) จึงจะนับว่าว่าง
                           bool isAvailable =
                               (rawStatus == 'AVAILABLE' ||
-                              rawStatus == 'ว่างพร้อมใช้งาน');
+                                  rawStatus == 'ว่างพร้อมใช้งาน') &&
+                              !v.hasFutureBooking;
                           if (!isAvailable) return false;
                         } else if (_selectedFilterIndex == 2) {
                           // รถตู้
@@ -523,7 +529,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
 
     if (path.startsWith('/uploads')) {
       return Image.network(
-        'http://192.168.88.25:3001$path',
+        '${AuthService.baseUrl}$path',
         height: 160,
         width: double.infinity,
         fit: BoxFit.cover,
@@ -578,11 +584,11 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
       statusColor = const Color(0xFFEF4444);
       statusBgColor = const Color(0xFFFEE2E2);
       buttonText = 'รถกำลังใช้งาน';
-    } else if (rawStatus == 'RESERVED' ||
-        rawStatus == 'RESERVE' ||
+    } else if (vehicle.hasFutureBooking ||
         rawStatus == 'PENDING' ||
         rawStatus == 'จองแล้ว') {
-      displayStatus = 'Reserve';
+      // 🟢 นำ rawStatus == 'RESERVED' ออก และใช้ vehicle.hasFutureBooking ในการตรวจสอบ UI แทน
+      displayStatus = 'Reserved';
       statusColor = const Color(0xFFF59E0B);
       statusBgColor = const Color(0xFFFEF3C7);
       buttonText = 'ถูกจองแล้ว';
