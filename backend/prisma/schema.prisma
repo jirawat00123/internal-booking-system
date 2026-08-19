@@ -180,7 +180,7 @@ model VehicleBooking {
   destination   String
   purpose       String
   startDatetime DateTime      @map("start_datetime")
-  returnDate    DateTime      @map("return_date")
+  endDatetime   DateTime      @map("return_date")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   passengers    Int           @default(1) @map("passengers")
   userId        Int           @map("user_id")

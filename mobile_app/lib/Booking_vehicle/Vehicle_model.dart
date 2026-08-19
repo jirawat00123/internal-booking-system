@@ -227,6 +227,8 @@ class VehicleBookingModel {
       endDatetime: DateTime.parse(
         json['endDatetime'] ??
             json['end_datetime'] ??
+            json['returnDate'] ??
+            json['return_date'] ??
             DateTime.now().toIso8601String(),
       ),
       purpose: json['purpose'] ?? '',

@@ -71,10 +71,13 @@ const deleteGarbageFile = (filePath) => {
 // 💡 เพิ่ม authenticateToken เพื่อยืนยันตัวตนผู้จองเสมอ
 router.post('/', authenticateToken, upload.single('document'), async (req, res) => {
   try {
-    const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, purpose, driverType } = req.body;
+    const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, returnDate, purpose, driverType } = req.body;
+    
+    // 💡 รองรับทั้ง key แบบเก่า (endDatetime) และแบบใหม่ (returnDate) จาก Frontend
+    const finalReturnDate = returnDate || endDatetime;
 
 // 🛑 1. ตรวจสอบข้อมูลเบื้องต้น
-    if (!vehicleId || !startDatetime || !endDatetime) {
+    if (!vehicleId || !startDatetime || !finalReturnDate) {
       deleteGarbageFile(req.file?.path);
       return res.status(400).json({
         success: false,
@@ -83,7 +86,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
     }
 
     // 🛑 1.1 ตรวจสอบความถูกต้องของวันเวลา (เวลาคืนรถต้องมากกว่าเวลาเริ่มใช้งาน)
-    if (new Date(endDatetime) <= new Date(startDatetime)) {
+    if (new Date(finalReturnDate) <= new Date(startDatetime)) {
       deleteGarbageFile(req.file?.path);
       return res.status(400).json({
         success: false,
@@ -119,8 +122,8 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
         where: {
           vehicleId: parsedVehicleId,
           status: { notIn: ["CANCELLED", "COMPLETED", "REJECTED"] },
-          startDatetime: { lt: new Date(endDatetime) },
-          endDatetime: { gt: new Date(startDatetime) }
+          startDatetime: { lt: new Date(finalReturnDate) },
+          returnDate: { gt: new Date(startDatetime) }
         }
       });
 
@@ -132,7 +135,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
           destination: destination || 'ไม่ระบุเป้าหมาย',
           passengers: parsedPassengers,
           startDatetime: new Date(startDatetime),
-          endDatetime: new Date(endDatetime),
+          returnDate: new Date(finalReturnDate),
           purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
           status: 'PENDING' // 🟢 เปลี่ยนจาก Pending แบบ String เป็นตัวพิมพ์ใหญ่ตามมาตรฐาน
         }
@@ -196,10 +199,16 @@ router.get('/history', async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    // 🟢 Map returnDate กลับไปเป็น endDatetime เพื่อให้ Frontend ทำงานได้ปกติ
+    const mappedHistoryBookings = historyBookings.map(booking => ({
+      ...booking,
+      endDatetime: booking.returnDate
+    }));
+
     return res.status(200).json({
       success: true,
-      count: historyBookings.length,
-      data: historyBookings
+      count: mappedHistoryBookings.length,
+      data: mappedHistoryBookings
     });
   } catch (error) {
     console.error("🔴 Get History Error:", error);
@@ -230,9 +239,15 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจองนี้" });
     }
 
+    // 🟢 Map returnDate กลับไปเป็น endDatetime เพื่อให้ Frontend ทำงานได้ปกติ
+    const mappedBooking = {
+      ...booking,
+      endDatetime: booking.returnDate
+    };
+
     return res.status(200).json({
       success: true,
-      data: booking
+      data: mappedBooking
     });
   } catch (error) {
     console.error("🔴 Get Booking By ID Error:", error);
@@ -254,10 +269,16 @@ router.get('/', authenticateToken, async (req, res) => {
       take: 100
     });
 
+    // 🟢 Map returnDate กลับไปเป็น endDatetime เพื่อให้ Frontend ทำงานได้ปกติ
+    const mappedBookings = bookings.map(booking => ({
+      ...booking,
+      endDatetime: booking.returnDate
+    }));
+
     return res.status(200).json({
       success: true,
-      count: bookings.length,
-      data: bookings
+      count: mappedBookings.length,
+      data: mappedBookings
     });
   } catch (error) {
     console.error("🔴 Get Vehicle Bookings Error:", error);

@@ -32,7 +32,9 @@ class CalendarEvent {
       bookerName: json['bookerName'] ?? 'ไม่ระบุชื่อผู้จอง',
       // แปลง ISO 8601 string จาก Backend ให้เป็น DateTime ของ Local Timezone เครื่อง
       start: DateTime.parse(json['start']).toLocal(),
-      end: DateTime.parse(json['end']).toLocal(),
+      end: DateTime.parse(
+        json['end'] ?? json['endDatetime'] ?? json['returnDate'],
+      ).toLocal(),
       colorHex: json['color'] ?? '#42BCA4',
       status: json['status'] ?? 'UNKNOWN',
     );

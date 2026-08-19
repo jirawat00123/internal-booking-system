@@ -7,9 +7,10 @@ const notificationService = require('../services/notificationService'); // 🟢 
 // =======================================================
 exports.createBooking = async (req, res) => {
     try {
-        const { vehicleId, destination, startDatetime, endDatetime, passengerCount, passengers, driverType, userId, purpose } = req.body;
+        const { vehicleId, destination, startDatetime, returnDate, endDatetime, passengerCount, passengers, driverType, userId, purpose } = req.body;
+        const finalEndDate = endDatetime || returnDate;
 
-        if (!vehicleId || !startDatetime || !endDatetime) {
+        if (!vehicleId || !startDatetime || !finalEndDate) {
             return res.status(400).json({ success: false, error: "กรุณาส่งข้อมูลที่จำเป็นให้ครบถ้วน" });
         }
 
@@ -17,15 +18,14 @@ exports.createBooking = async (req, res) => {
         const finalUserId = parseInt(req.user.userId, 10);
 
         const reqStart = new Date(startDatetime);
-        const reqEnd = new Date(endDatetime);
-        const now = new Date();
+        const reqEnd = new Date(finalEndDate);
 
         if (reqStart < now) {
             return res.status(400).json({ success: false, error: "ไม่สามารถทำรายการจองรถยนต์ย้อนหลังได้ กรุณาเลือกเวลาที่เป็นปัจจุบันหรืออนาคต" });
         }
 
         if (reqStart >= reqEnd) {
-            return res.status(400).json({ success: false, error: "เวลาสิ้นสุดการจอง (endDatetime) ต้องอยู่หลังเวลาเริ่มต้นการจองเสมอ" });
+            return res.status(400).json({ success: false, error: "เวลาสิ้นสุดการจองต้องอยู่หลังเวลาเริ่มต้นการจองเสมอ" });
         }
 
         const newBooking = await prisma.$transaction(async (tx) => {
@@ -36,7 +36,7 @@ exports.createBooking = async (req, res) => {
                         notIn: [BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.REJECTED] 
                     },
                     startDatetime: { lt: reqEnd },
-                    endDatetime: { gt: reqStart }
+                    returnDate: { gt: reqStart }
                 }
             });
 
@@ -50,7 +50,7 @@ exports.createBooking = async (req, res) => {
                     userId: finalUserId, 
                     destination: destination || "-",
                     startDatetime: reqStart,
-                    endDatetime: reqEnd,
+                    returnDate: reqEnd,
                     passengers: finalPassengers, 
                     purpose: purpose || "ใช้งานบริษัท",
                     status: BookingStatus.PENDING // 🟢 เปลี่ยนจาก RESERVED เป็น PENDING รออนุมัติ
@@ -188,8 +188,8 @@ exports.updateBookingStatus = async (req, res) => {
                                 BookingStatus.REJECTED
                             ]
                         },
-                        startDatetime: { lt: existingBooking.endDatetime },
-                        endDatetime: { gt: existingBooking.startDatetime }
+                        startDatetime: { lt: existingBooking.returnDate },
+                        returnDate: { gt: existingBooking.startDatetime }
                     }
                 });
 
@@ -434,8 +434,8 @@ exports.approveVehicleBooking = async (req, res) => {
                             BookingStatus.REJECTED
                         ]
                     },
-                    startDatetime: { lt: booking.endDatetime },
-                    endDatetime: { gt: booking.startDatetime }
+                    startDatetime: { lt: booking.returnDate },
+                    returnDate: { gt: booking.startDatetime }
                 }
             });
 
