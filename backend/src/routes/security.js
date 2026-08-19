@@ -5,10 +5,9 @@ const securityController = require('../controllers/securityController');
 // โดลดการดึง Middleware ความปลอดภัยชุดเดิมของระบบขึ้นมาใช้งาน
 const { authenticateToken, requireRole } = require('../middlewares/auth');
 
-// ตั้งค่าดักสิทธิ์การทำงานสำหรับความปลอดภัยของพนักงานรักษาความปลอดภัย (GUARD)
-// ตั้งค่าดักสิทธิ์การทำงานสำหรับความปลอดภัยของพนักงานรักษาความปลอดภัย (GUARD และ SECURITY)
+// ตั้งค่าดักสิทธิ์การทำงานสำหรับความปลอดภัยของพนักงานรักษาความปลอดภัย (GUARD, SECURITY และ ADMIN)
 router.use(authenticateToken);
-router.use(requireRole(['GUARD', 'SECURITY']));
+router.use(requireRole(['GUARD', 'SECURITY', 'ADMIN'])); // 🟢 เพิ่มสิทธิ์ ADMIN เพื่อให้ผู้ดูแลระบบสามารถเข้าถึงและตรวจสอบข้อมูลได้
 
 router.get('/available', securityController.getAvailableVehicles);
 router.get('/in-use', securityController.getInUseVehicles);

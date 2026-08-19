@@ -13,4 +13,7 @@ router.get('/rooms', calendarController.getRoomCalendar);
 // GET /api/calendar/vehicles
 router.get('/vehicles', calendarController.getVehicleCalendar);
 
+// GET /api/calendar/all - สำหรับดึงข้อมูลปฏิทินรวม (Room + Vehicle) รูปแบบ Unified Event
+router.get('/all', calendarController.getUnifiedCalendar);
+
 module.exports = router;

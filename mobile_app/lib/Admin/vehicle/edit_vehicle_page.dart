@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -29,11 +30,14 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
   late TextEditingController plateController;
   late TextEditingController
   provinceController; // 🟢 เพิ่ม Controller สำหรับจังหวัด (Week 14)
+  late TextEditingController actDocNumberController;
+  late TextEditingController actExpiryDateController;
 
   late String currentStatus;
   late int passengerCount;
 
   XFile? _newVehicleImage; // 🟢 รูปภาพใหม่ที่ผู้ใช้เลือกมาอัปเดต
+  PlatformFile? _pickedDocFile; // 🟢 เพิ่มการเก็บไฟล์สำหรับ Web/Mobile
   String? _docFilePath;
   String? _docFileName;
 
@@ -50,6 +54,8 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     provinceController = TextEditingController(
       text: '',
     ); // 🟢 กำหนดค่าเริ่มต้นจังหวัด
+    actDocNumberController = TextEditingController();
+    actExpiryDateController = TextEditingController();
     currentStatus = widget.vehicle.status;
     passengerCount = widget.vehicle.seats;
   }
@@ -59,6 +65,8 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     nameController.dispose();
     plateController.dispose();
     provinceController.dispose(); // 🟢 คืนหน่วยความจำ
+    actDocNumberController.dispose();
+    actExpiryDateController.dispose();
     super.dispose();
   }
 
@@ -89,10 +97,12 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     FilePickerResult? result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'png'],
+      withData: kIsWeb,
     );
 
     if (result != null) {
       setState(() {
+        _pickedDocFile = result.files.single;
         _docFilePath = result.files.single.path;
         _docFileName = result.files.single.name;
       });
@@ -150,38 +160,60 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
       request.fields['seats'] = passengerCount.toString();
       request.fields['seatCount'] = passengerCount.toString();
 
+      // 🟢 เพิ่มการส่งข้อมูลเลขที่ และวันหมดอายุ พ.ร.บ.
+      if (actDocNumberController.text.trim().isNotEmpty) {
+        request.fields['actDocumentNumber'] = actDocNumberController.text
+            .trim();
+        request.fields['documentNumber'] = actDocNumberController.text.trim();
+      }
+      if (actExpiryDateController.text.trim().isNotEmpty) {
+        request.fields['actExpiryDate'] = actExpiryDateController.text.trim();
+        request.fields['expiryDate'] = actExpiryDateController.text.trim();
+      }
+
       // 📸 กรณีผู้ใช้อัปโหลดรูปใหม่ (ถ้าไม่มีก็จะปล่อยว่างไว้ หลังบ้านจะใช้รูปเก่า)
       if (_newVehicleImage != null) {
+        final safeFileName =
+            'vehicle_${widget.vehicle.id}_${DateTime.now().millisecondsSinceEpoch}.png';
+
         if (kIsWeb) {
           final bytes = await _newVehicleImage!.readAsBytes();
-
-          String finalFileName = _newVehicleImage!.name;
-          String lowerName = finalFileName.toLowerCase();
-          if (!lowerName.endsWith('.png') &&
-              !lowerName.endsWith('.jpg') &&
-              !lowerName.endsWith('.jpeg')) {
-            finalFileName = 'vehicle_image.png';
-          }
 
           request.files.add(
             http.MultipartFile.fromBytes(
               'image',
               bytes,
-              filename: finalFileName,
+              filename: safeFileName,
+              contentType: MediaType('image', 'png'),
             ),
           );
         } else {
           request.files.add(
-            await http.MultipartFile.fromPath('image', _newVehicleImage!.path),
+            await http.MultipartFile.fromPath(
+              'image',
+              _newVehicleImage!.path,
+              filename: safeFileName,
+              contentType: MediaType('image', 'png'),
+            ),
           );
         }
       }
 
-      // 🟢 เพิ่มการแนบไฟล์เอกสาร (พรบ.) ไปยัง Backend (ถ้ามีการเลือกไฟล์)
-      if (_docFilePath != null && !kIsWeb) {
-        request.files.add(
-          await http.MultipartFile.fromPath('document', _docFilePath!),
-        );
+      // 🟢 เพิ่มการแนบไฟล์เอกสาร (พรบ.) ไปยัง Backend (รองรับทั้ง Web และ Mobile)
+      if (_pickedDocFile != null || _docFilePath != null) {
+        if (kIsWeb && _pickedDocFile?.bytes != null) {
+          request.files.add(
+            http.MultipartFile.fromBytes(
+              'actDocument',
+              _pickedDocFile!.bytes!,
+              filename: _docFileName ?? 'act_document.pdf',
+            ),
+          );
+        } else if (_docFilePath != null) {
+          request.files.add(
+            await http.MultipartFile.fromPath('actDocument', _docFilePath!),
+          );
+        }
       }
 
       final streamedResponse = await request.send();
@@ -676,6 +708,35 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      _buildTextField(
+                        label: 'เลขที่ พ.ร.บ.',
+                        controller: actDocNumberController,
+                        hint: 'ระบุเลขที่ พ.ร.บ.',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        label: 'วันหมดอายุ พ.ร.บ. (YYYY-MM-DD)',
+                        controller: actExpiryDateController,
+                        hint: 'YYYY-MM-DD',
+                        readOnly: true, // 🟢 บังคับไม่ให้พิมพ์เอง
+                        onTap: () async {
+                          // 🟢 เรียกใช้ปฏิทินเมื่อกดช่องกรอก
+                          DateTime? pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (pickedDate != null) {
+                            String formattedDate =
+                                "${pickedDate.year}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.day.toString().padLeft(2, '0')}";
+                            setState(() {
+                              actExpiryDateController.text = formattedDate;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
@@ -794,6 +855,8 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     required TextEditingController controller,
     String? hint,
     bool isRequired = false,
+    bool readOnly = false, // 🟢 เพิ่มพารามิเตอร์ readOnly
+    VoidCallback? onTap, // 🟢 เพิ่มพารามิเตอร์ onTap
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -809,6 +872,8 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
+          readOnly: readOnly, // 🟢 นำมาใช้ที่นี่
+          onTap: onTap, // 🟢 นำมาใช้ที่นี่
           style: const TextStyle(color: Colors.black87, fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,

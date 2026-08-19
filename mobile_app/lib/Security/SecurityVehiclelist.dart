@@ -126,15 +126,9 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
           onPressed: () {
-            // 🚀 เปลี่ยนคำสั่งเคลียร์หน้าต่างทั้งหมด แล้วกลับไปหน้า Welcome Security
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(
-                // 💡 เปลี่ยนชื่อ SecurityDashboardScreen เป็นชื่อคลาสหน้า Welcome ของคุณ
-                builder: (context) => const SecurityGroupPage(),
-              ),
-              (Route<dynamic> route) => false, // ลบประวัติหน้าซ้อนทิ้งให้หมด
-            );
+            // 🟢 เปลี่ยนจากการบังคับกลับหน้า SecurityGroupPage (Hardcode)
+            // เป็นการใช้คำสั่ง Pop เพื่อย้อนกลับไปยัง "หน้าก่อนหน้า" อย่างถูกต้องตามลำดับชั้น
+            Navigator.pop(context);
           },
         ),
         title: const Text(

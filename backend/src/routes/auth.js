@@ -82,7 +82,9 @@ router.post('/login', async (req, res) => {
       if (!isPinValid) {
         console.log("[PIN-LOGIN] Login Failed: 401 Unauthorized");
 
-        const attempts = (userAccount.failedLoginAttempts || 0) + 1;
+        // 🟢 หากหมดเวลาอายัดบัญชีแล้ว ให้เริ่มนับจำนวนครั้งที่ใส่ผิดใหม่จาก 0
+        const isLockExpired = userAccount.lockedUntil && userAccount.lockedUntil <= new Date();
+        const attempts = (isLockExpired ? 0 : (userAccount.failedLoginAttempts || 0)) + 1;
         let updateData = { failedLoginAttempts: attempts };
 
         if (attempts >= MAX_LOGIN_ATTEMPTS) {
@@ -97,7 +99,7 @@ router.post('/login', async (req, res) => {
         if (attempts >= MAX_LOGIN_ATTEMPTS) {
           return res.status(401).json({ success: false, error: `คุณใส่ PIN ผิดเกิน ${MAX_LOGIN_ATTEMPTS} ครั้ง บัญชีถูกระงับ ${LOCK_TIME_MINUTES} นาที` });
         }
-        return res.status(401).json({ success: false, error: `รหัส PIN ไม่ถูกต้อง (ผิดครั้งที่ ${attempts}/${MAX_LOGIN_ATTEMPTS})` });
+        return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง" });
       }
 
       console.log("[PIN-LOGIN] Login Success");
@@ -210,7 +212,24 @@ router.post('/login-pin', async (req, res) => {
         }
 
         if (!matchedUser.pin || !(await verifyPin(matchedUser.pin, inputPin))) {
-          return res.status(401).json({ success: false, message: 'รหัส PIN ไม่ถูกต้อง' });
+          // 🟢 หากหมดเวลาอายัดบัญชีแล้ว ให้เริ่มนับจำนวนครั้งที่ใส่ผิดใหม่จาก 0
+          const isLockExpired = matchedUser.lockedUntil && matchedUser.lockedUntil <= new Date();
+          const attempts = (isLockExpired ? 0 : (matchedUser.failedLoginAttempts || 0)) + 1;
+          let updateData = { failedLoginAttempts: attempts };
+
+          if (attempts >= MAX_LOGIN_ATTEMPTS) {
+            updateData.lockedUntil = new Date(Date.now() + LOCK_TIME_MINUTES * 60000);
+          }
+
+          await prisma.user.update({
+            where: { id: matchedUser.id },
+            data: updateData
+          });
+
+          if (attempts >= MAX_LOGIN_ATTEMPTS) {
+            return res.status(401).json({ success: false, message: `คุณใส่ PIN ผิดเกิน ${MAX_LOGIN_ATTEMPTS} ครั้ง บัญชีถูกระงับ ${LOCK_TIME_MINUTES} นาที` });
+          }
+          return res.status(401).json({ success: false, message: "รหัส PIN ไม่ถูกต้อง" });
         }
 
         actualUserId = matchedUser.id;
@@ -220,7 +239,7 @@ router.post('/login-pin', async (req, res) => {
         assignedDept = employee.position?.department?.departmentName || "ไม่ระบุแผนก";
 
         if (expectedRole && assignedRole.toUpperCase() !== expectedRole.toUpperCase()) {
-          return res.status(403).json({ success: false, message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}` });
+          return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงผู้ดูแลระบบ' });
         }
     } else {
         // 🔐 กรณีไม่ส่ง employeeCode มา ให้ค้นหา User จาก PIN โดยตรง
@@ -277,7 +296,7 @@ router.post('/login-pin', async (req, res) => {
         ) {
           return res.status(403).json({
             success: false,
-            message: `เข้าไม่ได้! รหัสนี้เป็นของ ${assignedRole}`
+            message: 'คุณไม่มีสิทธิ์เข้าถึงผู้ดูแลระบบ'
           });
         }
 
@@ -311,9 +330,12 @@ router.post('/login-pin', async (req, res) => {
     try {
       await prisma.auditLog.create({
         data: {
-          userId: actualUserId, 
+          userId: parseInt(actualUserId, 10), 
           action: `เข้าสู่ระบบด้วยรหัส PIN (สิทธิ์: ${assignedRole}, แผนก: ${assignedDept}, ชื่อ: ${actualUserName})`,
           module: "LOGIN_SYSTEM",
+          entityId: parseInt(actualUserId, 10),
+          entityType: "USER",
+          details: "เข้าสู่ระบบผ่านหน้าล็อกอิน PIN"
         }
       });
     } catch (logError) {

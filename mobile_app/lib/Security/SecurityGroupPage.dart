@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'SecurityVehicleList.dart'; // โยงไปหน้าถ่ายรูปปล่อยรถ
 import '../Select.dart'; // โยงไปหน้า Welcome Security
+import '../Dashboard/dashboard_page.dart';
 
 class SecurityGroupPage extends StatelessWidget {
   const SecurityGroupPage({super.key});
@@ -114,6 +115,19 @@ class SecurityGroupPage extends StatelessWidget {
                     child: ListView(
                       physics: const BouncingScrollPhysics(),
                       children: [
+                        SecurityMenuCard(
+                          icon: Icons.dashboard_outlined,
+                          title: 'แดชบอร์ด\nSecurity',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const DashboardPage(),
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
                         SecurityMenuCard(
                           icon: Icons
                               .directions_car_outlined, // เปลี่ยนไอคอนให้ใกล้เคียงรูปรถด้านหน้ามากขึ้น

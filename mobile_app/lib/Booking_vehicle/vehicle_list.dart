@@ -54,10 +54,15 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
         Uri.parse('${AuthService.baseUrl}/api/vehicles'),
         headers: headers,
       );
-      final bookingFuture = http.get(
-        Uri.parse('${AuthService.baseUrl}/api/vehicle-bookings'),
-        headers: headers,
-      );
+
+      // 🟢 ตรวจสอบ Token ก่อนเรียก API ประวัติการจองรถ
+      // ถ้าไม่มี Token (Guest) ให้จำลอง Response กลับไปเป็นค่าว่าง เพื่อไม่ให้ยิง API จริง
+      final bookingFuture = (token != null && token.isNotEmpty)
+          ? http.get(
+              Uri.parse('${AuthService.baseUrl}/api/vehicle-bookings'),
+              headers: headers,
+            )
+          : Future.value(http.Response('{"data": []}', 200));
 
       final responses = await Future.wait([vehicleFuture, bookingFuture]);
 

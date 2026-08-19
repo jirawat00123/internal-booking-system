@@ -244,7 +244,10 @@ router.put('/employees/:id', async (req, res) => {
           where: { id: userId },
           data: {
             ...(roleId && { roleId: parseInt(roleId, 10) }),
-            ...(active !== undefined && { active })
+            ...(active !== undefined && { 
+              active: Boolean(active),
+              ...(Boolean(active) ? { failedLoginAttempts: 0, lockedUntil: null } : { currentSessionId: null }) // 🟢 หากเปิดใช้งานบัญชี ให้ปลดล็อคและรีเซ็ตจำนวนครั้งที่ผิด
+            })
           }
         });
       }

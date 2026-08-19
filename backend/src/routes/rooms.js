@@ -13,7 +13,7 @@ const prisma = new PrismaClient();
 // 🚨 จุดสำคัญ: โยง Route ไปหา Controller เท่านั้น ห้ามมี Logic ลบข้อมูลในหน้านี้
 // ==========================================
 router.get('/monitor/rooms', authenticateToken, roomController.getAllRooms);
-router.get('/', authenticateToken, roomController.getAllRooms);
+router.get('/', roomController.getAllRooms);
 // ดึงข้อมูลห้องตาม ID
 router.get('/:id', authenticateToken, roomController.getRoomById);
 

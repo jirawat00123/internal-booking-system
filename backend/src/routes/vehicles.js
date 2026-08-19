@@ -34,13 +34,12 @@ const checkHandler = (handler, name) => {
 // 🚗 แมปปิ้งเส้นทาง API ไปยัง Controller (ผ่านตัวกรองตรวจสอบบั๊ก)
 // ==========================================
 
-// 🔒 บังคับตรวจสอบ Token (Guest & User: Read Only)
+// 🔓 อนุญาตให้ Guest (ไม่มี Token) สามารถดูรายการรถยนต์ได้
 router.get('/', 
     (req, res, next) => {
         console.log('[TRACE] GET /api/vehicles ROUTE HIT');
         next();
     },
-    checkHandler(verifyToken, 'verifyToken'),
     (req, res, next) => {
         console.log('[TRACE] Calling vehicleController.getVehicles');
         next();
@@ -66,7 +65,13 @@ router.get('/history',
 router.post('/', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(isAdmin, 'isAdmin'), 
-    uploadMiddleware.single('image'), 
+    uploadMiddleware.fields([
+        { name: 'image', maxCount: 1 },
+        { name: 'document', maxCount: 1 },
+        { name: 'actDocument', maxCount: 1 },
+        { name: 'actFile', maxCount: 1 },
+        { name: 'act_file', maxCount: 1 }
+    ]), 
     checkHandler(vehicleController.createVehicle, 'vehicleController.createVehicle')
 );
 
@@ -80,7 +85,13 @@ router.get('/:id',
 router.put('/:id', 
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(isAdmin, 'isAdmin'), 
-    uploadMiddleware.single('image'), 
+    uploadMiddleware.fields([
+        { name: 'image', maxCount: 1 },
+        { name: 'document', maxCount: 1 },
+        { name: 'actDocument', maxCount: 1 },
+        { name: 'actFile', maxCount: 1 },
+        { name: 'act_file', maxCount: 1 }
+    ]), 
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
 );
 

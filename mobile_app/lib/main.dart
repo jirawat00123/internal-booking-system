@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart'; // 👈 เพิ่มบรรทัดนี้
 import 'package:mobile_app/Select.dart';
 import 'Manage.dart';
 import 'package:mobile_app/Digitel.dart';
 import 'Notification/notification_page.dart'; // 👈 นำเข้า NotificationPage ใหม่
 import 'Dashboard/dashboard_page.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized(); // 👈 เพิ่มบรรทัดนี้
+  await initializeDateFormatting('th', null); // 👈 เพิ่มบรรทัดนี้
   runApp(const WelcomeApp());
 }
 
@@ -27,32 +30,6 @@ class WelcomeApp extends StatelessWidget {
         '/notifications': (context) =>
             const NotificationPage(), // 👈 ลงทะเบียน Route ของระบบแจ้งเตือน
         '/dashboard': (context) => const DashboardPage(),
-      },
-
-      builder: (context, child) {
-        return Scaffold(
-          backgroundColor: Colors.grey[900],
-          body: Center(
-            child: Container(
-              width: 400,
-              height: 800,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black54,
-                    blurRadius: 20,
-                    spreadRadius: 5,
-                  ),
-                ],
-              ),
-              // เพิ่มการจัดการกรณี child เป็น null ป้องกัน Error ในบางสถานการณ์
-              child: child ?? const SizedBox.shrink(),
-            ),
-          ),
-        );
       },
       home: const WelcomeScreen(),
     );

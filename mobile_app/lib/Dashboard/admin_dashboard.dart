@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'dashboard_model.dart';
 import 'dashboard_card.dart';
 import 'dashboard_chart.dart';
+import '../Calendar/calendar_page.dart';
 
 class AdminDashboardView extends StatelessWidget {
   final AdminDashboardData data;
@@ -35,25 +36,44 @@ class AdminDashboardView extends StatelessWidget {
                   'ภาพรวมระบบ (Admin)',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                if (data.permissions.canExportReport)
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.download, color: Colors.blue),
-                    tooltip: 'ส่งออกรายงาน',
-                    onSelected: (value) {
-                      final parts = value.split('_');
-                      onExport(parts[0], parts[1]);
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(
-                        value: 'room_json',
-                        child: Text('ส่งออกรายงานห้องพัก (JSON)'),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(
+                        Icons.calendar_month,
+                        color: Colors.deepPurple,
                       ),
-                      const PopupMenuItem(
-                        value: 'vehicle_json',
-                        child: Text('ส่งออกรายงานยานพาหนะ (JSON)'),
+                      tooltip: 'ดูปฏิทินการจอง',
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CalendarPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    if (data.permissions.canExportReport)
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.download, color: Colors.blue),
+                        tooltip: 'ส่งออกรายงาน',
+                        onSelected: (value) {
+                          final parts = value.split('_');
+                          onExport(parts[0], parts[1]);
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'room_json',
+                            child: Text('ส่งออกรายงานห้องพัก (JSON)'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'vehicle_json',
+                            child: Text('ส่งออกรายงานยานพาหนะ (JSON)'),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 16),

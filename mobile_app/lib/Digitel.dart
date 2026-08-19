@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'auth_service.dart'; // 🟢 เพิ่มการนำเข้า AuthService เพื่อล้างเซสชันตอนกดออกจากระบบ
 
 // 🏢 ฟีเจอร์จองห้องประชุม (User)
 import 'package:mobile_app/Booking_room/Room_list.dart';
@@ -11,6 +12,7 @@ import 'package:mobile_app/Book_history.dart';
 import 'package:mobile_app/Manage.dart';
 import 'package:mobile_app/Select.dart';
 import 'package:mobile_app/user_setting_page.dart';
+import 'Dashboard/dashboard_page.dart';
 
 class UserMenuPage extends StatelessWidget {
   // 🟢 รองรับการเข้าใช้งานในฐานะ Guest
@@ -90,7 +92,7 @@ class UserMenuPage extends StatelessWidget {
                       ],
                     ),
 
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 16),
 
                     // 🏢 เมนูที่ 1: ห้องประชุม
                     SelectionCard(
@@ -237,7 +239,13 @@ class UserMenuPage extends StatelessWidget {
                         color: Colors.white,
                         size: 26,
                       ),
-                      onPressed: () {
+                      onPressed: () async {
+                        // 🟢 1. เคลียร์ข้อมูลเซสชันทั้งหมดแบบ 100% (ล้างทั้ง Memory และ Storage)
+                        await AuthService.instance.logout();
+
+                        if (!context.mounted) return;
+
+                        // 🟢 2. กลับไปหน้าแรกและเคลียร์ Stack ทิ้งป้องกัน State ค้าง
                         Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(

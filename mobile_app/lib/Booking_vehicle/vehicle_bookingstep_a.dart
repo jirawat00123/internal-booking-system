@@ -24,6 +24,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
 
   DateTime startDate = DateTime.now();
   DateTime endDate = DateTime.now().add(const Duration(days: 2));
+  TimeOfDay useTime = TimeOfDay.now(); // 👈 เพิ่มตัวแปรเก็บเวลา
 
   int passengerCount = 4;
 
@@ -148,7 +149,32 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
     return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/$shortYear";
   }
 
-  // ลบฟังก์ชัน _formatTime ออกเนื่องจากยกเลิกการระบุเวลา
+  // 👈 เพิ่มฟังก์ชันจัดการเวลาที่ต้องการใช้งาน
+  String _formatTime(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return "$hour:$minute";
+  }
+
+  Future<void> _selectTime(BuildContext context) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: useTime,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(primary: Color(0xFF009CB4)),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() {
+        useTime = picked;
+      });
+    }
+  }
 
   void _onNextPressed() {
     if (_formKey.currentState!.validate()) {
@@ -160,7 +186,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
             destination: destinationController.text,
             startDate: _formatDateThai(startDate),
             endDate: _formatDateThai(endDate),
-            timeRange: "",
+            timeRange: _formatTime(useTime), // 👈 ส่งเวลาที่เลือกไปยังหน้าต่อไป
             passengerCount: passengerCount,
             driverType: 'ขับขี่เอง',
           ),
@@ -351,6 +377,21 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                                     ),
                                   ],
                                 ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          // 👈 เพิ่มส่วนเลือกเวลาที่ต้องการใช้งาน
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildLabel('เวลาที่ต้องการใช้งาน'),
+                              const SizedBox(height: 8),
+                              _buildClickableField(
+                                text: '${_formatTime(useTime)} น.',
+                                leftIcon: Icons.access_time_outlined,
+                                rightIcon: Icons.arrow_drop_down,
+                                onTap: () => _selectTime(context),
                               ),
                             ],
                           ),

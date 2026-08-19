@@ -114,3 +114,87 @@ exports.getVehicleCalendar = async (req, res, next) => {
     next(error);
   }
 };
+
+// =========================================================================
+// [GET] /api/calendar/all - สำหรับแสดงปฏิทินรวม (Room + Vehicle) รูปแบบ Unified Event
+// =========================================================================
+exports.getUnifiedCalendar = async (req, res, next) => {
+  try {
+    const { startDate, endDate, status } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'กรุณาระบุ startDate และ endDate' 
+      });
+    }
+
+    let whereClause = {
+      startDatetime: { lte: new Date(endDate) },
+      endDatetime: { gte: new Date(startDate) }
+    };
+
+    // ให้แสดงเฉพาะรายการที่สถานะ APPROVED เป็นหลักเพื่อแสดงบนปฏิทิน (เว้นแต่จะระบุ status อื่นมา)
+    if (status) {
+      whereClause.status = status;
+    } else {
+      whereClause.status = 'APPROVED';
+    }
+
+    // 1. ดึงข้อมูลการจองห้อง
+    const roomBookings = await prisma.roomBooking.findMany({
+      where: whereClause,
+      include: {
+        room: true,
+        user: { include: { employee: true } }
+      }
+    });
+
+    // 2. ดึงข้อมูลการจองรถ
+    const vehicleBookings = await prisma.vehicleBooking.findMany({
+      where: whereClause,
+      include: {
+        vehicle: true,
+        user: { include: { employee: true } }
+      }
+    });
+
+    // 3. รวมข้อมูลและ Map Data Format (Unified Event)
+    const unifiedEvents = [
+      ...roomBookings.map(b => ({
+        eventId: `ROOM-${b.id}`,
+        originalId: b.id,
+        type: 'ROOM',
+        title: b.room?.name || 'ไม่ระบุห้อง',
+        bookerName: b.user?.employee?.fullName || 'ไม่ระบุชื่อผู้จอง',
+        start: b.startDatetime,
+        end: b.endDatetime,
+        color: '#42BCA4', // สามารถระบุสีแยกประเภทให้ Frontend ได้เลย
+        status: b.status
+      })),
+      ...vehicleBookings.map(b => ({
+        eventId: `VEHICLE-${b.id}`,
+        originalId: b.id,
+        type: 'VEHICLE',
+        title: `${b.vehicle?.brand || ''} ${b.vehicle?.model || ''} (${b.vehicle?.licensePlate || ''})`.trim() || 'ไม่ระบุรถ',
+        bookerName: b.user?.employee?.fullName || 'ไม่ระบุชื่อผู้จอง',
+        start: b.startDatetime,
+        end: b.endDatetime,
+        color: '#FF9800', 
+        status: b.status
+      }))
+    ];
+
+    // เรียงลำดับรายการตามเวลาเริ่มต้น
+    unifiedEvents.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+    return res.status(200).json({
+      success: true,
+      data: unifiedEvents
+    });
+
+  } catch (error) {
+    console.error('[getUnifiedCalendar Error]:', error);
+    next(error);
+  }
+};

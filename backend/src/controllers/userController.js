@@ -29,10 +29,7 @@ exports.getAllUsers = async (req, res) => {
     }
     
     if (role) {
-      whereCondition.OR = [
-        { roles: role },
-        { role: { name: role } }
-      ];
+      whereCondition.role = { name: role };
     }
 
     if (active !== undefined) {
@@ -213,10 +210,14 @@ exports.updateUser = async (req, res) => {
     
     // 🟢 (ลบ dataToUpdate.roles ออก เนื่องจากไม่มีฟิลด์นี้ในตาราง User)
     
-    if (active !== undefined) dataToUpdate.active = Boolean(active);
-
-    if (active === false) {
-      dataToUpdate.currentSessionId = null; 
+    if (active !== undefined) {
+      dataToUpdate.active = Boolean(active);
+      if (active === true) {
+        dataToUpdate.failedLoginAttempts = 0; // 🟢 ปลดล็อคและรีเซ็ตจำนวนครั้งที่เข้าสู่ระบบผิดเมื่อเปิดใช้งานบัญชี
+        dataToUpdate.lockedUntil = null;
+      } else {
+        dataToUpdate.currentSessionId = null; 
+      }
     }
 
     // 🟢 อัปเดตข้อมูลในตาราง Employee (รวมถึงสถานะ isActive) ลง Database

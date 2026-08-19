@@ -41,14 +41,9 @@ class VehicleOutCompletedScreen extends StatelessWidget {
                 height: 50,
                 child: ElevatedButton(
                   onPressed: () {
-                    // 🚀 โค้ดนี้จะปิดทุกหน้าที่ค้างอยู่ และย้อนกลับไปหน้า SecurityVehicleList
-                    Navigator.pushAndRemoveUntil(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SecurityVehicleListScreen(),
-                      ),
-                      (Route<dynamic> route) => false,
-                    );
+                    // 🟢 ย้อนกลับไปหน้าก่อนหน้า (SecurityVehiclelist) โดยไม่ลบประวัติ Backstack ทิ้ง
+                    // หมายเหตุ: หากกดแล้วย้อนไปเจอหน้ากรอกข้อมูล ให้เพิ่ม Navigator.pop(context); ซ้อนอีก 1 บรรทัด
+                    Navigator.pop(context);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF334155),

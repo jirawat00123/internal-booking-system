@@ -18,7 +18,7 @@ exports.getDepartments = async (req, res) => {
 exports.getPositions = async (req, res) => {
   try {
     const { departmentId } = req.query;
-    if (!departmentId) {
+    if (!departmentId || departmentId === 'null' || departmentId === 'undefined') {
       return res.status(400).json({ success: false, error: 'กรุณาระบุ departmentId' });
     }
     const positions = await prisma.position.findMany({
@@ -92,14 +92,17 @@ exports.createEmployeeWithUser = async (req, res) => {
     if (!role) return res.status(400).json({ success: false, error: 'ไม่พบสิทธิ์การใช้งานนี้' });
 
     // --- 3. Database Transaction (บันทึก Employee และ User พร้อมกัน) ---
+    const isActiveStatus = active !== undefined ? Boolean(active) : true;
+
     const result = await prisma.$transaction(async (prismaClient) => {
       // สร้าง Employee
       const newEmployee = await prismaClient.employee.create({
         data: {
-          employeeCode: employeeCode,
-          fullName: fullName,
+          employeeCode: employeeCode.trim(),
+          fullName: fullName.trim(),
+          departmentId: parseInt(departmentId, 10),
           positionId: parseInt(positionId, 10),
-          isActive: active,
+          isActive: isActiveStatus,
         }
       });
 
@@ -108,7 +111,7 @@ exports.createEmployeeWithUser = async (req, res) => {
         data: {
           employeeId: newEmployee.id,
           roleId: parseInt(roleId, 10),
-          active: active,
+          active: isActiveStatus,
           pin: null,
           pinInitialized: false,
           pinResetRequired: false,

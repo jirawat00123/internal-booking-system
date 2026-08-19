@@ -63,7 +63,7 @@ const authenticateToken = async (req, res, next) => {
     }
 
     const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
+      where: { id: parseInt(decoded.userId, 10) },
       include: { role: true } // 💡 สั่งให้ Prisma JOIN ข้อมูลตาราง roles มาด้วย
     });
 
@@ -78,6 +78,15 @@ const authenticateToken = async (req, res, next) => {
     if (!user.active || user.isDeleted) {
       console.log(`[EVIDENCE] 7. 403 Failure Cause: [USER_INACTIVE_OR_DELETED] User ID "${decoded.userId}" account is deactivated or deleted.`);
       return res.status(403).json({ success: false, error: "บัญชีผู้ใช้งานของคุณถูกระงับสิทธิ์หรือถูกลบออกจากระบบ" });
+    }
+
+    // 🔴 [Global Account Lockout] ตรวจสอบว่าบัญชีถูก Lock อยู่หรือไม่ (บังคับใช้ทุก Session/Device ทันที)
+    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+      console.log(`[EVIDENCE] 403 Failure Cause: [ACCOUNT_LOCKED] User ID "${decoded.userId}" is globally locked until ${user.lockedUntil}. Existing session is blocked.`);
+      return res.status(403).json({ 
+        success: false, 
+        error: "บัญชีของคุณถูกระงับชั่วคราวเนื่องจากใส่รหัสผิดเกินจำนวน กรุณารอจนกว่าระยะเวลาระงับจะสิ้นสุด" 
+      });
     }
 
     // 🔒 [Security Feature]: บังคับตั้งค่า PIN ใหม่ หากถูก Admin สั่งรีเซ็ต หรือเป็นการเข้าใช้งานครั้งแรก
@@ -113,8 +122,15 @@ const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ success: false, error: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" });
     }
 
-    // ✅ ปรับการอ่านค่า Role ให้ปลอดภัย รองรับทั้งจากตาราง Role Relation และฟิลด์ roles Enum 
-    req.user.role = user.role?.name || user.roles || decoded.role || 'USER';
+    // ✅ ปรับการอ่านค่า Role ให้ปลอดภัย และล็อกไม่ให้ SECURITY แอบเนียนเป็น USER
+    const dbRole = (user.role?.name || user.roles || '').toUpperCase();
+    const tokenRole = (decoded.role || '').toUpperCase();
+
+    if (dbRole === 'SECURITY' || dbRole === 'GUARD' || tokenRole === 'SECURITY' || tokenRole === 'GUARD') {
+      req.user.role = 'SECURITY';
+    } else {
+      req.user.role = dbRole || tokenRole || 'USER';
+    }
     req.user.employeeCode = decoded.employeeCode;
 
     next();
@@ -159,10 +175,22 @@ const isAdmin = (req, res, next) => {
     next();
 };
 
+const isUser = (req, res, next) => {
+    const role = (req.user?.role || '').toUpperCase();
+    if (role === 'SECURITY' || role === 'GUARD') {
+        return res.status(403).json({ 
+            success: false, 
+            error: "ปฏิเสธการเข้าถึง: เจ้าหน้าที่ รปภ. ไม่มีสิทธิ์เข้าใช้งานในส่วนผู้ใช้ทั่วไป" 
+        });
+    }
+    next();
+};
+
 module.exports = {
     JWT_SECRET,
     authenticateToken,
     verifyToken,
     requireRole,
-    isAdmin
+    isAdmin,
+    isUser
 };

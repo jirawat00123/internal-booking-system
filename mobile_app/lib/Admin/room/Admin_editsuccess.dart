@@ -8,24 +8,7 @@ class MobileFrameEditSuccessContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.grey[900], // พื้นหลังรอบนอกตู้มือถือ
-      child: Center(
-        child: Container(
-          width: 400, // ความกว้างหน้าจอมือถือ
-          height: 800, // ความสูงหน้าจอมือถือ
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(30), // ขอบมนโทรศัพท์
-            boxShadow: const [
-              BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5),
-            ],
-          ),
-          child: const AdminEditSuccessPage(), // 🟢 เรียกใช้คลาสใหม่
-        ),
-      ),
-    );
+    return const AdminEditSuccessPage();
   }
 }
 

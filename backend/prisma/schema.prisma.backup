@@ -178,9 +178,9 @@ model VehicleBooking {
   vehicleId     Int           @map("vehicle_id")
   createdAt     DateTime      @default(now()) @map("created_at")
   destination   String
-  endDatetime   DateTime      @map("end_datetime")
   purpose       String
   startDatetime DateTime      @map("start_datetime")
+  returnDate    DateTime      @map("return_date")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   passengers    Int           @default(1) @map("passengers")
   userId        Int           @map("user_id")

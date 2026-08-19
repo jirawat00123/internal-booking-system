@@ -7,6 +7,7 @@ import '/Admin/room/Admin_roompage.dart';
 import 'Select.dart';
 import 'Book_history.dart'; // นำเข้าหน้า BookingHistoryScreen
 import 'digitel.dart'; // นำเข้าหน้า UserMenuPage สำหรับการสลับโหมด
+import 'Security/SecurityVehiclelist.dart'; // 🟢 เพิ่มการ Import หน้าต่างจัดการรถเข้า-ออก
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ
 
 class AdminGroupPage extends StatefulWidget {
@@ -244,7 +245,15 @@ class _AdminGroupPageState extends State<AdminGroupPage> {
                         AdminMenuCard(
                           icon: Icons.car_rental, // ไอคอนรูปรถและกุญแจ
                           title: 'ระบบจัดการรถ เข้า - ออก',
-                          onTap: () {},
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const SecurityVehicleListScreen(), // 🟢 นำทางไปยังหน้าจัดการรถเข้า-ออก
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 16),
 

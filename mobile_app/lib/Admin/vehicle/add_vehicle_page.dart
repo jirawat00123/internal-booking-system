@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert'; // 🟢 เพิ่มสำหรับการแปลง JSON
 import 'package:flutter/material.dart';
+import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -21,12 +22,15 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController nameController = TextEditingController();
   final TextEditingController plateController = TextEditingController();
+  final TextEditingController actDocNumberController = TextEditingController();
+  final TextEditingController actExpiryDateController = TextEditingController();
 
   final String currentStatus =
       'AVAILABLE'; // 🔄 ปรับให้ตรงกับ Backend (AVAILABLE)
   int passengerCount = 4;
 
   XFile? _vehicleImage;
+  PlatformFile? _pickedDocFile; // 🟢 เพิ่มการเก็บไฟล์สำหรับ Web/Mobile
   String? _docFilePath; // เก็บพาธไฟล์เอกสาร
   String? _docFileName; // เก็บชื่อไฟล์เอกสารไว้โชว์
 
@@ -38,6 +42,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
   void dispose() {
     nameController.dispose();
     plateController.dispose();
+    actDocNumberController.dispose();
+    actExpiryDateController.dispose();
     super.dispose();
   }
 
@@ -69,10 +75,12 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     FilePickerResult? result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'png'],
+      withData: kIsWeb,
     );
 
     if (result != null) {
       setState(() {
+        _pickedDocFile = result.files.single;
         _docFilePath = result.files.single.path;
         _docFileName = result.files.single.name;
       });
@@ -112,7 +120,6 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
           : fullName;
 
       // [ชุดที่ 1] ส่งคีย์เดิมที่ตัวแอปเคยมีอยู่แล้ว
-      // [ชุดที่ 1] ส่งคีย์เดิมที่ตัวแอปเคยมีอยู่แล้ว
       request.fields['vehicleName'] = fullName;
       request.fields['plateNumber'] = plateText;
       request.fields['capacity'] = passengerCount.toString();
@@ -129,6 +136,17 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
           .toString(); // เผื่อหลังบ้านใช้คำว่า seats
       request.fields['seatCount'] = passengerCount
           .toString(); // เผื่อหลังบ้านใช้คำว่า seatCount
+
+      // 🟢 เพิ่มการส่งข้อมูลเลขที่ และวันหมดอายุ พ.ร.บ.
+      if (actDocNumberController.text.trim().isNotEmpty) {
+        request.fields['actDocumentNumber'] = actDocNumberController.text
+            .trim();
+        request.fields['documentNumber'] = actDocNumberController.text.trim();
+      }
+      if (actExpiryDateController.text.trim().isNotEmpty) {
+        request.fields['actExpiryDate'] = actExpiryDateController.text.trim();
+        request.fields['expiryDate'] = actExpiryDateController.text.trim();
+      }
 
       // 3. แนบไฟล์รูปภาพรถ (รองรับทั้ง Web และ Mobile)
       if (_vehicleImage != null) {
@@ -150,20 +168,35 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
               bytes,
               filename:
                   finalFileName, // ส่งชื่อไฟล์ที่การันตีว่ามีนามสกุลแน่นอน
+              contentType: MediaType('image', 'png'),
             ),
           );
         } else {
           request.files.add(
-            await http.MultipartFile.fromPath('image', _vehicleImage!.path),
+            await http.MultipartFile.fromPath(
+              'image',
+              _vehicleImage!.path,
+              contentType: MediaType('image', 'png'),
+            ),
           );
         }
       }
 
-      // 🟢 เพิ่มการแนบไฟล์เอกสาร (พรบ.) ไปยัง Backend (ถ้ามีการเลือกไฟล์)
-      if (_docFilePath != null && !kIsWeb) {
-        request.files.add(
-          await http.MultipartFile.fromPath('document', _docFilePath!),
-        );
+      // 🟢 เพิ่มการแนบไฟล์เอกสาร (พรบ.) ไปยัง Backend (รองรับทั้ง Web และ Mobile)
+      if (_pickedDocFile != null || _docFilePath != null) {
+        if (kIsWeb && _pickedDocFile?.bytes != null) {
+          request.files.add(
+            http.MultipartFile.fromBytes(
+              'actDocument',
+              _pickedDocFile!.bytes!,
+              filename: _docFileName ?? 'act_document.pdf',
+            ),
+          );
+        } else if (_docFilePath != null) {
+          request.files.add(
+            await http.MultipartFile.fromPath('actDocument', _docFilePath!),
+          );
+        }
       }
 
       final streamedResponse = await request.send();
@@ -631,6 +664,35 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                         ),
                       ),
                       const SizedBox(height: 12),
+                      _buildTextField(
+                        label: 'เลขที่ พ.ร.บ.',
+                        controller: actDocNumberController,
+                        hint: 'ระบุเลขที่ พ.ร.บ.',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        label: 'วันหมดอายุ พ.ร.บ. (YYYY-MM-DD)',
+                        controller: actExpiryDateController,
+                        hint: 'YYYY-MM-DD',
+                        readOnly: true, // 🟢 บังคับไม่ให้พิมพ์เอง
+                        onTap: () async {
+                          // 🟢 เรียกใช้ปฏิทินเมื่อกดช่องกรอก
+                          DateTime? pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (pickedDate != null) {
+                            String formattedDate =
+                                "${pickedDate.year}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.day.toString().padLeft(2, '0')}";
+                            setState(() {
+                              actExpiryDateController.text = formattedDate;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
@@ -758,6 +820,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     required TextEditingController controller,
     String? hint,
     bool isRequired = false,
+    bool readOnly = false, // 🟢 เพิ่มพารามิเตอร์ readOnly
+    VoidCallback? onTap, // 🟢 เพิ่มพารามิเตอร์ onTap
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -773,6 +837,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
+          readOnly: readOnly, // 🟢 นำมาใช้ที่นี่
+          onTap: onTap, // 🟢 นำมาใช้ที่นี่
           style: const TextStyle(color: Colors.black87, fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,

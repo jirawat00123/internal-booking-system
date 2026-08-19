@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'dashboard_model.dart';
 import 'dashboard_card.dart';
+import '../Calendar/calendar_page.dart';
 
 class SecurityDashboardView extends StatelessWidget {
   final SecurityDashboardData data;
@@ -24,9 +25,31 @@ class SecurityDashboardView extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'การจัดการยานพาหนะประจำวัน (Security)',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Expanded(
+                  child: Text(
+                    'การจัดการยานพาหนะประจำวัน (Security)',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(
+                    Icons.calendar_month,
+                    color: Colors.deepPurple,
+                  ),
+                  tooltip: 'ดูปฏิทินการจอง',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const CalendarPage(),
+                      ),
+                    );
+                  },
+                ),
+              ],
             ),
             const SizedBox(height: 16),
 

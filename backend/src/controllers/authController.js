@@ -117,7 +117,9 @@ const changePin = async (req, res) => {
         pin: hashedNewPin,
         pinChangedAt: new Date(),
         currentSessionId: newSessionId,
-        pinResetRequired: false
+        pinResetRequired: false,
+        failedLoginAttempts: 0, // 🟢 เพิ่มการเคลียร์จำนวนครั้งที่เข้าสู่ระบบผิด
+        lockedUntil: null       // 🟢 เพิ่มการปลดล็อคบัญชี
       }
     });
 
@@ -263,14 +265,33 @@ const login = async (req, res) => {
       }
 
       user = employee.users[0];
-      effectiveRole = 'USER'; // บังคับให้เป็น USER เสมอ
+
+      const userRoleName = user.role?.name ? user.role.name.toUpperCase() : 'USER';
+      const requestedRole = expectedRole ? expectedRole.toUpperCase() : 'USER';
+
+      if (requestedRole === 'ADMIN') {
+        if (userRoleName !== 'ADMIN') {
+          return res.status(403).json({ success: false, error: "ไม่มีสิทธิ์เข้าใช้งานในส่วนแอดมิน" });
+        }
+        effectiveRole = 'ADMIN';
+      } else if (requestedRole === 'SECURITY' || requestedRole === 'GUARD') {
+        if (userRoleName !== 'SECURITY' && userRoleName !== 'GUARD' && userRoleName !== 'ADMIN') {
+          return res.status(403).json({ success: false, error: "ไม่มีสิทธิ์เข้าใช้งานในส่วน รปภ." });
+        }
+        effectiveRole = requestedRole;
+      } else {
+        if (userRoleName === 'SECURITY' || userRoleName === 'GUARD') {
+          return res.status(403).json({ success: false, error: "เจ้าหน้าที่ รปภ. ไม่มีสิทธิ์เข้าใช้งานในส่วนผู้ใช้ทั่วไป" });
+        }
+        effectiveRole = 'USER';
+      }
     } else {
       // 🟢 กรณีไม่ระบุรหัสพนักงาน (Admin PIN-Only Login Flow: กรอก PIN อย่างเดียว)
       const targetRole = expectedRole ? expectedRole.toUpperCase() : 'ADMIN';
       const users = await prisma.user.findMany({
         where: { 
           pin: { not: null },
-          isActive: true,
+          active: true,
           role: { name: targetRole }
         },
         include: {
@@ -279,8 +300,13 @@ const login = async (req, res) => {
         }
       });
 
+      let lockedCandidate = null;
       for (const candidate of users) {
         if (candidate.pin && await verifyPin(candidate.pin, pin.toString())) {
+          if (candidate.lockedUntil && candidate.lockedUntil > new Date()) {
+            lockedCandidate = candidate;
+            continue; // หาแอดมินคนอื่นที่ใช้ PIN นี้และไม่ถูกล็อคก่อน
+          }
           user = candidate;
           employee = candidate.employee;
           effectiveRole = targetRole;
@@ -288,16 +314,31 @@ const login = async (req, res) => {
         }
       }
 
+      // ถ้าไม่มีแอดมินที่สถานะปกติ แต่เจอคนที่ถูกล็อค ให้ใช้คนนั้นเพื่อให้ระบบฟ้องว่าบัญชีถูกระงับ
+      if (!user && lockedCandidate) {
+        user = lockedCandidate;
+        employee = lockedCandidate.employee;
+        effectiveRole = targetRole;
+      }
+
       if (!user) {
         return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์แอดมิน" });
       }
     }
 
-    if ((employee && !employee.isActive) || !user.isActive) {
+    if ((employee && !employee.active) || !user.active) {
       return res.status(403).json({ success: false, error: "บัญชีนี้ถูกระงับการใช้งาน" });
     }
 
-    if (!user.pin || !user.pinInitialized) {
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      const remainingTime = Math.ceil((user.lockedUntil - new Date()) / 60000);
+      return res.status(403).json({ 
+        success: false, 
+        error: `บัญชีถูกระงับชั่วคราวเนื่องจากใส่รหัสผิดเกินกำหนด กรุณาลองใหม่ในอีก ${remainingTime} นาที` 
+      });
+    }
+
+    if (!user.pin || !user.pinInitialized || user.pinResetRequired) {
       return res.status(403).json({ 
         success: false, 
         error: "บัญชีนี้ยังไม่ได้ตั้งรหัส PIN กรุณาตั้งค่ารหัส PIN ก่อนเข้าใช้งาน",
@@ -306,8 +347,32 @@ const login = async (req, res) => {
     }
 
     if (employeeCode) {
+      let currentAttempts = user.failedLoginAttempts || 0;
+      if (user.lockedUntil && user.lockedUntil <= new Date()) {
+        currentAttempts = 0; // เคลียร์จำนวนครั้งที่ผิดหากหมดเวลาล็อคแล้ว
+      }
+
       const isPinValid = await verifyPin(user.pin, pin.toString());
       if (!isPinValid) {
+        const attempts = currentAttempts + 1;
+        let updateData = { 
+          failedLoginAttempts: attempts,
+          ...(user.lockedUntil && user.lockedUntil <= new Date() ? { lockedUntil: null } : {}) // 🟢 เพิ่มการล้างค่าเวลาอายัดเดิมหากหมดเวลาล็อคแล้ว
+        };
+
+        if (attempts >= 5) {
+          updateData.lockedUntil = new Date(Date.now() + 15 * 60000);
+          updateData.currentSessionId = null; // 🔴 เคลียร์ Session ID ทั้งหมดเพื่อยกเลิก Existing Session ของทุก Device ทันทีที่บัญชีถูก Lock
+        }
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: updateData
+        });
+
+        if (attempts >= 5) {
+          return res.status(401).json({ success: false, error: `คุณใส่ PIN ผิดเกิน 5 ครั้ง บัญชีถูกระงับ 15 นาที` });
+        }
         return res.status(401).json({ success: false, error: "รหัสพนักงานหรือรหัส PIN ไม่ถูกต้อง" });
       }
     }
@@ -362,6 +427,8 @@ const login = async (req, res) => {
         employeeCode: employee?.employeeCode || user.employeeCode,
         fullName: employee?.fullName || user.fullName,
         role: effectiveRole,
+        hasPin: !!(user.pin && user.pinInitialized && !user.pinResetRequired),
+        pinInitialized: user.pinInitialized ?? false,
         pinResetRequired: user.pinResetRequired,
         permissions: userPermissions
       }

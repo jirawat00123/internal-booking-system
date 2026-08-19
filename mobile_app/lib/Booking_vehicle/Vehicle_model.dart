@@ -37,6 +37,9 @@ class VehicleModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final bool hasFutureBooking;
+  final String? actDocumentNumber;
+  final DateTime? actExpiryDate;
+  final String? actUploadUrl;
 
   VehicleModel({
     required this.id,
@@ -51,6 +54,9 @@ class VehicleModel {
     this.createdAt,
     this.updatedAt,
     this.hasFutureBooking = false,
+    this.actDocumentNumber,
+    this.actExpiryDate,
+    this.actUploadUrl,
   });
 
   VehicleModel copyWith({
@@ -66,6 +72,9 @@ class VehicleModel {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? hasFutureBooking,
+    String? actDocumentNumber,
+    DateTime? actExpiryDate,
+    String? actUploadUrl,
   }) {
     return VehicleModel(
       id: id ?? this.id,
@@ -80,10 +89,39 @@ class VehicleModel {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       hasFutureBooking: hasFutureBooking ?? this.hasFutureBooking,
+      actDocumentNumber: actDocumentNumber ?? this.actDocumentNumber,
+      actExpiryDate: actExpiryDate ?? this.actExpiryDate,
+      actUploadUrl: actUploadUrl ?? this.actUploadUrl,
     );
   }
 
   factory VehicleModel.fromJson(Map<String, dynamic> json) {
+    // 🟢 ดึงข้อมูลเอกสาร พ.ร.บ. จาก Array documents
+    String? actDocNum;
+    DateTime? actExpDate;
+    String? actUrl;
+
+    if (json['documents'] is List && (json['documents'] as List).isNotEmpty) {
+      final docs = json['documents'] as List;
+      final actDoc = docs.firstWhere(
+        (doc) =>
+            doc is Map &&
+            doc['documentType'] != null &&
+            (doc['documentType']['name'] == 'พ.ร.บ.' ||
+                doc['documentType']['name'] == 'ACT'),
+        orElse: () => null,
+      );
+
+      if (actDoc != null) {
+        actDocNum = actDoc['documentNumber'] ?? actDoc['document_number'];
+        actExpDate =
+            actDoc['expiryDate'] != null || actDoc['expiry_date'] != null
+            ? DateTime.tryParse(actDoc['expiryDate'] ?? actDoc['expiry_date'])
+            : null;
+        actUrl = actDoc['uploadUrl'] ?? actDoc['upload_url'];
+      }
+    }
+
     return VehicleModel(
       id: json['id'],
       plateNumber:
@@ -103,6 +141,14 @@ class VehicleModel {
       updatedAt: json['updatedAt'] != null
           ? DateTime.tryParse(json['updatedAt'])
           : null,
+      actDocumentNumber:
+          actDocNum ?? json['actDocumentNumber'] ?? json['documentNumber'],
+      actExpiryDate:
+          actExpDate ??
+          (json['actExpiryDate'] != null || json['expiryDate'] != null
+              ? DateTime.tryParse(json['actExpiryDate'] ?? json['expiryDate'])
+              : null),
+      actUploadUrl: actUrl ?? json['actUploadUrl'] ?? json['act_upload_url'],
     );
   }
 }

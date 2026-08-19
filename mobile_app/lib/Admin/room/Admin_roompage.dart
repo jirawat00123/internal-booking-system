@@ -15,28 +15,11 @@ class MobileFrameContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.grey[900],
-      child: Center(
-        child: Container(
-          width: 400,
-          height: 800,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: const [
-              BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5),
-            ],
-          ),
-          child: ValueListenableBuilder<List<MeetingRoom>>(
-            valueListenable: globalMeetingRooms,
-            builder: (context, rooms, child) {
-              return const MeetingRoomListScreen();
-            },
-          ),
-        ),
-      ),
+    return ValueListenableBuilder<List<MeetingRoom>>(
+      valueListenable: globalMeetingRooms,
+      builder: (context, rooms, child) {
+        return const MeetingRoomListScreen();
+      },
     );
   }
 }
@@ -147,6 +130,12 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
 
     try {
       String? token = await AuthService.instance.getToken();
+      // 🟢 ดึงข้อมูลสำรองจาก SharedPreferences หากรันบน Web แล้ว AuthService คืนค่า null
+      if (token == null || token.isEmpty) {
+        final prefs = await SharedPreferences.getInstance();
+        token = prefs.getString('token') ?? prefs.getString('jwt_token');
+      }
+
       final response = await http.patch(
         url,
         headers: {
@@ -168,7 +157,10 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
               backgroundColor: Colors.green,
             ),
           );
-          loadRooms();
+          await loadRooms();
+          if (mounted) {
+            setState(() {});
+          }
         }
       } else {
         if (mounted) {

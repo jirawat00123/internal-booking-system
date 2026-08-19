@@ -33,11 +33,11 @@ exports.getVehicles = async (req, res) => {
         // 2. สร้าง เงื่อนไขการกรอง (Filter)
         const whereClause = { isDeleted: false };
 
-        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE'];
+        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE', 'RESERVED'];
         if (status) {
-            const upperStatus = status.toUpperCase();
-            if (allowedStatuses.includes(upperStatus)) {
-                whereClause.status = upperStatus;
+            const normalizedStatus = status.trim().toUpperCase().replace(/\s+/g, '_');
+            if (allowedStatuses.includes(normalizedStatus)) {
+                whereClause.status = normalizedStatus;
             }
         }
 
@@ -47,11 +47,12 @@ exports.getVehicles = async (req, res) => {
                 { vehicleName: { contains: search, mode: 'insensitive' } },
                 { plateNumber: { contains: search, mode: 'insensitive' } },
                 { brand: { contains: search, mode: 'insensitive' } },
-                { model: { contains: search, mode: 'insensitive' } }
+                { model: { contains: search, mode: 'insensitive' } },
+                { province: { contains: search, mode: 'insensitive' } }
             ];
         }
 
-        // 4. Query Database (ดึงข้อมูลรถพร้อมเช็กคิวจองที่ยังไม่เสร็จสิ้น)
+        // 4. Query Database (ดึงข้อมูลรถพร้อมเช็กคิวจองที่ยังไม่เสร็จสิ้นและข้อมูลเอกสาร)
         console.log(`[TRACE] vehicleController.getVehicles BEFORE PRISMA (Local Path: ${__dirname})`);
         const [totalItems, vehiclesList] = await Promise.all([
             prisma.vehicle.count({ where: whereClause }),
@@ -61,6 +62,11 @@ exports.getVehicles = async (req, res) => {
                     bookings: {
                         where: {
                             status: { in: ['APPROVED', 'IN_USE'] }
+                        }
+                    },
+                    documents: {
+                        include: {
+                            documentType: true
                         }
                     }
                 },
@@ -100,17 +106,22 @@ exports.getVehicles = async (req, res) => {
 // 2. เพิ่มข้อมูลรถยนต์ใหม่
 exports.createVehicle = async (req, res) => {
     try {
-        // 💡 รับค่า vehicleName มาจากหน้าบ้านด้วย
-        const { vehicleName, plateNumber, brand, model, seats, status } = req.body;
-        
+        const { vehicleName, plateNumber, brand, model, seats, status, province, documentNumber, expiryDate, actDocumentNumber, actExpiryDate } = req.body;
+
+        // 🟢 รองรับทั้งกรณี Multer ส่งไฟล์รูป และไฟล์ พ.ร.บ.
+        const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
+        const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
+
         if (!plateNumber || !brand || !model) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+            if (actFile) await safeDeleteFile(actFile.path);
             return res.status(400).json({ success: false, error: "กรุณากรอกข้อมูลให้ครบถ้วน (ทะเบียน, ยี่ห้อ, รุ่น)" });
         }
 
         const seatNumber = parseInt(seats, 10);
         if (isNaN(seatNumber) || seatNumber <= 0) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+            if (actFile) await safeDeleteFile(actFile.path);
             return res.status(400).json({ success: false, error: "จำนวนที่นั่งต้องเป็นตัวเลขและมากกว่า 0 ขึ้นไป" });
         }
 
@@ -119,14 +130,22 @@ exports.createVehicle = async (req, res) => {
         });
 
         if (existingVehicle) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+            if (actFile) await safeDeleteFile(actFile.path);
             return res.status(400).json({ success: false, error: `ป้ายทะเบียน ${plateNumber} มีในระบบแล้ว` });
         }
-        
-        // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่งเป็น Base64/URL ผ่าน req.body
-        // ประกอบ Web URL Path โดยใช้ filename เพื่อให้พร้อมสำหรับ Frontend นำไปใช้งาน
-                let uploadUrl = req.file
-            ? '/uploads/vehicles/' + req.file.filename
+
+        // 🟢 ตรวจสอบและแปลง Enum สถานะให้ตรงกับ Prisma Schema
+        let normalizedStatus = status ? status.trim().toUpperCase().replace(/\s+/g, '_') : 'AVAILABLE';
+        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE', 'RESERVED'];
+        if (!allowedStatuses.includes(normalizedStatus)) {
+            if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+            if (actFile) await safeDeleteFile(actFile.path);
+            return res.status(400).json({ success: false, error: "สถานะรถยนต์ไม่ถูกต้อง" });
+        }
+
+        let uploadUrl = uploadedFile
+            ? '/uploads/vehicles/' + uploadedFile.filename
             : (req.body.uploadUrl || null);
 
         if (
@@ -139,16 +158,50 @@ exports.createVehicle = async (req, res) => {
 
         const newVehicle = await prisma.vehicle.create({
             data: {
-                // 💡 ถ้ามี vehicleName ส่งมาให้ใช้เลย ถ้าไม่มีให้เอา brand + model ต่อกัน
                 vehicleName: vehicleName || `${brand} ${model}`,
                 plateNumber,
                 brand,
                 model,
+                province: province || null,
                 seats: seatNumber,
-                status: status || 'AVAILABLE',
+                status: normalizedStatus,
                 uploadUrl: uploadUrl
             }
         });
+
+        // 🟢 บันทึกเอกสาร พ.ร.บ. เข้าตาราง VehicleDocument
+        const docNum = actDocumentNumber || documentNumber || null;
+        
+        let docExpiry = null;
+        const rawExpiry = actExpiryDate || expiryDate;
+        if (rawExpiry) {
+            const parsedDate = new Date(rawExpiry);
+            if (isNaN(parsedDate.getTime())) {
+                if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+                if (actFile) await safeDeleteFile(actFile.path);
+                return res.status(400).json({ success: false, error: "รูปแบบวันที่หมดอายุ พ.ร.บ. ไม่ถูกต้อง" });
+            }
+            docExpiry = parsedDate;
+        }
+
+        const actUploadUrl = actFile ? '/uploads/vehicles/' + actFile.filename : null;
+
+        if (actFile || docNum || docExpiry) {
+            const docType = await prisma.documentType.upsert({
+                where: { name: 'พ.ร.บ.' },
+                update: {},
+                create: { name: 'พ.ร.บ.' }
+            });
+
+            await prisma.vehicleDocument.create({
+                data: {
+                    vehicleId: newVehicle.id,
+                    documentTypeId: docType.id,
+                    documentNumber: docNum,
+                    expiryDate: docExpiry
+                }
+            });
+        }
 
         // 🟢 บันทึก AuditLog เมื่อเพิ่มรถยนต์สำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
         const rawUserId = req.user?.id || req.user?.userId;
@@ -168,7 +221,10 @@ exports.createVehicle = async (req, res) => {
 
         return res.status(201).json({ success: true, data: newVehicle, message: 'เพิ่มรถยนต์สำเร็จ' });
     } catch (error) {
-        if (req.file) await safeDeleteFile(req.file.path);
+        const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
+        const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
+        if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+        if (actFile) await safeDeleteFile(actFile.path);
         console.error("Create Vehicle Error:", error);
         return res.status(500).json({ success: false, error: error.message || "ไม่สามารถเพิ่มข้อมูลรถได้" });
     }
@@ -182,7 +238,16 @@ exports.getVehicleById = async (req, res) => {
             return res.status(400).json({ success: false, error: "ID ของรถยนต์ไม่ถูกต้อง" });
         }
 
-        const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+        const vehicle = await prisma.vehicle.findUnique({
+            where: { id: vehicleId },
+            include: {
+                documents: {
+                    include: {
+                        documentType: true
+                    }
+                }
+            }
+        });
 
         if (!vehicle || vehicle.isDeleted) {
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ในระบบ" });
@@ -199,49 +264,58 @@ exports.getVehicleById = async (req, res) => {
 exports.updateVehicle = async (req, res) => {
     try {
         const vehicleId = parseInt(req.params.id, 10);
-        // 💡 เพิ่ม vehicleName ให้สามารถแก้ไขชื่อรถได้ด้วย
-        const { vehicleName, plateNumber, brand, model, seats, status } = req.body;
+        const { vehicleName, plateNumber, brand, model, seats, status, province, documentNumber, expiryDate, actDocumentNumber, actExpiryDate } = req.body;
+
+        // 🟢 รองรับทั้งกรณี Multer ส่งไฟล์รูป และไฟล์ พ.ร.บ.
+        const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
+        const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
 
         if (isNaN(vehicleId)) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+            if (actFile) await safeDeleteFile(actFile.path);
             return res.status(400).json({ success: false, error: "ID ของรถยนต์ไม่ถูกต้อง" });
         }
 
-        // 🟢 ตรวจสอบ Enum สถานะที่อนุญาต (ถ้ามีการส่ง status มาเพื่ออัปเดต)
-        if (status) {
-            const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE'];
-            if (!allowedStatuses.includes(status)) {
-                if (req.file) await safeDeleteFile(req.file.path);
+        // 🟢 ตรวจสอบและแปลง Enum สถานะให้ตรงกับ Prisma Schema (รองรับ RESERVED และ IN_USE)
+        let normalizedStatus = status ? status.trim().toUpperCase().replace(/\s+/g, '_') : undefined;
+        if (normalizedStatus) {
+            const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE', 'RESERVED'];
+            if (!allowedStatuses.includes(normalizedStatus)) {
+                if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+                if (actFile) await safeDeleteFile(actFile.path);
                 return res.status(400).json({ success: false, error: "สถานะรถยนต์ไม่ถูกต้อง" });
             }
         }
 
         const existingVehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
         if (!existingVehicle || existingVehicle.isDeleted) {
-            if (req.file) await safeDeleteFile(req.file.path);
+            if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+            if (actFile) await safeDeleteFile(actFile.path);
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ที่ต้องการแก้ไข" });
         }
 
         if (plateNumber && plateNumber !== existingVehicle.plateNumber) {
             const duplicatePlate = await prisma.vehicle.findUnique({ where: { plateNumber: plateNumber } });
             if (duplicatePlate) {
-                if (req.file) await safeDeleteFile(req.file.path);
+                if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+                if (actFile) await safeDeleteFile(actFile.path);
                 return res.status(400).json({ success: false, error: `ป้ายทะเบียน ${plateNumber} มีในระบบแล้ว` });
             }
         }
 
-        if (seats !== undefined) {
+        if (seats !== undefined && seats !== '') {
             const seatNumber = parseInt(seats, 10);
             if (isNaN(seatNumber) || seatNumber <= 0) {
-                if (req.file) await safeDeleteFile(req.file.path);
+                if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+                if (actFile) await safeDeleteFile(actFile.path);
                 return res.status(400).json({ success: false, error: "จำนวนที่นั่งต้องเป็นตัวเลขและมากกว่า 0 ขึ้นไป" });
             }
         }
 
         let newUploadUrl = existingVehicle.uploadUrl;
-        if (req.file) {
+        if (uploadedFile) {
             // ประกอบ Web URL Path โดยใช้ filename เพื่อให้พร้อมสำหรับ Frontend นำไปใช้งาน
-            newUploadUrl = '/uploads/vehicles/' + req.file.filename;
+            newUploadUrl = '/uploads/vehicles/' + uploadedFile.filename;
             if (existingVehicle.uploadUrl) {
                 const oldFilePath = path.join(
                     __dirname,
@@ -251,7 +325,7 @@ exports.updateVehicle = async (req, res) => {
                 );
                 await safeDeleteFile(oldFilePath);
             }
-                } else if (req.body.uploadUrl) {
+        } else if (req.body.uploadUrl) {
             newUploadUrl = req.body.uploadUrl; // รองรับกรณีส่ง path มาตรงๆ
 
             if (
@@ -268,15 +342,67 @@ exports.updateVehicle = async (req, res) => {
         const updatedVehicle = await prisma.vehicle.update({
             where: { id: vehicleId },
             data: {
-                vehicleName: vehicleName || existingVehicle.vehicleName, // 💡 อัปเดตชื่อรถ
+                vehicleName: vehicleName || existingVehicle.vehicleName,
                 plateNumber: plateNumber || existingVehicle.plateNumber,
                 brand: brand || existingVehicle.brand,
                 model: model || existingVehicle.model,
-                seats: seats !== undefined ? parseInt(seats, 10) : existingVehicle.seats,
-                status: status || existingVehicle.status,
+                province: province !== undefined ? province : existingVehicle.province,
+                seats: (seats !== undefined && seats !== '') ? parseInt(seats, 10) : existingVehicle.seats,
+                status: normalizedStatus || existingVehicle.status,
                 uploadUrl: newUploadUrl
             }
         });
+
+        // 🟢 บันทึก/อัปเดตเอกสาร พ.ร.บ. ใน VehicleDocument
+        const docNum = actDocumentNumber || documentNumber;
+        
+        let docExpiry = undefined;
+        const rawExpiry = actExpiryDate || expiryDate;
+        if (rawExpiry) {
+            const parsedDate = new Date(rawExpiry);F
+            if (isNaN(parsedDate.getTime())) {
+                if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+                if (actFile) await safeDeleteFile(actFile.path);
+                return res.status(400).json({ success: false, error: "รูปแบบวันที่หมดอายุ พ.ร.บ. ไม่ถูกต้อง" });
+            }
+            docExpiry = parsedDate;
+        }
+
+        let actUploadUrl = actFile ? '/uploads/vehicles/' + actFile.filename : undefined;
+
+        if (actFile || docNum !== undefined || docExpiry !== undefined) {
+            const docType = await prisma.documentType.upsert({
+                where: { name: 'พ.ร.บ.' },
+                update: {},
+                create: { name: 'พ.ร.บ.' }
+            });
+
+            const existingDoc = await prisma.vehicleDocument.findFirst({
+                where: {
+                    vehicleId: vehicleId,
+                    documentTypeId: docType.id
+                }
+            });
+
+            if (existingDoc) {
+                await prisma.vehicleDocument.update({
+                    where: { id: existingDoc.id },
+                    data: {
+                        documentNumber: docNum !== undefined ? docNum : existingDoc.documentNumber,
+                        expiryDate: docExpiry !== undefined ? docExpiry : existingDoc.expiryDate
+                    }
+                });
+            } else {
+                await prisma.vehicleDocument.create({
+                    data: {
+                        vehicleId: vehicleId,
+                        documentTypeId: docType.id,
+                        documentNumber: docNum || null,
+                        expiryDate: docExpiry || null
+                    }
+                });
+            }
+        }
 
         // 🟢 บันทึก AuditLog เมื่อแก้ไขข้อมูลรถยนต์สำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
         const rawUserId = req.user?.id || req.user?.userId;
@@ -296,7 +422,10 @@ exports.updateVehicle = async (req, res) => {
 
         return res.status(200).json({ success: true, data: updatedVehicle, message: "แก้ไขข้อมูลรถสำเร็จ" });
     } catch (error) {
-        if (req.file) await safeDeleteFile(req.file.path);
+        const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
+        const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
+        if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+        if (actFile) await safeDeleteFile(actFile.path);
         console.error("Update Vehicle Error:", error);
         return res.status(500).json({ success: false, error: "ไม่สามารถแก้ไขข้อมูลรถได้" });
     }
@@ -369,9 +498,10 @@ exports.updateVehicleStatus = async (req, res) => {
             return res.status(400).json({ success: false, error: "ID ของรถยนต์ไม่ถูกต้อง" });
         }
 
-        // 🟢 1. ตรวจสอบ Enum สถานะที่อนุญาต
-        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE'];
-        if (!status || !allowedStatuses.includes(status)) {
+        // 🟢 1. ตรวจสอบ Enum สถานะที่อนุญาต และแปลงเป็น Format มาตรฐาน
+        const normalizedStatus = status ? status.trim().toUpperCase().replace(/\s+/g, '_') : null;
+        const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE', 'RESERVED'];
+        if (!normalizedStatus || !allowedStatuses.includes(normalizedStatus)) {
             return res.status(400).json({ success: false, error: "สถานะรถยนต์ไม่ถูกต้อง" });
         }
 
@@ -381,7 +511,7 @@ exports.updateVehicleStatus = async (req, res) => {
         }
 
         // 🟢 2. Business Logic: ถ้าเปลี่ยนเป็น MAINTENANCE หรือ INACTIVE ต้องเช็กคิวจองในอนาคตก่อน
-        if (status === 'MAINTENANCE' || status === 'INACTIVE') {
+        if (normalizedStatus === 'MAINTENANCE' || normalizedStatus === 'INACTIVE') {
             const futureBookings = await prisma.vehicleBooking.findMany({
                 where: {
                     vehicleId: vehicleId,
@@ -393,14 +523,14 @@ exports.updateVehicleStatus = async (req, res) => {
             if (futureBookings.length > 0) {
                 return res.status(409).json({ 
                     success: false, 
-                    error: `ไม่สามารถเปลี่ยนสถานะเป็น ${status} ได้ เนื่องจากมีรายการจองในอนาคตค้างอยู่ ${futureBookings.length} รายการ`
+                    error: `ไม่สามารถเปลี่ยนสถานะเป็น ${normalizedStatus} ได้ เนื่องจากมีรายการจองในอนาคตค้างอยู่ ${futureBookings.length} รายการ`
                 });
             }
         }
 
         const updatedVehicle = await prisma.vehicle.update({
             where: { id: vehicleId },
-            data: { status }
+            data: { status: normalizedStatus }
         });
 
         // 🟢 บันทึก AuditLog เมื่ออัปเดตสถานะรถยนต์สำเร็จ (รองรับทั้ง req.user.id และ req.user.userId)
@@ -414,7 +544,7 @@ exports.updateVehicleStatus = async (req, res) => {
                     userId: actionUserId,
                     entityId: vehicleId,
                     entityType: 'VEHICLE',
-                    details: `User ${actionUserId} updated status of vehicle ID ${vehicleId} from ${existingVehicle.status} to ${status}`
+                    details: `User ${actionUserId} updated status of vehicle ID ${vehicleId} from ${existingVehicle.status} to ${normalizedStatus}`
                 }
             }).catch(err => console.error("AuditLog Error [updateVehicleStatus]:", err.message));
         }

@@ -4,6 +4,8 @@ import 'dart:convert'; // สำหรับแปลงข้อมูล JSON
 import '../PinError.dart';
 import 'SecurityGroupPage.dart'; // 👈 เปลี่ยนเป็นหน้าของ รปภ.
 import 'package:shared_preferences/shared_preferences.dart';
+import '../auth_service.dart'; // 🟢 เพิ่มการนำเข้า AuthService เพื่อดึงรหัสพนักงาน
+import '../user_setup_pin_screen.dart'; // 🟢 เพิ่มการนำเข้าหน้า Setup PIN เพื่อให้รปภ.ตั้งรหัสได้
 
 class Security_Pinpage extends StatefulWidget {
   const Security_Pinpage({super.key});
@@ -60,12 +62,19 @@ class _Security_PinpageState extends State<Security_Pinpage> {
     });
 
     try {
-      // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น 10.0.2.2 สำหรับมือถือจำลอง (Android Emulator)
+      // 🟢 ดึงรหัสพนักงานจาก AuthService หรือ Storage ก่อนส่งไปยัง Backend
+      final prefs = await SharedPreferences.getInstance();
+      final employeeCode =
+          await AuthService.instance.getEmployeeCode() ??
+          prefs.getString('employee_code') ??
+          prefs.getString('employeeCode');
+
+      // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น 192.168.88.25:3001.2.2 สำหรับมือถือจำลอง (Android Emulator)
       // (ถ้าคุณปิ่นรันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
-      final url = Uri.parse('http://192.168.88.25:3001/api/login-pin');
+      final url = Uri.parse('${AuthService.baseUrl}/api/login-pin');
 
       print(
-        '📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน...',
+        '📱 [Flutter] กำลังส่งรหัส $pin (รหัสพนักงาน: $employeeCode) ไปหาหลังบ้าน...',
       ); // 👈 ดักฟังว่าแอปเริ่มทำงานไหม
 
       final response = await http
@@ -73,6 +82,8 @@ class _Security_PinpageState extends State<Security_Pinpage> {
             url,
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
+              'employeeCode':
+                  employeeCode, // 🟢 แนบ employeeCode ส่งให้ Backend เพื่อแก้ไขปัญหา employeeCode = undefined
               'pin': pin,
               'expectedRole': 'SECURITY', // ✅ เปลี่ยนให้ตรงกับ Backend
             }),
@@ -89,16 +100,28 @@ class _Security_PinpageState extends State<Security_Pinpage> {
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
 
-        // ✅ แก้ไข: เปลี่ยนจาก 'GUARD' เป็น 'SECURITY' ให้ตรงกับที่ Backend ตอบกลับมา
-        if (responseData['role'] == 'SECURITY') {
+        // ✅ ตรวจสอบสิทธิ์ว่าได้รับ Role ที่เกี่ยวข้องกับ รปภ. (SECURITY / GUARD) เพื่อความครอบคลุม
+        if (responseData['role'] == 'SECURITY' ||
+            responseData['role'] == 'GUARD') {
           // 🟢 1. บันทึก JWT Token ลง Storage เพื่อให้หน้าถัดไปนำไปใช้เรียก API ต่อได้
-          final prefs = await SharedPreferences.getInstance();
-
-          // ดึง Token จาก Response (ตรวจสอบ Key ของ Token กับฝั่ง Backend ให้ดี เช่น 'token' หรือ 'accessToken')
           final token = responseData['token'] ?? responseData['accessToken'];
           if (token != null) {
+            await AuthService.instance.saveToken(token);
+            await AuthService.instance.saveRole(responseData['role']);
+            await AuthService.instance.saveMode(
+              'SECURITY_MODE',
+            ); // 🟢 บันทึก Mode เพื่อความสอดคล้องกับหน้าอื่นๆ
+
             await prefs.setString('jwt_token', token);
+            await prefs.setString(
+              'token',
+              token,
+            ); // 🟢 สำรองคีย์ให้ตรงกันกับหน้าอื่นๆ
             await prefs.setString('user_role', responseData['role']);
+            await prefs.setString(
+              'current_mode',
+              'SECURITY_MODE',
+            ); // 🟢 บันทึก Mode ลง prefs
             if (responseData['userId'] != null) {
               await prefs.setInt('user_id', responseData['userId']);
             }
@@ -119,7 +142,27 @@ class _Security_PinpageState extends State<Security_Pinpage> {
           _showErrorDialog();
         }
       } else {
-        // 🛑 รหัสผิด (เช่น 401)
+        // 🟢 3. ดักจับกรณีผู้ใช้ยังไม่มี PIN หรือโดนแอดมินบังคับ Reset
+        try {
+          final responseData = jsonDecode(response.body);
+          if (response.statusCode == 403 &&
+              (responseData['requireSetupPin'] == true ||
+                  responseData['requirePinSetup'] == true)) {
+            if (!mounted) return;
+            // พารปภ.ไปหน้าตั้งค่า PIN เหมือน User เลย
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const UserSetupPinScreen(),
+              ),
+            );
+            return;
+          }
+        } catch (_) {
+          // ข้ามไปทำ _showErrorDialog ถ้าไม่ใช่ JSON หรือไม่ใช่กรณีตั้งรหัสผ่าน
+        }
+
+        // 🛑 รหัสผิด (เช่น 401 หรืออื่นๆ)
         setState(() {
           isLoading = false;
         });

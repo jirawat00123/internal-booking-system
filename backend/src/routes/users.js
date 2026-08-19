@@ -62,7 +62,9 @@ const handleResetPin = async (req, res) => {
         pin: null,
         pinInitialized: false,
         pinResetRequired: true,
-        currentSessionId: null 
+        currentSessionId: null,
+        failedLoginAttempts: 0, // 🟢 เพิ่มการเคลียร์จำนวนครั้งที่เข้าสู่ระบบผิด
+        lockedUntil: null       // 🟢 เพิ่มการปลดล็อคบัญชี
       },
       include: { role: true, employee: true }
     });

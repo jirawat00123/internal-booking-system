@@ -22,24 +22,7 @@ class MobileFrameEditRoomContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.grey[900],
-      child: Center(
-        child: Container(
-          width: 400,
-          height: 800,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: const [
-              BoxShadow(color: Colors.black54, blurRadius: 20, spreadRadius: 5),
-            ],
-          ),
-          child: AdminEditRoomScreen(room: room, index: index),
-        ),
-      ),
-    );
+    return AdminEditRoomScreen(room: room, index: index);
   }
 }
 

@@ -8,6 +8,7 @@ import 'AdminGroupPage.dart';
 import 'Booking_room/Room_model.dart';
 import 'package:flutter/foundation.dart'; // สำหรับ kIsWeb
 import 'dart:io' show Platform; // สำหรับ Platform.isAndroid
+import '../auth_service.dart'; // 🟢 เพิ่มการนำเข้า AuthService เพื่อดึงรหัสพนักงานและ BaseURL
 
 class Admin_pinPage extends StatefulWidget {
   const Admin_pinPage({super.key});
@@ -60,17 +61,20 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
     });
 
     try {
-      // 🟢 1. เลือก Base URL ให้ถูกต้องตาม Platform โดยอัตโนมัติ
-      const String baseUrl = 'http://192.168.88.25:3001/api';
-      final url = Uri.parse('$baseUrl/login-pin');
+      // 🟢 1. เลือก Base URL จาก AuthService
+      final url = Uri.parse('${AuthService.baseUrl}/api/login-pin');
 
-      debugPrint('📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน ($url)...');
-
-      // 🟢 2. อ่าน SharedPreferences และ Token
+      // 🟢 2. อ่าน SharedPreferences, Token และ EmployeeCode จาก AuthService
       final prefs = await SharedPreferences.getInstance();
       final String? existingToken = prefs.getString('token');
       final String? employeeCode =
-          prefs.getString('employeeCode') ?? prefs.getString('employee_code');
+          await AuthService.instance.getEmployeeCode() ??
+          prefs.getString('employeeCode') ??
+          prefs.getString('employee_code');
+
+      debugPrint(
+        '📱 [Flutter] กำลังส่งรหัส $pin (รหัสพนักงาน: $employeeCode) ไปหาหลังบ้าน ($url)...',
+      );
 
       // 🟢 3. ตรวจสอบว่ามี Token ในเซสชันก่อนยิง API
 
@@ -82,7 +86,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
             body: jsonEncode({
               'employeeCode': employeeCode,
               'pin': pin,
-              'expectedRole': 'ADMIN',
+              'expectedRole': 'ADMIN', // 🟢 ระบุ expectedRole เข้มงวด
             }),
           )
           .timeout(const Duration(seconds: 5));

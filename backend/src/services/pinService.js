@@ -18,6 +18,7 @@ const applyPepper = (pin) => {
 
 // ฟังก์ชัน Hash PIN
 const hashPin = async (pin) => {
+  if (!pin) throw new Error('กรุณาระบุ PIN ที่ต้องการ Hash');
   const pepperedPin = applyPepper(pin);
   
   return await argon2.hash(pepperedPin, {
@@ -33,6 +34,11 @@ const verifyPin = async (hashedPin, plainPin) => {
   if (!hashedPin || !plainPin) return false;
 
   try {
+    // รองรับกรณีรหัส PIN ใน Database เป็นรหัสเก่าที่ยังไม่ได้ถูก Hash
+    if (typeof hashedPin !== 'string' || !hashedPin.startsWith('$argon2')) {
+      return String(hashedPin).trim() === String(plainPin).trim();
+    }
+
     const pepperedPin = applyPepper(String(plainPin).trim());
     return await argon2.verify(hashedPin, pepperedPin);
   } catch (error) {

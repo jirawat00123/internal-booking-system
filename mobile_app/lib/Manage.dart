@@ -317,7 +317,7 @@ class _ManagePageState extends State<ManagePage> {
                         ],
                       ),
                       const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 10.0),
+                        padding: EdgeInsets.symmetric(vertical: 12.0),
                         child: Divider(height: 1, color: Color(0xFFE2EFF2)),
                       ),
                       Row(

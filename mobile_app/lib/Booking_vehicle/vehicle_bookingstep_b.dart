@@ -245,6 +245,31 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _buildLabel('วันและเวลาที่ต้องการใช้งาน'),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Text(
+                          'เริ่ม: ${widget.startDate} เวลา ${widget.timeRange} น.\nคืนรถ: ${widget.endDate}',
+                          style: const TextStyle(
+                            fontFamily: 'Kanit',
+                            fontSize: 14,
+                            color: Color(0xFF4B5563),
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
                       _buildLabel('วัตถุประสงค์', isRequired: true),
                       const SizedBox(height: 8),
                       // 💡 เปลี่ยนจาก Dropdown เป็น TextFormField สำหรับพิมพ์ข้อความ

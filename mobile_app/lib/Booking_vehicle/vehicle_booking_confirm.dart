@@ -35,7 +35,7 @@ class VehicleBookingConfirmPage extends StatelessWidget {
   Widget build(BuildContext context) {
     String imagePath = vehicle.uploadUrl ?? '';
 
-    String displayTime = timeRange.split(' - ')[0];
+    String displayTime = timeRange;
     if (!displayTime.contains('น.')) {
       displayTime += ' น.';
     }

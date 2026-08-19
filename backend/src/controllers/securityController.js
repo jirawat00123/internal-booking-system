@@ -81,7 +81,7 @@ exports.getInUseVehicles = async (req, res, next) => {
 exports.checkOut = async (req, res, next) => {
   try {
     const { vehicleBookingId, checkoutMileage, checkoutFuelLevel } = req.body;
-    const guardId = req.user ? req.user.userId : null;
+    const guardId = (req.user?.userId || req.user?.id) ? parseInt(req.user.userId || req.user.id, 10) : null;
 
     if (!vehicleBookingId || checkoutMileage === undefined || checkoutFuelLevel === undefined) {
       return res.status(400).json({
@@ -110,19 +110,15 @@ exports.checkOut = async (req, res, next) => {
         throw new Error('BOOKING_NOT_FOUND');
       }
 
-      try {
-        await tx.vehicle.update({
-          where: {
-            id: booking.vehicleId,
-            status: 'RESERVED'
-          },
-          data: {
-            status: 'IN_USE'
-          }
-        });
-      } catch (err) {
+      const vehicle = await tx.vehicle.findUnique({ where: { id: booking.vehicleId } });
+      if (!vehicle || vehicle.status !== 'RESERVED') {
         throw new Error('VEHICLE_NOT_READY');
       }
+
+      await tx.vehicle.update({
+        where: { id: booking.vehicleId },
+        data: { status: 'IN_USE' }
+      });
 
       await tx.vehicleBooking.update({
         where: { id: bookingId },
@@ -160,7 +156,7 @@ exports.checkOut = async (req, res, next) => {
           module: "VEHICLE_SECURITY",
           entityId: bookingId,
           entityType: "VEHICLE_BOOKING",
-          userId: parseInt(guardId, 10),
+          userId: guardId,
           details: `Security Guard ID ${guardId} checked out vehicle for booking ID ${bookingId}`
         }
       }).catch(err => console.error("AuditLog Error [CHECK_OUT_VEHICLE]:", err.message));
@@ -188,7 +184,7 @@ exports.checkOut = async (req, res, next) => {
 exports.checkIn = async (req, res, next) => {
   try {
     const { vehicleBookingId, returnMileage, returnFuelLevel } = req.body;
-    const guardId = req.user ? req.user.userId : null;
+    const guardId = (req.user?.userId || req.user?.id) ? parseInt(req.user.userId || req.user.id, 10) : null;
 
     if (!vehicleBookingId || returnMileage === undefined || returnFuelLevel === undefined) {
       return res.status(400).json({
@@ -226,19 +222,15 @@ exports.checkIn = async (req, res, next) => {
         throw new Error('LOG_NOT_FOUND');
       }
 
-      try {
-        await tx.vehicle.update({
-          where: {
-            id: booking.vehicleId,
-            status: 'IN_USE'
-          },
-          data: {
-            status: 'AVAILABLE'
-          }
-        });
-      } catch (err) {
+      const vehicle = await tx.vehicle.findUnique({ where: { id: booking.vehicleId } });
+      if (!vehicle || vehicle.status !== 'IN_USE') {
         throw new Error('VEHICLE_NOT_IN_USE');
       }
+
+      await tx.vehicle.update({
+        where: { id: booking.vehicleId },
+        data: { status: 'AVAILABLE' }
+      });
 
       await tx.vehicleLog.update({
         where: { id: existingLog.id },
@@ -276,7 +268,7 @@ exports.checkIn = async (req, res, next) => {
           module: "VEHICLE_SECURITY",
           entityId: bookingId,
           entityType: "VEHICLE_BOOKING",
-          userId: parseInt(guardId, 10),
+          userId: guardId,
           details: `Security Guard ID ${guardId} checked in vehicle for booking ID ${bookingId}`
         }
       }).catch(err => console.error("AuditLog Error [CHECK_IN_VEHICLE]:", err.message));
