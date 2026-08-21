@@ -542,7 +542,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0D47A1),
+        backgroundColor: const Color(0xFF003E75),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),

@@ -22,6 +22,7 @@ class AdminDashboardView extends StatelessWidget {
   Widget build(BuildContext context) {
     return RefreshIndicator(
       onRefresh: () async => onRefresh(),
+      color: const Color(0xFF003E75),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16.0),
@@ -33,50 +34,72 @@ class AdminDashboardView extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'ภาพรวมระบบ (Admin)',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  'ภาพรวมระบบ',
+                  style: TextStyle(
+                    fontSize: 22, 
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF003E75),
+                    fontFamily: 'Kanit',
+                  ),
                 ),
                 Row(
                   children: [
-                    IconButton(
-                      icon: const Icon(
-                        Icons.calendar_month,
-                        color: Colors.deepPurple,
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurple.shade50,
+                        shape: BoxShape.circle,
                       ),
-                      tooltip: 'ดูปฏิทินการจอง',
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const CalendarPage(),
-                          ),
-                        );
-                      },
-                    ),
-                    if (data.permissions.canExportReport)
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.download, color: Colors.blue),
-                        tooltip: 'ส่งออกรายงาน',
-                        onSelected: (value) {
-                          final parts = value.split('_');
-                          onExport(parts[0], parts[1]);
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.calendar_month_rounded,
+                          color: Colors.deepPurple,
+                        ),
+                        tooltip: 'ดูปฏิทินการจอง',
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CalendarPage(),
+                            ),
+                          );
                         },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'room_json',
-                            child: Text('ส่งออกรายงานห้องพัก (JSON)'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'vehicle_json',
-                            child: Text('ส่งออกรายงานยานพาหนะ (JSON)'),
-                          ),
-                        ],
                       ),
+                    ),
+                    if (data.permissions.canExportReport) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          shape: BoxShape.circle,
+                        ),
+                        child: PopupMenuButton<String>(
+                          icon: const Icon(Icons.download_rounded, color: Colors.blue),
+                          tooltip: 'ส่งออกรายงาน',
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          onSelected: (value) {
+                            final parts = value.split('_');
+                            onExport(parts[0], parts[1]);
+                          },
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'room_json',
+                              child: Text('ส่งออกรายงานห้องพัก (JSON)', style: TextStyle(fontFamily: 'Kanit')),
+                            ),
+                            const PopupMenuItem(
+                              value: 'vehicle_json',
+                              child: Text('ส่งออกรายงานยานพาหนะ (JSON)', style: TextStyle(fontFamily: 'Kanit')),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ]
                   ],
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
 
             // Summary Metrics Cards Grid
             GridView.count(
@@ -90,30 +113,30 @@ class AdminDashboardView extends StatelessWidget {
                 DashboardCardWidget(
                   title: 'ห้องทั้งหมด',
                   value: '${data.totalRooms}',
-                  icon: Icons.meeting_room,
+                  icon: Icons.meeting_room_rounded,
                   color: Colors.blue,
                 ),
                 DashboardCardWidget(
-                  title: 'ยานพาหนะทั้งหมด',
+                  title: 'พาหนะทั้งหมด',
                   value: '${data.totalVehicles}',
-                  icon: Icons.directions_car,
+                  icon: Icons.directions_car_rounded,
                   color: Colors.indigo,
                 ),
                 DashboardCardWidget(
                   title: 'รายการจองวันนี้',
                   value: '${data.todayTotalBookings}',
-                  icon: Icons.today,
+                  icon: Icons.today_rounded,
                   color: Colors.orange,
                 ),
                 DashboardCardWidget(
                   title: 'ผู้ใช้งาน Active',
                   value: '${data.activeUsers}',
-                  icon: Icons.people,
+                  icon: Icons.people_rounded,
                   color: Colors.green,
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
 
             // Pie Charts Section
             DashboardPieChartWidget(

@@ -792,7 +792,7 @@ class _VehiclePageState extends State<VehiclePage> {
         child: Column(
           children: [
             SizedBox(
-              width: double.infinity,
+              width: 425,
               height: 48,
               child: ElevatedButton.icon(
                 onPressed: () {
@@ -816,7 +816,7 @@ class _VehiclePageState extends State<VehiclePage> {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4CB8C4),
+                  backgroundColor: const Color.fromARGB(255, 1, 148, 188),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),

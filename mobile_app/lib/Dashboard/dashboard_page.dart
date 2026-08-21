@@ -113,7 +113,7 @@ class _DashboardPageState extends State<DashboardPage> {
           await _storage.read(key: 'jwt') ??
           prefs.getString('token');
 
-      // กำหนด Base URL ตามสภาพแวดล้อม (Web ใช้ localhost, Emulator ใช้ localhost:3001.2.2)
+      // กำหนด Base URL ตามสภาพแวดล้อม (Web ใช้ localhost, Emulator ใช้ localhost:3001)
       final String baseUrl = kIsWeb
           ? 'http://localhost:3001'
           : 'http://localhost:3001';
@@ -150,13 +150,33 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF8F9FA), // 🟢 เปลี่ยนพื้นหลังเป็นสีเทาอ่อนให้ดูสะอาดตา
       appBar: AppBar(
-        title: const Text('แดชบอร์ดและรายงาน'),
+        backgroundColor: const Color(0xFF003E75), // 🟢 คุมโทนสีน้ำเงินเข้มแบบหน้าอื่นๆ
+        elevation: 0, // 🟢 เอาเงาใต้ AppBar ออกให้ดูแบนราบสไตล์โมเดิร์น
+        centerTitle: true, // 🟢 จัดข้อความให้อยู่ตรงกลาง
+        iconTheme: const IconThemeData(color: Colors.white), // 🟢 เปลี่ยนไอคอนย้อนกลับเป็นสีขาว
+        title: const Text(
+          'แดชบอร์ดและรายงาน',
+          style: TextStyle(
+            color: Colors.white, // 🟢 ตัวหนังสือสีขาว
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Kanit', // 🟢 ใส่ฟอนต์ Kanit 
+          ),
+        ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDashboardData,
-            tooltip: 'รีเฟรชข้อมูล',
+          Container(
+            margin: const EdgeInsets.only(right: 8.0),
+            child: IconButton(
+              icon: const Icon(
+                Icons.refresh_rounded, 
+                color: Colors.white,
+                size: 26,
+              ),
+              onPressed: _loadDashboardData,
+              tooltip: 'รีเฟรชข้อมูล',
+            ),
           ),
         ],
       ),
