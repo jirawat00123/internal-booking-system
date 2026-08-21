@@ -196,8 +196,8 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
   void _showQuickStatusDialog(BuildContext context, MeetingRoom room) {
     final Map<String, String> statusOptions = {
       'AVAILABLE': 'ว่างพร้อมใช้งาน (Available)',
-      'RESERVED': 'ถูกจองแล้ว (Reserved)',
-      'IN_USE': 'กำลังใช้งาน (In Use)',
+      'MAINTENANCE': 'ปิดปรับปรุง (Maintenance)',
+      'INACTIVE': 'ระงับการใช้งาน (Inactive)',
     };
 
     String selectedStatus = statusOptions.containsKey(room.status)
@@ -542,7 +542,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0D47A1),
+        backgroundColor: const Color(0xFF003E75),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -574,7 +574,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
               height: 48,
               child: ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color.fromARGB(255, 1, 148, 188),
+                  backgroundColor: const Color(0xFF4CB8C4),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12.0),
                   ),
@@ -634,35 +634,57 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
     );
   }
 
-  String displayStatus(String status) {
-    switch (status) {
+  String displayStatus(String availabilityStatus) {
+    switch (availabilityStatus) {
       case 'AVAILABLE':
         return 'ว่างพร้อมใช้งาน';
-      case 'RESERVED': // 💡 เปลี่ยนตาม Schema ใหม่
-        return 'จองแล้ว';
-      case 'IN_USE': // 💡 เปลี่ยนตาม Schema ใหม่
-        return 'กำลังใช้งาน';
+      case 'IN_USE':
+        return 'ไม่ว่าง';
+      case 'RESERVED':
+        return 'ถูกจองแล้ว';
+      case 'MAINTENANCE':
+        return 'ปิดปรับปรุง';
+      case 'INACTIVE':
+        return 'ระงับการใช้งาน';
       default:
-        return status;
+        return availabilityStatus;
     }
   }
 
   Widget _buildRoomCard(MeetingRoom room, int index) {
     Color statusColor;
-    if (room.status == 'AVAILABLE') {
+    String currentStatus = room.availabilityStatus ?? room.status;
+
+    if (currentStatus == 'AVAILABLE') {
       statusColor = const Color(0xFF2EC4B6);
-    } else if (room.status == 'RESERVED') {
+    } else if (currentStatus == 'IN_USE') {
+      statusColor = const Color(
+        0xFF004381,
+      ); // 🟢 เปลี่ยนจากสีแดง (0xFFE11D48) เป็นสีน้ำเงิน
+    } else if (currentStatus == 'RESERVED') {
       statusColor = const Color(0xFFF59E0B);
-    } else {
+    } else if (currentStatus == 'MAINTENANCE') {
+      statusColor = const Color(0xFFF59E0B);
+    } else if (currentStatus == 'INACTIVE') {
       statusColor = const Color(0xFFE11D48);
+    } else {
+      statusColor = Colors.black54;
     }
 
+    final List<String> tags =
+        room.description != null && room.description!.trim().isNotEmpty
+        ? room.description!
+              .split(RegExp(r'[\n,]+'))
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList()
+        : [];
+
     return Container(
-      // 🟢 ตั้งค่าขอบด้านข้าง (Margin) ให้ตรงกับรูปเป๊ะๆ (ซ้าย-ขวา 16, บน-ล่าง 12)
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16), // ปรับขอบให้มนเท่ารูปต้นแบบ
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200, width: 1),
         boxShadow: [
           BoxShadow(
@@ -673,10 +695,8 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
         ],
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.stretch, // ขยายให้เต็มความกว้างการ์ด
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 📸 1. ส่วนรูปภาพและป้ายสถานะ (จัดแบบ Flat ไม่ซ้อนทับเนื้อหาด้านล่าง)
           Stack(
             children: [
               ClipRRect(
@@ -688,35 +708,33 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                         room.imagePath!.startsWith('http')
                             ? room.imagePath!
                             : '${kIsWeb ? "http://192.168.88.25:3001" : "http://192.168.88.25:3001"}${room.imagePath}',
-                        height: 180, // ความสูงรูปภาพตามต้นแบบ
+                        height: 130,
                         width: double.infinity,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
                           return Container(
-                            height: 180,
+                            height: 130,
                             width: double.infinity,
                             color: Colors.grey[200],
                             child: const Icon(
                               Icons.broken_image,
-                              size: 50,
+                              size: 40,
                               color: Colors.grey,
                             ),
                           );
                         },
                       )
                     : Container(
-                        height: 180,
+                        height: 130,
                         width: double.infinity,
                         color: Colors.grey[200],
                         child: const Icon(
                           Icons.image,
-                          size: 50,
+                          size: 40,
                           color: Colors.grey,
                         ),
                       ),
               ),
-
-              // ป้ายสถานะ มุมขวาบน
               Positioned(
                 top: 12,
                 right: 12,
@@ -735,7 +753,7 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                       Icon(Icons.circle, color: statusColor, size: 10),
                       const SizedBox(width: 4),
                       Text(
-                        displayStatus(room.status),
+                        displayStatus(currentStatus),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
@@ -749,8 +767,6 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
               ),
             ],
           ),
-
-          // 📝 2. ส่วนเนื้อหา (จัดให้อยู่ตรงกลางตามรูปต้นแบบ)
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -758,47 +774,48 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
                 Text(
                   room.roomName,
                   style: const TextStyle(
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF1E293B),
                     fontFamily: 'Kanit',
                   ),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 12),
-
-                // ไอคอนสถานที่ และ จำนวนคน
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.center,
                   children: [
-                    _buildIconDetail(Icons.location_on_outlined, room.location),
-                    const SizedBox(width: 16),
+                    if (room.location.isNotEmpty)
+                      _buildIconDetail(
+                        Icons.location_on_outlined,
+                        room.location,
+                      ),
+                    if (room.floor != null && room.floor!.trim().isNotEmpty)
+                      _buildIconDetail(
+                        Icons.layers_outlined,
+                        'ชั้น ${room.floor}',
+                      ),
                     _buildIconDetail(
                       Icons.people_outline,
                       'รองรับสูงสุด ${room.capacity} ท่าน',
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-
-                // ป้าย Tag เรียงตรงกลาง (ใช้ Wrap เผื่อป้ายยาวจะได้ไม่ล้นจอ)
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 8, // ระยะห่างแนวนอน
-                  runSpacing: 8, // ระยะห่างแนวตั้ง (กรณีขึ้นบรรทัดใหม่)
-                  children: [
-                    _buildTag('โปรเจคเตอร์'),
-                    _buildTag('สมาร์ททีวี'),
-                    _buildTag('กระดานไวท์บอร์ด'),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // 🟢 ส่วนล่างสุด: ปุ่มเปลี่ยนสถานะ, แก้ไข และ ลบห้อง
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: tags.map((tag) => _buildTag(tag)).toList(),
+                  ),
+                ],
+                const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // ปุ่มเปลี่ยนสถานะด่วน
                     OutlinedButton(
                       onPressed: () => _showQuickStatusDialog(context, room),
                       style: OutlinedButton.styleFrom(

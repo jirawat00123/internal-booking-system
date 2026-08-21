@@ -8,6 +8,7 @@ import 'package:shimmer/shimmer.dart';
 
 import 'Room_model.dart';
 import 'Room_booking.dart';
+import '../Calendar/calendar_page.dart';
 
 class RoomListScreen extends StatefulWidget {
   final bool isGuest;
@@ -127,7 +128,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF004381),
+        backgroundColor: const Color(0xFF003E75),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -143,6 +144,17 @@ class _RoomListScreenState extends State<RoomListScreen> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CalendarPage()),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -150,7 +162,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
           Container(
             width: double.infinity,
-            color: const Color(0xFF004381),
+            color: const Color(0xFF003E75),
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: const Text(
               'เลือกห้องที่ต้องการ',
@@ -346,39 +358,56 @@ class _RoomListScreenState extends State<RoomListScreen> {
   }
 
   Widget _buildRoomCard(MeetingRoom room) {
-    String rawStatus = (room.status ?? '').toString().toUpperCase().replaceAll(
+    String rawStatus = room.availabilityStatus.toUpperCase().replaceAll(
       ' ',
       '_',
     );
 
     bool isAvailable = rawStatus == 'AVAILABLE' || rawStatus == 'ว่าง';
-    bool isReserved = rawStatus == 'RESERVED' || rawStatus == 'PENDING';
-    bool isInUse = rawStatus == 'IN_USE' || rawStatus == 'กำลังใช้งาน';
+    bool isInUse =
+        rawStatus == 'IN_USE' ||
+        rawStatus == 'INUSE' ||
+        rawStatus == 'กำลังใช้งาน';
+    bool isReserved =
+        rawStatus == 'RESERVED' ||
+        rawStatus == 'ถูกจอง' ||
+        rawStatus == 'มีคิวจอง';
+    bool isMaintenance =
+        rawStatus == 'MAINTENANCE' || rawStatus == 'ปิดปรับปรุง';
+    bool isInactive = rawStatus == 'INACTIVE' || rawStatus == 'ระงับการใช้งาน';
 
     String displayStatus;
     Color statusColor;
 
-    if (isAvailable) {
-      displayStatus = 'Available';
-      statusColor = const Color(0xFF2EC4B6);
+    if (isInUse) {
+      displayStatus = 'In Use';
+      statusColor = const Color(
+        0xFF004381,
+      ); // 🟢 เปลี่ยนจากสีแดง (0xFFE11D48) เป็นสีน้ำเงิน
     } else if (isReserved) {
       displayStatus = 'Reserved';
+      statusColor = const Color(0xFFF59E0B);
+    } else if (isAvailable) {
+      displayStatus = 'Available';
+      statusColor = const Color(0xFF2EC4B6);
+    } else if (isMaintenance) {
+      displayStatus = 'Maintenance';
       statusColor = Colors.orange;
-    } else if (isInUse) {
-      displayStatus = 'In Use';
+    } else if (isInactive) {
+      displayStatus = 'Inactive';
       statusColor = const Color(0xFFE11D48);
     } else {
-      displayStatus = 'In Use';
-      statusColor = const Color(0xFFE11D48);
+      displayStatus = rawStatus.isNotEmpty ? rawStatus : 'UNKNOWN';
+      statusColor = Colors.grey;
     }
 
     Widget _buildImage(String? imagePath) {
       if (imagePath == null || imagePath.trim().isEmpty) {
         return Container(
-          height: 180,
+          height: 130,
           width: double.infinity,
           color: Colors.grey[300],
-          child: const Icon(Icons.image, size: 50, color: Colors.grey),
+          child: const Icon(Icons.image, size: 40, color: Colors.grey),
         );
       }
 
@@ -391,7 +420,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
       return Image.network(
         imageUrl,
-        height: 180,
+        height: 130,
         width: double.infinity,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
@@ -399,37 +428,46 @@ class _RoomListScreenState extends State<RoomListScreen> {
           debugPrint('❌ Image error: $error');
 
           return Container(
-            height: 180,
+            height: 130,
             width: double.infinity,
             color: Colors.grey[300],
-            child: const Icon(Icons.broken_image, size: 50, color: Colors.grey),
+            child: const Icon(Icons.broken_image, size: 40, color: Colors.grey),
           );
         },
       );
     }
 
+    final List<String> tags =
+        room.description != null && room.description!.trim().isNotEmpty
+        ? room.description!
+              .split(RegExp(r'[\n,]+'))
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList()
+        : [];
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 24),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey.shade200, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Stack(
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
+                  top: Radius.circular(16),
                 ),
                 child: Hero(
                   tag: 'room_img_${room.id}',
@@ -451,12 +489,12 @@ class _RoomListScreenState extends State<RoomListScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.circle, color: statusColor, size: 8),
-                      const SizedBox(width: 6),
+                      Icon(Icons.circle, color: statusColor, size: 10),
+                      const SizedBox(width: 4),
                       Text(
                         displayStatus,
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: statusColor,
                           fontFamily: 'Kanit',
@@ -469,7 +507,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
             ],
           ),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -481,42 +519,45 @@ class _RoomListScreenState extends State<RoomListScreen> {
                     color: Color(0xFF1E293B),
                     fontFamily: 'Kanit',
                   ),
+                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 12),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    if (room.location.isNotEmpty)
                       _buildIconDetail(
                         Icons.location_on_outlined,
                         room.location,
                       ),
-                      const SizedBox(height: 6),
+                    if (room.floor != null && room.floor!.trim().isNotEmpty)
                       _buildIconDetail(
-                        Icons.people_outline,
-                        'รองรับสูงสุด ${room.capacity} ท่าน',
+                        Icons.layers_outlined,
+                        'ชั้น ${room.floor}',
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    _buildTag('โปรเจคเตอร์'),
-                    _buildTag('สมาร์ททีวี'),
-                    _buildTag('กระดานไวท์บอร์ด'),
+                    _buildIconDetail(
+                      Icons.people_outline,
+                      'รองรับสูงสุด ${room.capacity} ท่าน',
+                    ),
                   ],
                 ),
+                if (tags.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: tags.map((tag) => _buildTag(tag)).toList(),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
                   height: 46,
                   child: ElevatedButton(
-                    // 🟢 ปลดล็อกปุ่ม ไม่เช็ก isAvailable แล้ว ให้ทุกคนกดเข้าไปจองล่วงหน้าได้เสมอ
-                    onPressed: widget.isGuest
+                    onPressed: (widget.isGuest || isMaintenance || isInactive)
                         ? null
                         : () async {
                             final result = await Navigator.push(
@@ -534,19 +575,23 @@ class _RoomListScreenState extends State<RoomListScreen> {
                             }
                           },
                     style: ElevatedButton.styleFrom(
-                      // 🟢 สีปุ่มเป็นสีฟ้าเสมอ ไม่ต้องเป็นสีเทาแล้ว
                       backgroundColor: const Color(0xFF00A8CC),
+                      disabledBackgroundColor: Colors.grey.shade300,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      'เลือกห้องนี้', // 🟢 ข้อความปุ่มเป็น "เลือกห้องนี้" เสมอ
+                    child: Text(
+                      (isMaintenance || isInactive)
+                          ? 'งดให้บริการ'
+                          : 'เลือกห้องนี้',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: (isMaintenance || isInactive)
+                            ? Colors.grey.shade600
+                            : Colors.white,
                         fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontSize: 15,
                         fontFamily: 'Kanit',
                       ),
                     ),
@@ -562,16 +607,19 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   Widget _buildIconDetail(IconData icon, String text) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF004381)),
-        const SizedBox(width: 8),
-        Text(
-          text,
-          style: const TextStyle(
-            fontSize: 13,
-            color: Colors.blueGrey,
-            fontFamily: 'Kanit',
+        Icon(icon, size: 16, color: Colors.blueGrey),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            text,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.blueGrey,
+              fontFamily: 'Kanit',
+            ),
           ),
         ),
       ],
@@ -580,16 +628,15 @@ class _RoomListScreenState extends State<RoomListScreen> {
 
   Widget _buildTag(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: Colors.grey.shade300),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         text,
         style: const TextStyle(
-          fontSize: 11,
+          fontSize: 10,
           color: Colors.grey,
           fontFamily: 'Kanit',
         ),

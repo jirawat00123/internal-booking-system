@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 // =========================================================================
 exports.getRoomCalendar = async (req, res, next) => {
   try {
-    const { startDate, endDate, roomId, departmentId, status } = req.query;
+    const { startDate, endDate, roomId, departmentId, status, location } = req.query;
 
     // ต้องระบุช่วงเวลาเสมอ เพื่อไม่ให้ดึงข้อมูลทั้ง Database (Performance Optimization)
     if (!startDate || !endDate) {
@@ -16,15 +16,31 @@ exports.getRoomCalendar = async (req, res, next) => {
       });
     }
 
-    // สร้างเงื่อนไขการค้นหา (Filter)
+    const now = new Date();
+
+    // สร้างเงื่อนไขการค้นหา (Filter) - กรองเอาเฉพาะรายการที่ยังไม่หมดเวลา (endDatetime > now)
     let whereClause = {
-      // ดึงการจองที่คาบเกี่ยวอยู่ในช่วงเวลาที่ขอดู (Day/Week/Month)
       startDatetime: { lte: new Date(endDate) },
-      endDatetime: { gte: new Date(startDate) }
+      endDatetime: { 
+        gte: new Date(startDate),
+        gt: now
+      }
     };
 
     if (roomId) whereClause.roomId = parseInt(roomId);
-    if (status) whereClause.status = status;
+    
+    // Filter ตามฝั่ง (Location)
+    if (location) {
+      whereClause.room = {
+        location: location
+      };
+    }
+    
+    if (status) {
+      whereClause.status = status;
+    } else {
+      whereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
+    }
     
     // Filter ตามแผนก (Department)
     if (departmentId) {
@@ -74,14 +90,24 @@ exports.getVehicleCalendar = async (req, res, next) => {
       });
     }
 
+    const now = new Date();
+
+    // กรองเอาเฉพาะรายการที่ยังไม่หมดเวลา (endDatetime > now)
     let whereClause = {
       startDatetime: { lte: new Date(endDate) },
-      endDatetime: { gte: new Date(startDate) }
+      endDatetime: { 
+        gte: new Date(startDate),
+        gt: now
+      }
     };
 
     if (vehicleId) whereClause.vehicleId = parseInt(vehicleId);
-    if (status) whereClause.status = status;
     
+    if (status) {
+      whereClause.status = status;
+    } else {
+      whereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
+    }
     if (departmentId) {
       whereClause.user = {
         employee: {
@@ -129,23 +155,32 @@ exports.getUnifiedCalendar = async (req, res, next) => {
       });
     }
 
+    const now = new Date();
+
+    // กรองเอาเฉพาะรายการที่ยังไม่หมดเวลา (endDatetime > now)
     let roomWhereClause = {
       startDatetime: { lte: new Date(endDate) },
-      endDatetime: { gte: new Date(startDate) }
+      endDatetime: { 
+        gte: new Date(startDate),
+        gt: now
+      }
     };
 
     let vehicleWhereClause = {
       startDatetime: { lte: new Date(endDate) },
-      endDatetime: { gte: new Date(startDate) }
+      endDatetime: { 
+        gte: new Date(startDate),
+        gt: now
+      }
     };
 
-    // ให้แสดงเฉพาะรายการที่สถานะ APPROVED เป็นหลักเพื่อแสดงบนปฏิทิน (เว้นแต่จะระบุ status อื่นมา)
+    // ไม่แสดงรายการที่ถูกยกเลิกหรือถูกปฏิเสธเพื่อแสดงบนปฏิทิน (เว้นแต่จะระบุ status อื่นมา)
     if (status) {
       roomWhereClause.status = status;
       vehicleWhereClause.status = status;
     } else {
-      roomWhereClause.status = 'APPROVED';
-      vehicleWhereClause.status = 'APPROVED';
+      roomWhereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
+      vehicleWhereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
     }
 
     // 1. ดึงข้อมูลการจองห้อง

@@ -39,6 +39,8 @@ class AdminEditRoomScreen extends StatefulWidget {
 
 class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
   late TextEditingController roomNameController;
+  late TextEditingController
+  _descriptionController; // 🟢 เพิ่ม Controller สำหรับรับค่ารายละเอียดห้อง
   late int floorNumber;
   late String selectedSide;
   late int capacity;
@@ -52,22 +54,26 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
   void initState() {
     super.initState();
     roomNameController = TextEditingController(text: widget.room.roomName);
+    _descriptionController = TextEditingController(
+      text: widget.room.description ?? '',
+    ); // 🟢 ดึงข้อมูล Description เดิมมาแสดงถ้ามี
 
-    // 🟢 ป้องกัน RangeError โดยการเช็กความยาวของ List ก่อนดึงข้อมูล
+    // 🟢 ดึงค่าชั้นจากตัวแปร floor โดยตรง และดึงฝั่งจาก location ให้สอดคล้องกับหน้า Add Room
+    floorNumber = int.tryParse(widget.room.floor ?? '1') ?? 1;
     List<String> locationParts = widget.room.location.split(' ');
-    floorNumber = (locationParts.length > 1)
-        ? (int.tryParse(locationParts[1]) ?? 1)
-        : 1;
-    selectedSide = locationParts.isNotEmpty ? locationParts.last : 'A';
+    selectedSide = locationParts.isNotEmpty ? locationParts.last : 'สำนักงาน';
 
     capacity = widget.room.capacity;
-    // 🟢 กำหนดค่าสถานะเริ่มต้นให้รองรับ 3 สถานะ (AVAILABLE, RESERVED, IN_USE)
-    if (widget.room.status == 'AVAILABLE') {
-      selectedStatus = 'AVAILABLE';
-    } else if (widget.room.status == 'RESERVED') {
-      selectedStatus = 'RESERVED';
+    // 🟢 กำหนดค่าสถานะเริ่มต้นให้รองรับ 3 สถานะใหม่ (AVAILABLE, MAINTENANCE, INACTIVE)
+    String rawStatus =
+        (widget.room.availabilityStatus ?? widget.room.status ?? 'AVAILABLE')
+            .toUpperCase();
+    if (rawStatus == 'MAINTENANCE' || rawStatus == 'ปิดปรับปรุง') {
+      selectedStatus = 'MAINTENANCE';
+    } else if (rawStatus == 'INACTIVE' || rawStatus == 'ระงับการใช้งาน') {
+      selectedStatus = 'INACTIVE';
     } else {
-      selectedStatus = 'IN_USE';
+      selectedStatus = 'AVAILABLE';
     }
   }
 
@@ -180,17 +186,25 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                           uri,
                                         );
 
-                                        request.headers['Authorization'] =
-                                            'Bearer $token';
+                                        request.headers.addAll({
+                                          'Accept': 'application/json',
+                                          'Authorization': 'Bearer $token',
+                                        });
 
                                         request.fields['roomName'] =
                                             roomNameController.text;
                                         request.fields['location'] =
-                                            'Floor $floorNumber - Side $selectedSide';
+                                            'ฝั่ง $selectedSide';
                                         request.fields['capacity'] = capacity
                                             .toString();
                                         request.fields['status'] =
                                             selectedStatus;
+
+                                        // 🟢 เพิ่มส่งข้อมูล Description และ Floor ไปยัง Backend ตอนแก้ไข
+                                        request.fields['description'] =
+                                            _descriptionController.text;
+                                        request.fields['floor'] = floorNumber
+                                            .toString();
 
                                         if (_imageFile != null) {
                                           final imageBytes = await _imageFile!
@@ -256,11 +270,17 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                             updatedList[targetIndex] = MeetingRoom(
                                               id: widget.room.id,
                                               roomName: roomNameController.text,
-                                              location:
-                                                  'Floor $floorNumber - Side $selectedSide',
+                                              location: 'ฝั่ง $selectedSide',
                                               capacity: capacity,
                                               imagePath: newImageUrl,
                                               status: selectedStatus,
+                                              availabilityStatus:
+                                                  selectedStatus,
+                                              // 🟢 อัปเดตข้อมูลฟิลด์ใหม่กลับเข้าไปใน Model หน้า UI
+                                              description:
+                                                  _descriptionController.text,
+                                              floor: floorNumber.toString(),
+                                              roomCode: widget.room.roomCode,
                                             );
                                             globalMeetingRooms.value =
                                                 updatedList; // อัปเดตข้อมูลให้หน้า List
@@ -418,7 +438,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0D47A1),
+        backgroundColor: const Color(0xFF003E75),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -681,6 +701,51 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
           ),
           const SizedBox(height: 14),
           _buildCapacityStepper(),
+
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 25),
+            child: Divider(color: Color(0xFFE8EFF2)),
+          ),
+
+          // 🟢 เพิ่ม UI ช่องกรอกแก้ไขรายละเอียดห้อง
+          const Text(
+            'รายละเอียดห้อง (Description)',
+            style: TextStyle(
+              color: Color(0xFF9BB1BD),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Kanit',
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _descriptionController,
+            maxLines: 3,
+            decoration: InputDecoration(
+              hintText: 'กรอกรายละเอียดเพิ่มเติม เช่น มีโปรเจคเตอร์...',
+              hintStyle: const TextStyle(
+                color: Colors.black26,
+                fontFamily: 'Kanit',
+                fontSize: 14,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: const BorderSide(color: Color(0xFF0D47A1)),
+              ),
+            ),
+            style: const TextStyle(
+              fontFamily: 'Kanit',
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -719,7 +784,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(
-        children: ['A', 'B']
+        children: ['สำนักงาน', 'โรงงาน']
             .map(
               (s) => Expanded(
                 child: GestureDetector(
@@ -755,10 +820,10 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
   Widget _buildStatusToggle() {
     final statuses = [
       {'label': 'ว่าง', 'value': 'AVAILABLE', 'color': const Color(0xFF2EC4B6)},
-      {'label': 'จองแล้ว', 'value': 'RESERVED', 'color': Colors.orange},
+      {'label': 'ปิดปรับปรุง', 'value': 'MAINTENANCE', 'color': Colors.orange},
       {
-        'label': 'กำลังใช้งาน',
-        'value': 'IN_USE',
+        'label': 'ระงับการใช้งาน',
+        'value': 'INACTIVE',
         'color': const Color(0xFFE11D48),
       },
     ];

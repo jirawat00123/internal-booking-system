@@ -29,6 +29,10 @@ class MeetingRoom {
   final int capacity;
   final String? imagePath;
   final String status;
+  final String availabilityStatus;
+  final String? description;
+  final String? floor;
+  final String? roomCode;
 
   MeetingRoom({
     required this.id,
@@ -37,7 +41,11 @@ class MeetingRoom {
     required this.capacity,
     this.imagePath,
     this.status = 'AVAILABLE',
-  });
+    String? availabilityStatus,
+    this.description,
+    this.floor,
+    this.roomCode,
+  }) : availabilityStatus = availabilityStatus ?? status;
 
   MeetingRoom copyWith({
     String? id,
@@ -46,6 +54,10 @@ class MeetingRoom {
     int? capacity,
     String? imagePath,
     String? status,
+    String? availabilityStatus,
+    String? description,
+    String? floor,
+    String? roomCode,
   }) {
     return MeetingRoom(
       id: id ?? this.id,
@@ -54,6 +66,10 @@ class MeetingRoom {
       capacity: capacity ?? this.capacity,
       imagePath: imagePath ?? this.imagePath,
       status: status ?? this.status,
+      availabilityStatus: availabilityStatus ?? this.availabilityStatus,
+      description: description ?? this.description,
+      floor: floor ?? this.floor,
+      roomCode: roomCode ?? this.roomCode,
     );
   }
 
@@ -63,6 +79,8 @@ class MeetingRoom {
         json['upload_url'] ??
         json['imagePath'] ??
         json['image_path'];
+
+    final roomStatus = json['status'] ?? 'AVAILABLE';
 
     return MeetingRoom(
       id: json['id'].toString(),
@@ -74,7 +92,11 @@ class MeetingRoom {
       imagePath: rawImagePath is String && rawImagePath.trim().isNotEmpty
           ? rawImagePath.trim()
           : null,
-      status: json['status'] ?? 'AVAILABLE',
+      status: roomStatus,
+      availabilityStatus: json['availabilityStatus'] ?? roomStatus,
+      description: json['description'],
+      floor: json['floor']?.toString(),
+      roomCode: json['roomCode'] ?? json['room_code'],
     );
   }
 
@@ -86,6 +108,10 @@ class MeetingRoom {
       'capacity': capacity,
       'upload_url': imagePath,
       'status': status,
+      'availabilityStatus': availabilityStatus,
+      'description': description,
+      'floor': floor,
+      'room_code': roomCode,
     };
   }
 }
@@ -115,7 +141,7 @@ class BookingHistory {
     required this.participantCount,
     required this.type,
     required this.bookedBy,
-    this.rawStatus = 'RESERVED',
+    this.rawStatus = 'PENDING',
     this.room,
     BookingPermissions? permissions,
   }) : permissions = permissions ?? BookingPermissions();
@@ -146,7 +172,7 @@ class BookingHistory {
       participantCount: json['participantCount'] ?? 0,
       type: 'ห้องประชุม',
       bookedBy: userName,
-      rawStatus: json['status'] ?? 'RESERVED',
+      rawStatus: json['status'] ?? 'PENDING',
       room: json['room'] != null ? MeetingRoom.fromJson(json['room']) : null,
       permissions: BookingPermissions.fromJson(json['permissions']),
     );
@@ -167,20 +193,16 @@ class BookingHistory {
   // 🟢 แสดงข้อความสถานะภาษาไทยตามค่าจาก Backend
   String get currentStatus {
     switch (rawStatus) {
-      case 'RESERVED':
-        return 'จองแล้ว';
-      case 'IN_USE':
-        return 'กำลังใช้งาน';
-      case 'COMPLETED':
-        return 'เสร็จสิ้น';
-      case 'CANCELLED':
-        return 'ยกเลิกแล้ว';
-      case 'APPROVED':
-        return 'อนุมัติแล้ว';
       case 'PENDING':
         return 'รออนุมัติ';
+      case 'APPROVED':
+        return 'อนุมัติแล้ว';
       case 'REJECTED':
         return 'ปฏิเสธ';
+      case 'CANCELLED':
+        return 'ยกเลิกแล้ว';
+      case 'COMPLETED':
+        return 'เสร็จสิ้น';
       default:
         return rawStatus;
     }

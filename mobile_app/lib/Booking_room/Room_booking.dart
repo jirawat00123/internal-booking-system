@@ -60,10 +60,11 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   // 💡 ฟังก์ชันแปลง TimeOfDay เป็นนาทีทั้งหมด เพื่อให้ง่ายต่อการคำนวณเปรียบเทียบเลขคณิต
   int _timeToMinutes(TimeOfDay time) => time.hour * 60 + time.minute;
 
-  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อน
-  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อน (เวอร์ชันอัปเดตเพื่อคืนสิทธิ์เวลาที่เสร็จสิ้น/ยกเลิก)
-  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อนแบบ Real-time จาก Backend!
-  Future<bool> _checkTimeSlotAvailability() async {
+  // 💡 ฟังก์ชันตรวจสอบเวลาจองทับซ้อนแบบ Real-time จาก Backend (รองรับ HTTP 409 Strict Check)
+  Future<bool> _checkTimeSlotAvailability(
+    DateTime startDateTime,
+    DateTime endDateTime,
+  ) async {
     try {
       final String baseUrl = kIsWeb
           ? 'http://192.168.88.25:3001'
@@ -71,78 +72,33 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 
-      // [EVIDENCE_FLUTTER] 1. ตรวจสอบค่า Token ดิบที่อ่านขึ้นมาจาก SharedPreferences ในหน่วยความจำ
+      // [EVIDENCE_FLUTTER] ตรวจสอบค่า Token ดิบ
       debugPrint(
-        '[EVIDENCE_FLUTTER] Token value from SharedPreferences: "$token" (Length: ${token.length})',
+        '[EVIDENCE_FLUTTER] Token value from SharedPreferences: "$token"',
       );
 
-      // [EVIDENCE_FLUTTER] 2. ตรวจสอบโครงสร้างข้อความสตริงเต็มที่จะถูกใส่ในช่อง Authorization Header
-      debugPrint(
-        '[EVIDENCE_FLUTTER] Full Generated Authorization Header: "Bearer $token"',
-      );
-
-      // ยิงไปที่ API ใหม่ที่เราเพิ่งสร้าง เพื่อดึงคิวของห้องนี้โดยเฉพาะ
+      // ยิงไปที่ API Validation เพื่อทำ Strict Check ตรวจสอบการชนกันของเวลา
       final response = await http
-          .get(
-            Uri.parse('$baseUrl/api/rooms/${widget.room.id}/schedule'),
-            headers: {'Authorization': 'Bearer $token'},
+          .post(
+            Uri.parse('$baseUrl/api/bookings/validate'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'roomId': widget.room.id,
+              'startDatetime': startDateTime.toIso8601String(),
+              'endDatetime': endDateTime.toIso8601String(),
+            }),
           )
           .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final List<dynamic> schedules = jsonDecode(response.body);
-
-        final int newStart = _timeToMinutes(startTime);
-        final int newEnd = _timeToMinutes(endTime);
-
-        // 💡 [LOG 1] ดูว่ารับข้อมูลมาจาก Backend กี่คิว
-        print("==================================================");
-        print("🔍 กำลังเช็กคิวห้อง ID: ${widget.room.id}");
-        print(
-          "📅 คุณต้องการจอง: ${selectedDate.day}/${selectedDate.month}/${selectedDate.year} เวลา ${_formatTime(startTime)} - ${_formatTime(endTime)}",
-        );
-        print("📦 พบข้อมูลคิวจาก Backend ทั้งหมด: ${schedules.length} คิว");
-
-        for (var schedule in schedules) {
-          // ✅ ดึงจาก key startDatetime / endDatetime ให้ตรงกับ API
-          DateTime existingStartTime = DateTime.parse(
-            schedule['startDatetime'],
-          ).toLocal();
-          DateTime existingEndTime = DateTime.parse(
-            schedule['endDatetime'],
-          ).toLocal();
-
-          // 💡 [LOG 2] ปริ้นท์ข้อมูลที่ดึงมาเช็กทุกคิว
-          print(
-            "   -> คิวในระบบ: วันที่ ${existingStartTime.day}/${existingStartTime.month}/${existingStartTime.year} | เวลา ${_formatTime(TimeOfDay.fromDateTime(existingStartTime))} - ${_formatTime(TimeOfDay.fromDateTime(existingEndTime))}",
-          );
-
-          // เช็คเฉพาะคิวของ "วันเดียวกัน" ที่ผู้ใช้กำลังจะจอง
-          if (existingStartTime.year == selectedDate.year &&
-              existingStartTime.month == selectedDate.month &&
-              existingStartTime.day == selectedDate.day) {
-            final int existingStart = _timeToMinutes(
-              TimeOfDay.fromDateTime(existingStartTime),
-            );
-            final int existingEnd = _timeToMinutes(
-              TimeOfDay.fromDateTime(existingEndTime),
-            );
-
-            // สูตรคำนวณหาจุดคาบเกี่ยวของเวลา
-            if (newStart < existingEnd && newEnd > existingStart) {
-              // 💡 [LOG 3] ปริ้นท์บอกถ้าเกิดการชนกัน
-              print("❌ [สรุป] จองไม่ได้! เวลาชนกับคิวด้านบนนี้ครับ!");
-              print("==================================================");
-              return true; // ❌ เวลาทับซ้อนกัน! มีคนจองตัดหน้าไปแล้ว
-            }
-          }
-        }
-
-        // 💡 [LOG 4] ปริ้นท์บอกถ้าผ่านฉลุย
-        // 💡 [LOG 4] ปริ้นท์บอกถ้าผ่านฉลุย
-        print("✅ [สรุป] ห้องว่าง! สามารถผ่านไปหน้ายืนยันได้");
-        print("==================================================");
-        return false; // ✅ เวลาว่างพร้อมจองฉลุย
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print("✅ [สรุป] ห้องว่าง! (HTTP 200) สามารถผ่านไปหน้ายืนยันได้");
+        return false; // ✅ เวลาว่างพร้อมจอง
+      } else if (response.statusCode == 409) {
+        print("❌ [สรุป] จองไม่ได้! (HTTP 409 Conflict) เวลาชนกับคิวอื่นในระบบ");
+        return true; // ❌ เวลาทับซ้อนกัน!
       } else if (response.statusCode == 401) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.clear();
@@ -164,11 +120,13 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
         }
         throw Exception('401 Unauthorized');
       } else {
-        throw Exception('Failed to fetch schedule');
+        throw Exception(
+          'Failed to validate schedule (Code: ${response.statusCode})',
+        );
       }
     } catch (e) {
       print("🚨 เกิด Error ในการดึง API: $e");
-      rethrow; // โยน Error ไปให้ปุ่มกดยอมรับ
+      rethrow;
     }
   }
 
@@ -225,7 +183,7 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF004AAD),
+        backgroundColor: const Color(0xFF003E75),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -268,182 +226,92 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
                         elevation: 4,
                         shadowColor: Colors.black26,
                       ),
-                      // 💡 ล็อกปุ่มไว้ถ้า isLoading เป็น true เพื่อไม่ให้กดย้ำ
-                      onPressed: isLoading
-                          ? null
-                          : () async {
-                              FocusScope.of(context).unfocus();
+                      onPressed: () {
+                        FocusScope.of(context).unfocus();
 
-                              if (titleController.text.trim().isEmpty) {
-                                setState(() => showWarning = true);
-                                return;
-                              }
+                        if (titleController.text.trim().isEmpty) {
+                          setState(() => showWarning = true);
+                          return;
+                        }
 
-                              final now = DateTime.now();
-                              final startDateTime = DateTime(
-                                selectedDate.year,
-                                selectedDate.month,
-                                selectedDate.day,
-                                startTime.hour,
-                                startTime.minute,
-                              );
-                              final endDateTime = DateTime(
-                                selectedDate.year,
-                                selectedDate.month,
-                                selectedDate.day,
-                                endTime.hour,
-                                endTime.minute,
-                              );
+                        final now = DateTime.now();
+                        final startDateTime = DateTime(
+                          selectedDate.year,
+                          selectedDate.month,
+                          selectedDate.day,
+                          startTime.hour,
+                          startTime.minute,
+                        );
+                        final endDateTime = DateTime(
+                          selectedDate.year,
+                          selectedDate.month,
+                          selectedDate.day,
+                          endTime.hour,
+                          endTime.minute,
+                        );
 
-                              if (startDateTime.isBefore(
-                                now.subtract(const Duration(minutes: 10)),
-                              )) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'ไม่สามารถจองเวลาย้อนหลังได้',
-                                      style: TextStyle(fontFamily: 'Kanit'),
-                                    ),
-                                    backgroundColor: Colors.orange,
-                                  ),
-                                );
-                                return;
-                              }
-
-                              if (endDateTime.isBefore(startDateTime) ||
-                                  endDateTime.isAtSameMomentAs(startDateTime)) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'เวลาเริ่มจองต้องอยู่ก่อนเวลาสิ้นสุด',
-                                      style: TextStyle(fontFamily: 'Kanit'),
-                                    ),
-                                    backgroundColor: Color(0xFFB70000),
-                                  ),
-                                );
-                                return;
-                              }
-
-                              // 🟢 เริ่มต้นกระบวนการ Re-validation เช็ค API
-                              setState(() => isLoading = true);
-
-                              try {
-                                bool isOverlapping =
-                                    await _checkTimeSlotAvailability();
-
-                                if (!mounted) return;
-
-                                if (isOverlapping) {
-                                  setState(() => isLoading = false);
-                                  showDialog(
-                                    context: context,
-                                    builder: (context) => AlertDialog(
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      title: const Row(
-                                        children: [
-                                          Icon(
-                                            Icons.lock_clock,
-                                            color: Color(0xFFE11D48),
-                                          ),
-                                          SizedBox(width: 10),
-                                          Expanded(
-                                            // 💡 นำ Expanded มาครอบไว้เช่นกัน
-                                            child: Text(
-                                              'เวลานี้ถูกจองแล้ว',
-                                              style: TextStyle(
-                                                fontFamily: 'Kanit',
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      content: Text(
-                                        'ขออภัย ช่วงเวลา ${_formatTime(startTime)} - ${_formatTime(endTime)} ของวันที่ ${_formatDate(selectedDate)} มีผู้ใช้งานอื่นจองตัดหน้าไปเมื่อสักครู่ กรุณาเลือกช่วงเวลาอื่น',
-                                        style: const TextStyle(
-                                          fontFamily: 'Kanit',
-                                        ),
-                                      ),
-                                      actions: [
-                                        TextButton(
-                                          onPressed: () =>
-                                              Navigator.pop(context),
-                                          child: const Text(
-                                            'ตกลง',
-                                            style: TextStyle(
-                                              fontFamily: 'Kanit',
-                                              fontWeight: FontWeight.bold,
-                                              color: Color(0xFF004AAD),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                } else {
-                                  // ✅ ห้องว่างชัวร์! พาไปหน้า Confirm ได้
-                                  setState(() {
-                                    showWarning = false;
-                                    isLoading = false;
-                                  });
-
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => RoomConfirmScreen(
-                                        room: widget.room,
-                                        bookingTitle: titleController.text
-                                            .trim(),
-                                        formattedDate: _formatDate(
-                                          selectedDate,
-                                        ),
-                                        formattedTime:
-                                            '${_formatTime(startTime)} - ${_formatTime(endTime)}',
-                                        participantCount: participantCount,
-                                        startTime: startTime,
-                                        endTime: endTime,
-                                      ),
-                                    ),
-                                  ).then((value) {
-                                    if (!mounted) return;
-                                    if (value == true)
-                                      Navigator.pop(context, true);
-                                  });
-                                }
-                              } catch (e) {
-                                if (!mounted) return;
-                                setState(() => isLoading = false);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text(
-                                      'เกิดข้อผิดพลาดในการตรวจสอบสถานะห้อง กรุณาลองใหม่',
-                                      style: TextStyle(fontFamily: 'Kanit'),
-                                    ),
-                                  ),
-                                );
-                              }
-                            },
-                      // 💡 child มีแค่ตัวเดียวตรงนี้ครับ
-                      child: isLoading
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 3,
+                        if (startDateTime.isBefore(
+                          now.subtract(const Duration(minutes: 10)),
+                        )) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'ไม่สามารถจองเวลาย้อนหลังได้',
+                                style: TextStyle(fontFamily: 'Kanit'),
                               ),
-                            )
-                          : const Text(
-                              'ต่อไป',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'Kanit',
-                              ),
+                              backgroundColor: Colors.orange,
                             ),
+                          );
+                          return;
+                        }
+
+                        if (endDateTime.isBefore(startDateTime) ||
+                            endDateTime.isAtSameMomentAs(startDateTime)) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'เวลาเริ่มจองต้องอยู่ก่อนเวลาสิ้นสุด',
+                                style: TextStyle(fontFamily: 'Kanit'),
+                              ),
+                              backgroundColor: Color(0xFFB70000),
+                            ),
+                          );
+                          return;
+                        }
+
+                        // ✅ ตัด API Validate ออก พาไปหน้า Confirm ทันที
+                        setState(() {
+                          showWarning = false;
+                        });
+
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => RoomConfirmScreen(
+                              room: widget.room,
+                              bookingTitle: titleController.text.trim(),
+                              formattedDate: _formatDate(selectedDate),
+                              formattedTime:
+                                  '${_formatTime(startTime)} - ${_formatTime(endTime)}',
+                              participantCount: participantCount,
+                              startTime: startTime,
+                              endTime: endTime,
+                            ),
+                          ),
+                        ).then((value) {
+                          if (!mounted) return;
+                          if (value == true) Navigator.pop(context, true);
+                        });
+                      },
+                      child: const Text(
+                        'ต่อไป',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Kanit',
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -456,109 +324,88 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   }
 
   Widget _buildStepIndicator() {
-    return Container(
-      color: const Color(0xFF004AAD),
-      padding: const EdgeInsets.only(bottom: 20, top: 10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStepCircle(
-              '1',
-              'เลือกห้อง',
-              isActive: false,
-              isCompleted: true,
-            ),
-            _buildStepLine(isCompleted: true),
-            _buildStepCircle(
-              '2',
-              'กรอกข้อมูล',
-              isActive: true,
-              isCompleted: false,
-            ),
-            _buildStepLine(isCompleted: false),
-            _buildStepCircle(
-              '3',
-              'ยืนยัน',
-              isActive: false,
-              isCompleted: false,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStepCircle(
-    String step,
-    String label, {
-    required bool isActive,
-    required bool isCompleted,
-  }) {
-    Color circleColor = const Color(0xFFE2E8F0);
-    Color textColor = Colors.grey;
-    if (isActive) {
-      circleColor = const Color(0xFF00A8CC);
-      textColor = Colors.white;
-    } else if (isCompleted) {
-      circleColor = const Color(0xFF004AAD).withOpacity(0.1);
-      textColor = const Color(0xFF004AAD);
-    }
-
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: circleColor,
-            shape: BoxShape.circle,
-            border: isCompleted
-                ? Border.all(color: const Color(0xFF004AAD), width: 1.5)
-                : null,
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildStepItem(step: '1', title: 'เลือกห้อง', isActive: false),
+              _buildStepLine(),
+              _buildStepItem(step: '2', title: 'กรอกข้อมูล', isActive: true),
+              _buildStepLine(),
+              _buildStepItem(step: '3', title: 'ยืนยัน', isActive: false),
+            ],
           ),
-          alignment: Alignment.center,
-          child: Text(
-            step,
+        ),
+        Container(
+          width: double.infinity,
+          color: const Color(0xFF003E75),
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: const Text(
+            'กรอกข้อมูลการจอง',
+            textAlign: TextAlign.center,
             style: TextStyle(
-              color: textColor,
+              color: Colors.white,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               fontFamily: 'Kanit',
             ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: isActive || isCompleted
-                ? const Color(0xFF004AAD)
-                : Colors.grey,
-            fontFamily: 'Kanit',
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStepLine({required bool isCompleted}) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: isCompleted ? const Color(0xFF004AAD) : const Color(0xFFE2E8F0),
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-      ),
+  Widget _buildStepItem({
+    required String step,
+    required String title,
+    required bool isActive,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 70,
+          height: 36,
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF00A8CC) : const Color(0xFFE6EDF5),
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            step,
+            style: TextStyle(
+              color: isActive ? Colors.white : const Color(0xFFAAB6C7),
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Kanit',
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          title,
+          style: TextStyle(
+            color: isActive ? const Color(0xFF004381) : const Color(0xFF004381),
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Kanit',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepLine() {
+    return Container(
+      margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
+      width: 80,
+      height: 2,
+      color: const Color(0xFFAAB6C7),
     );
   }
 

@@ -40,14 +40,22 @@ class CalendarEvent {
     );
   }
 
-  // แปลงค่า HEX String (เช่น #42BCA4) เป็นออบเจกต์ Color ของ Flutter เพื่อใช้วาด UI
+  // กำหนดสีของการจองตาม Booking Status
   Color get color {
-    String hexStr = colorHex.replaceAll('#', '');
-    if (hexStr.length == 6) {
-      hexStr = 'FF$hexStr'; // ใส่ Opacity 100% (FF) เข้าไปด้านหน้า
+    switch (status.toUpperCase()) {
+      case 'RESERVED':
+      case 'PENDING':
+        return const Color(0xFFF59E0B); // สีเหลืองส้ม (#F59E0B)
+      case 'APPROVED':
+        return const Color(0xFF2EC4B6); // สีเขียวมิ้นต์
+      case 'IN_USE':
+        return const Color(0xFF004381); // สีน้ำเงินเข้ม
+      case 'COMPLETED':
+        return const Color(0xFF9E9E9E); // สีเทา
+      case 'EXPIRED':
+        return const Color(0xFFE11D48); // สีแดง
+      default:
+        return const Color(0xFF00A8CC); // สีตั้งต้น
     }
-    return Color(
-      int.tryParse(hexStr, radix: 16) ?? 0xFF000000,
-    ); // ถ้าแปลงผิดพลาดให้แสดงสีดำ
   }
 }

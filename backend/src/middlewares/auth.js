@@ -6,6 +6,11 @@ const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || 'your_default_secret_key';
 
 const authenticateToken = async (req, res, next) => {
+  // 🟢 ปล่อยผ่าน OPTIONS request สำหรับ CORS Preflight (แก้ปัญหา 401 ตอนส่ง PUT/DELETE/POST)
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   // ยกเว้นการตรวจ Token และ Session สำหรับ Route ที่ใช้ Login ทุกรูปแบบ
   // เปลี่ยนเป็น /login เพื่อให้ครอบคลุมทั้ง /login และ /login-pin
   if (req.originalUrl.includes('/login')) {

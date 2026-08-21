@@ -299,11 +299,6 @@ exports.cancelBooking = async (req, res, next) => {
         data: { status: BookingStatus.CANCELLED } 
       });
 
-      await tx.room.update({
-        where: { id: booking.roomId },
-        data: { status: 'AVAILABLE' },
-      });
-
       // 🟢 บันทึก AuditLog ภายใน Transaction
       await tx.auditLog.create({
         data: {
@@ -380,13 +375,6 @@ exports.updateBookingStatus = async (req, res, next) => {
         where: { id: bookingId },
         data: { status: validStatus }
       });
-
-      if (validStatus === BookingStatus.COMPLETED || validStatus === BookingStatus.CANCELLED) {
-        await tx.room.update({
-          where: { id: booking.roomId },
-          data: { status: 'AVAILABLE' }
-        });
-      }
 
       // 🟢 บันทึก AuditLog ภายใน Transaction
       const auditAction = validStatus === BookingStatus.APPROVED ? "APPROVE_ROOM_BOOKING" : 
@@ -480,16 +468,11 @@ exports.rejectBooking = async (req, res, next) => {
     const booking = await prisma.roomBooking.findUnique({ where: { id: bookingId } });
     if (!booking) return res.status(404).json({ success: false, error: "ไม่พบการจอง" });
 
-    // เปลี่ยนสถานะเป็น REJECTED, คืนห้องให้ AVAILABLE และบันทึก Log
+    // เปลี่ยนสถานะเป็น REJECTED และบันทึก Log
     const updatedBooking = await prisma.$transaction(async (tx) => {
       const updated = await tx.roomBooking.update({
         where: { id: bookingId },
         data: { status: BookingStatus.REJECTED }
-      });
-
-      await tx.room.update({
-        where: { id: booking.roomId },
-        data: { status: 'AVAILABLE' }
       });
 
       await tx.auditLog.create({

@@ -28,7 +28,12 @@ const prisma = new PrismaClient();
 // ==========================================
 // 🛠️ ตั้งค่า Middleware พื้นฐาน (ต้องอยู่ก่อน Routes เสมอ)
 // ==========================================
-app.use(cors());
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

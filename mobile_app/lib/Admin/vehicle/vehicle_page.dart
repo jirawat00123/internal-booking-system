@@ -14,6 +14,7 @@ class Vehicle {
   final dynamic id;
   final String vehicleName;
   final String plate;
+  final String? province;
   final String brand;
   final String model;
   final int seats;
@@ -32,6 +33,7 @@ class Vehicle {
     required this.id,
     required this.vehicleName,
     required this.plate,
+    this.province,
     required this.brand,
     required this.model,
     required this.seats,
@@ -52,6 +54,7 @@ class Vehicle {
           '${json['brand'] ?? ''} ${json['model'] ?? ''}'.trim(),
       plate:
           json['plateNumber'] ?? json['license_plate'] ?? json['plate'] ?? '-',
+      province: json['province'],
       brand: json['brand'] ?? '-',
       model: json['model'] ?? '-',
       seats: json['seats'] != null
@@ -69,6 +72,7 @@ class Vehicle {
     dynamic id,
     String? vehicleName,
     String? plate,
+    String? province,
     String? brand,
     String? model,
     int? seats,
@@ -82,6 +86,7 @@ class Vehicle {
       id: id ?? this.id,
       vehicleName: vehicleName ?? this.vehicleName,
       plate: plate ?? this.plate,
+      province: province ?? this.province,
       brand: brand ?? this.brand,
       model: model ?? this.model,
       seats: seats ?? this.seats,
@@ -1078,7 +1083,9 @@ class _VehiclePageState extends State<VehiclePage> {
                 const SizedBox(height: 4),
 
                 Text(
-                  vehicle.plate,
+                  vehicle.province != null && vehicle.province!.isNotEmpty
+                      ? '${vehicle.plate} ${vehicle.province}'
+                      : vehicle.plate,
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey.shade600,

@@ -19,6 +19,8 @@ const checkFutureRoomBookings = async (roomId) => {
 // =========================================================================
 exports.getAllRooms = async (req, res, next) => {
   try {
+    const now = new Date();
+
     // 1. รับ Query Parameters สำหรับ Search & Filter
     const { search, status, location, minCapacity, page, limit } = req.query;
 
@@ -46,7 +48,7 @@ exports.getAllRooms = async (req, res, next) => {
       whereClause.capacity = { gte: parseInt(minCapacity, 10) };
     }
 
-    // 4. Query Database (พร้อมดึงรายการจองเพื่อคำนวณสถานะ Real-time)
+    // 4. Query Database (คัดกรองเฉพาะรายการจองที่ยังไม่ถูกยกเลิก/ปฏิเสธ และยังไม่หมดอายุ)
     const [totalItems, roomsList] = await Promise.all([
       prisma.room.count({ where: whereClause }),
       prisma.room.findMany({
@@ -54,7 +56,8 @@ exports.getAllRooms = async (req, res, next) => {
         include: {
           bookings: {
             where: {
-              status: { in: ['APPROVED', 'PENDING'] }
+              status: { notIn: ['CANCELLED', 'REJECTED'] },
+              endDatetime: { gte: now }
             }
           }
         },
@@ -64,12 +67,39 @@ exports.getAllRooms = async (req, res, next) => {
       })
     ]);
 
-    // คำนวณสถานะห้องแบบ Real-time (ถ้ามีคิวจองค้างอยู่ให้ถือว่าเป็น RESERVED)
+    // คำนวณ Runtime Field (availabilityStatus) ตามช่วงเวลาปัจจุบันโดยไม่แก้ Room.status ใน DB
     const rooms = roomsList.map(room => {
-      const hasActiveBooking = room.bookings && room.bookings.length > 0;
+      let availabilityStatus = room.status;
+
+      if (room.status === 'AVAILABLE') {
+        const activeBookings = room.bookings || [];
+        const nowTime = Date.now();
+
+        const isCurrentlyInUse = activeBookings.some(b => {
+          const start = new Date(b.startDatetime).getTime();
+          const end = new Date(b.endDatetime).getTime();
+          return start <= nowTime && nowTime < end;
+        });
+
+        const hasUpcomingBooking = activeBookings.some(b => {
+          const start = new Date(b.startDatetime).getTime();
+          return nowTime < start;
+        });
+
+        if (isCurrentlyInUse) {
+          availabilityStatus = 'IN_USE';
+        } else if (hasUpcomingBooking) {
+          availabilityStatus = 'RESERVED';
+        } else {
+          availabilityStatus = 'AVAILABLE';
+        }
+      }
+
+      const { bookings, ...roomData } = room;
+
       return {
-        ...room,
-        status: (room.status === 'AVAILABLE' && hasActiveBooking) ? 'RESERVED' : room.status
+        ...roomData,
+        availabilityStatus
       };
     });
 
@@ -121,7 +151,7 @@ exports.getRoomById = async (req, res, next) => {
 // =========================================================================
 exports.createRoom = async (req, res, next) => {
   try {
-    const { roomName, capacity, location, status } = req.body;
+    const { roomName, capacity, location, status, floor, description, room_code } = req.body;
     // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่ง URL/Path มาใน req.body
     let uploadUrl = null;
     if (req.file) {
@@ -156,6 +186,9 @@ exports.createRoom = async (req, res, next) => {
         location: location ? location.toString() : null,
         status: status || 'AVAILABLE',
         uploadUrl: uploadUrl, 
+        floor: floor ? floor.toString() : null,
+        description: description ? description.toString() : null,
+        room_code: room_code ? room_code.toString() : null,
       },
     });
 
@@ -198,7 +231,7 @@ exports.updateRoom = async (req, res, next) => {
   try {
     const { id } = req.params;
     const roomId = parseInt(id, 10);
-    const { roomName, location, capacity, status } = req.body;
+    const { roomName, location, capacity, status, floor, description, room_code } = req.body;
     let uploadUrl;
 
     // 🟢 ตรวจสอบก่อนว่ามีห้องนี้อยู่จริงและไม่ได้ถูกลบ (isDeleted: false)
@@ -237,6 +270,9 @@ exports.updateRoom = async (req, res, next) => {
     
     if (location !== undefined) updateData.location = location ? location.toString() : null;
     if (capacity && !isNaN(parseInt(capacity, 10))) updateData.capacity = parseInt(capacity, 10);
+    if (floor !== undefined) updateData.floor = floor ? floor.toString() : null;
+    if (description !== undefined) updateData.description = description ? description.toString() : null;
+    if (room_code !== undefined) updateData.room_code = room_code ? room_code.toString() : null;
     
     if (status) {
       if (status === 'MAINTENANCE' || status === 'INACTIVE') {
@@ -298,10 +334,10 @@ exports.updateRoomStatus = async (req, res, next) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    // 🟢 1. อัปเดตให้รองรับครบทั้ง 5 สถานะตาม Prisma Schema
-    const allowedStatuses = ['AVAILABLE', 'IN_USE', 'RESERVED', 'MAINTENANCE', 'INACTIVE'];
+    // 🟢 1. อัปเดตให้รองรับเฉพาะสถานะของ Room ตาม Prisma Schema
+    const allowedStatuses = ['AVAILABLE', 'MAINTENANCE', 'INACTIVE'];
     if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: 'สถานะไม่ถูกต้อง (รองรับเฉพาะ AVAILABLE, IN_USE, RESERVED, MAINTENANCE, INACTIVE)' });
+      return res.status(400).json({ success: false, message: 'สถานะไม่ถูกต้อง (รองรับเฉพาะ AVAILABLE, MAINTENANCE, INACTIVE)' });
     }
 
     // Validation ID

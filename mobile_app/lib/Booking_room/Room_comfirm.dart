@@ -40,7 +40,7 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF004AAD),
+        backgroundColor: const Color(0xFF004381),
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
@@ -172,30 +172,19 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                   }
                                 } else if (response.statusCode == 409) {
                                   if (context.mounted) {
-                                    String errorMessage =
-                                        'ไม่สามารถจองได้ เนื่องจากมีการจองในช่วงเวลานี้แล้ว';
-                                    try {
-                                      final errorData = jsonDecode(
-                                        response.body,
-                                      );
-                                      if (errorData['message'] != null) {
-                                        errorMessage = errorData['message'];
-                                      }
-                                    } catch (_) {}
-
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Row(
+                                        content: const Row(
                                           children: [
-                                            const Icon(
+                                            Icon(
                                               Icons.warning_amber_rounded,
                                               color: Colors.white,
                                             ),
-                                            const SizedBox(width: 8),
+                                            SizedBox(width: 8),
                                             Expanded(
                                               child: Text(
-                                                errorMessage,
-                                                style: const TextStyle(
+                                                'ช่วงเวลานี้มีการจองแล้ว กรุณาเลือกเวลาใหม่',
+                                                style: TextStyle(
                                                   fontFamily: 'Kanit',
                                                   color: Colors.white,
                                                   fontWeight: FontWeight.bold,
@@ -217,6 +206,9 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                         duration: const Duration(seconds: 4),
                                       ),
                                     );
+
+                                    // กลับไปหน้า RoomBookingAScreen เพื่อให้ User เลือกเวลาใหม่โดยไม่ล้าง Form
+                                    Navigator.pop(context, false);
                                   }
                                 } else {
                                   if (context.mounted) {
@@ -287,104 +279,88 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
   }
 
   Widget _buildStepIndicator() {
-    return Container(
-      color: const Color(0xFF004AAD),
-      padding: const EdgeInsets.only(bottom: 20, top: 10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildStepCircle(
-              '1',
-              'เลือกห้อง',
-              isActive: false,
-              isCompleted: true,
-            ),
-            _buildStepLine(isCompleted: true),
-            _buildStepCircle(
-              '2',
-              'กรอกข้อมูล',
-              isActive: false,
-              isCompleted: true,
-            ),
-            _buildStepLine(isCompleted: true),
-            _buildStepCircle('3', 'ยืนยัน', isActive: true, isCompleted: false),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStepCircle(
-    String step,
-    String label, {
-    required bool isActive,
-    required bool isCompleted,
-  }) {
-    Color circleColor = const Color(0xFFE2E8F0);
-    Color textColor = Colors.grey;
-    if (isActive) {
-      circleColor = const Color(0xFF00A8CC);
-      textColor = Colors.white;
-    } else if (isCompleted) {
-      circleColor = const Color(0xFF004AAD).withOpacity(0.1);
-      textColor = const Color(0xFF004AAD);
-    }
-
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: circleColor,
-            shape: BoxShape.circle,
-            border: isCompleted
-                ? Border.all(color: const Color(0xFF004AAD), width: 1.5)
-                : null,
+          color: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildStepItem(step: '1', title: 'เลือกห้อง', isActive: false),
+              _buildStepLine(),
+              _buildStepItem(step: '2', title: 'กรอกข้อมูล', isActive: false),
+              _buildStepLine(),
+              _buildStepItem(step: '3', title: 'ยืนยัน', isActive: true),
+            ],
           ),
-          alignment: Alignment.center,
-          child: Text(
-            step,
+        ),
+        Container(
+          width: double.infinity,
+          color: const Color(0xFF003E75),
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: const Text(
+            'ยืนยันข้อมูลการจอง',
+            textAlign: TextAlign.center,
             style: TextStyle(
-              color: textColor,
+              color: Colors.white,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               fontFamily: 'Kanit',
             ),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: isActive || isCompleted
-                ? const Color(0xFF004AAD)
-                : Colors.grey,
-            fontFamily: 'Kanit',
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStepLine({required bool isCompleted}) {
-    return Expanded(
-      child: Container(
-        height: 2,
-        color: isCompleted ? const Color(0xFF004AAD) : const Color(0xFFE2E8F0),
-        margin: const EdgeInsets.symmetric(horizontal: 8),
-      ),
+  Widget _buildStepItem({
+    required String step,
+    required String title,
+    required bool isActive,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 70,
+          height: 36,
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFF00A8CC) : const Color(0xFFE6EDF5),
+            shape: BoxShape.circle,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            step,
+            style: TextStyle(
+              color: isActive ? Colors.white : const Color(0xFFAAB6C7),
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Kanit',
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          title,
+          style: TextStyle(
+            color: isActive ? const Color(0xFF004381) : const Color(0xFF004381),
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Kanit',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepLine() {
+    return Container(
+      margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
+      width: 80,
+      height: 2,
+      color: const Color(0xFFAAB6C7),
     );
   }
 

@@ -399,6 +399,17 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           },
           body: jsonEncode({"status": apiStatus}),
         );
+      } else if (booking.type == 'ห้องประชุม' && newStatus == 'Cancelled') {
+        // 💡 เพิ่มการยิง PATCH request ไปที่ /cancel สำหรับห้องประชุม เพื่อรองรับ State Machine ใหม่
+        String endpoint =
+            'http://192.168.88.25:3001/api/bookings/${booking.id}/cancel';
+        response = await http.patch(
+          Uri.parse(endpoint),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        );
       } else {
         String endpoint =
             'http://192.168.88.25:3001/api/bookings/${booking.id}';
@@ -593,8 +604,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     Color statusTextColor = Colors.white;
 
     if (status == 'In Use') {
-      statusBgColor = const Color(0xFFBFDBFE);
-      statusTextColor = const Color(0xFF1D4ED8);
+      statusBgColor = const Color(0xFFE6F2FF);
+      statusTextColor = const Color(0xFF004381);
     } else if (status == 'Completed' || status == 'Cancelled') {
       statusBgColor = status == 'Cancelled'
           ? const Color(0xFFFF8A8A)
@@ -1299,8 +1310,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     Color textStatusColor = Colors.white;
 
     if (value == 'In Use') {
-      bgStatusColor = const Color(0xFFBFDBFE);
-      textStatusColor = const Color(0xFF1D4ED8);
+      bgStatusColor = const Color(0xFFE6F2FF);
+      textStatusColor = const Color(0xFF004381);
     } else if (value == 'Completed' || value == 'Cancelled') {
       bgStatusColor = value == 'Cancelled'
           ? const Color(0xFFFF8A8A)

@@ -3,6 +3,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'calendar_model.dart';
 import 'calendar_service.dart';
+import '../Booking_room/Room_model.dart';
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({Key? key}) : super(key: key);
@@ -14,13 +15,15 @@ class CalendarPage extends StatefulWidget {
 class _CalendarPageState extends State<CalendarPage> {
   final CalendarService _calendarService = CalendarService();
 
-  CalendarFormat _calendarFormat = CalendarFormat.month;
+  CalendarFormat _calendarFormat = CalendarFormat.twoWeeks;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
   bool _isLoading = false;
   List<CalendarEvent> _allEvents = [];
   Map<DateTime, List<CalendarEvent>> _groupedEvents = {};
+  String? _selectedLocation;
+  int? _selectedRoomId;
 
   @override
   void initState() {
@@ -40,9 +43,11 @@ class _CalendarPageState extends State<CalendarPage> {
       DateTime startDate = DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
       DateTime endDate = DateTime(_focusedDay.year, _focusedDay.month + 2, 0);
 
-      List<CalendarEvent> events = await _calendarService.fetchUnifiedEvents(
+      List<CalendarEvent> events = await _calendarService.fetchRoomEvents(
         startDate,
         endDate,
+        roomId: _selectedRoomId,
+        location: _selectedLocation,
       );
 
       _groupEvents(events);
@@ -102,18 +107,232 @@ class _CalendarPageState extends State<CalendarPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ปฏิทินการจอง (Read-Only)'),
-        backgroundColor: const Color(0xFF00529B),
+        backgroundColor: const Color(0xFF003E75),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'ตารางการจองห้องประชุม',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+            fontFamily: 'Kanit',
+          ),
+        ),
+        centerTitle: true,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: _fetchEventsForCurrentView,
           ),
         ],
       ),
       body: Column(
         children: [
-          // 🏷️ บาร์แสดงสัญลักษณ์จำแนกประเภท/สถานะการจอง
+          // 🏷️ Filter เลือกฝั่งและห้อง
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 4.0, // ลด Padding เพื่อเพิ่มพื้นที่แนวตั้งให้ Calendar
+            ),
+            color: Colors.white,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // เช็คความกว้างของหน้าจอ (>500 ให้แสดงในบรรทัดเดียวกัน)
+                final bool isWide = constraints.maxWidth > 500;
+
+                Widget locationFilter = Row(
+                  children: [
+                    const Text(
+                      'ฝั่ง:',
+                      style: TextStyle(
+                        fontFamily: 'Kanit',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButton<String?>(
+                        value: _selectedLocation,
+                        isExpanded: true,
+                        isDense: true, // ลดความสูงของ Dropdown
+                        underline: const SizedBox(),
+                        icon: const Icon(Icons.arrow_drop_down),
+                        items: [
+                          const DropdownMenuItem<String?>(
+                            value: null,
+                            child: Text(
+                              'ทุกฝั่ง',
+                              style: TextStyle(
+                                fontFamily: 'Kanit',
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          ...globalMeetingRooms.value
+                              .map((room) => room.location)
+                              .where((loc) => loc.trim().isNotEmpty)
+                              .toSet()
+                              .map((location) {
+                                return DropdownMenuItem<String?>(
+                                  value: location,
+                                  child: Text(
+                                    location,
+                                    style: const TextStyle(
+                                      fontFamily: 'Kanit',
+                                      fontSize: 14,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              })
+                              .toList(),
+                        ],
+                        onChanged: (val) {
+                          setState(() {
+                            _selectedLocation = val;
+                            _selectedRoomId =
+                                null; // รีเซ็ตห้องเป็นทุกห้องเมื่อเปลี่ยนฝั่ง
+                          });
+                          _fetchEventsForCurrentView();
+                        },
+                      ),
+                    ),
+                  ],
+                );
+
+                Widget roomFilter = Row(
+                  children: [
+                    const Text(
+                      'ห้อง:',
+                      style: TextStyle(
+                        fontFamily: 'Kanit',
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Builder(
+                        builder: (context) {
+                          // กรองห้องตามฝั่งที่เลือก
+                          final filteredRooms = globalMeetingRooms.value.where((
+                            room,
+                          ) {
+                            if (_selectedLocation == null) return true;
+                            return room.location == _selectedLocation;
+                          }).toList();
+
+                          // เช็ค Empty State
+                          if (_selectedLocation != null &&
+                              filteredRooms.isEmpty) {
+                            return DropdownButton<int?>(
+                              value: null,
+                              isExpanded: true,
+                              isDense: true,
+                              underline: const SizedBox(),
+                              icon: const Icon(
+                                Icons.arrow_drop_down,
+                                color: Colors.grey,
+                              ),
+                              items: const [
+                                DropdownMenuItem<int?>(
+                                  value: null,
+                                  child: Text(
+                                    'ไม่มีห้องประชุม',
+                                    style: TextStyle(
+                                      fontFamily: 'Kanit',
+                                      color: Colors.grey,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                              onChanged: null, // ปิดการใช้งานเมื่อไม่มีห้อง
+                            );
+                          }
+
+                          return DropdownButton<int?>(
+                            value: _selectedRoomId,
+                            isExpanded: true,
+                            isDense: true,
+                            underline: const SizedBox(),
+                            icon: const Icon(Icons.arrow_drop_down),
+                            items: [
+                              const DropdownMenuItem<int?>(
+                                value: null,
+                                child: Text(
+                                  'ทุกห้อง',
+                                  style: TextStyle(
+                                    fontFamily: 'Kanit',
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ),
+                              ...filteredRooms.map((room) {
+                                return DropdownMenuItem<int?>(
+                                  value: int.tryParse(room.id.toString()),
+                                  child: Text(
+                                    room.roomName,
+                                    style: const TextStyle(
+                                      fontFamily: 'Kanit',
+                                      fontSize: 14,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }).toList(),
+                            ],
+                            onChanged: (val) {
+                              setState(() {
+                                _selectedRoomId = val;
+                              });
+                              _fetchEventsForCurrentView();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                );
+
+                if (isWide) {
+                  return Row(
+                    children: [
+                      Expanded(flex: 2, child: locationFilter),
+                      Container(
+                        width: 1,
+                        height: 20,
+                        color: Colors.grey.shade300,
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: roomFilter,
+                      ), // ห้องใช้พื้นที่เยอะกว่า
+                    ],
+                  );
+                } else {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      locationFilter,
+                      const SizedBox(height: 6),
+                      roomFilter,
+                    ],
+                  );
+                }
+              },
+            ),
+          ),
+          const Divider(height: 1),
+
+          // 🏷️ บาร์แสดงสัญลักษณ์สถานะการจอง
           Container(
             padding: const EdgeInsets.symmetric(
               horizontal: 16.0,
@@ -123,14 +342,11 @@ class _CalendarPageState extends State<CalendarPage> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  _buildLegendBadge(Colors.blue, 'ห้องประชุม'),
-                  const SizedBox(width: 12),
-                  _buildLegendBadge(Colors.orange, 'ยานพาหนะ'),
-                  const SizedBox(width: 12),
-                  _buildLegendBadge(Colors.green, 'อนุมัติแล้ว'),
-                  const SizedBox(width: 12),
-                  _buildLegendBadge(Colors.amber, 'รออนุมัติ'),
+                  _buildLegendBadge(const Color(0xFFF59E0B), 'RESERVED'),
+                  const SizedBox(width: 16),
+                  _buildLegendBadge(const Color(0xFF004381), 'IN_USE'),
                 ],
               ),
             ),
@@ -152,6 +368,11 @@ class _CalendarPageState extends State<CalendarPage> {
                   _focusedDay = focusedDay;
                 });
               }
+            },
+            availableCalendarFormats: const {
+              CalendarFormat.month: '1 เดือน',
+              CalendarFormat.twoWeeks: '2 สัปดาห์',
+              CalendarFormat.week: '1 สัปดาห์',
             },
             onFormatChanged: (format) {
               if (_calendarFormat != format) {
@@ -283,114 +504,113 @@ class _CalendarPageState extends State<CalendarPage> {
                   itemBuilder: (context, index) {
                     final event = selectedEvents[index];
 
-                    final timeFormat = DateFormat('HH:mm น.');
-                    final dateFormat = DateFormat('yyyy-MM-dd');
+                    final timeFormat = DateFormat('HH:mm');
+                    final startTime = timeFormat.format(event.start);
+                    final endTime = timeFormat.format(event.end);
 
-                    final isRoom = event.type == 'ROOM';
-                    final categoryLabel = isRoom ? 'ห้องประชุม' : 'ยานพาหนะ';
-                    final categoryIcon = isRoom
-                        ? Icons.meeting_room
-                        : Icons.directions_car;
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12.0),
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade200),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(14.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Header การ์ด: ไอคอนหมวดหมู่ + ชื่อรายการ + ป้ายกำกับ
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: event.color.withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(
-                                    categoryIcon,
-                                    color: event.color,
-                                    size: 22,
-                                  ),
+                    return InkWell(
+                      onTap: () => _showEventDetailDialog(event),
+                      child: Card(
+                        margin: const EdgeInsets.only(bottom: 12.0),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 4,
+                                height: 50,
+                                decoration: BoxDecoration(
+                                  color: event.color,
+                                  borderRadius: BorderRadius.circular(2),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        event.title,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          fontFamily: 'Kanit',
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          '$startTime - $endTime น.',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: event.color,
+                                            fontFamily: 'Kanit',
+                                          ),
                                         ),
-                                      ),
-                                      Text(
-                                        categoryLabel,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade600,
-                                          fontFamily: 'Kanit',
+                                        // แสดง Badge เล็กๆ บอกสถานะ Reserved / In Use
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: event.color.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                            border: Border.all(
+                                              color: event.color,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            event.status,
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: event.color,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: event.color,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(
-                                    isRoom ? 'ROOM' : 'VEHICLE',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
+                                      ],
                                     ),
-                                  ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      event.title,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        fontFamily: 'Kanit',
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.person,
+                                          size: 14,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          event.bookerName,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey.shade700,
+                                            fontFamily: 'Kanit',
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 10.0),
-                              child: Divider(height: 1),
-                            ),
-
-                            // รายละเอียดข้อมูลแบ่งหมวดหมู่ชัดเจน
-                            _buildDetailRow(
-                              Icons.person_outline,
-                              'ผู้จอง/ผู้ปฏิบัติ',
-                              event.bookerName,
-                              Colors.black87,
-                            ),
-                            const SizedBox(height: 6),
-                            _buildDetailRow(
-                              Icons.play_circle_outline,
-                              'ในวันที่',
-                              '${dateFormat.format(event.start)} T${timeFormat.format(event.start)}',
-                              Colors.green.shade700,
-                            ),
-                            const SizedBox(height: 6),
-                            _buildDetailRow(
-                              Icons.stop_circle,
-                              'ถึงวันที่',
-                              '${dateFormat.format(event.end)} T${timeFormat.format(event.end)}',
-                              Colors.red.shade700,
-                            ),
-                          ],
+                              ),
+                              Icon(
+                                Icons.chevron_right,
+                                color: Colors.grey.shade400,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     );
@@ -408,29 +628,115 @@ class _CalendarPageState extends State<CalendarPage> {
     Color valueColor,
   ) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: Colors.grey.shade600),
-        const SizedBox(width: 6),
-        Text(
-          '$label : ',
-          style: TextStyle(
-            fontSize: 13,
-            color: Colors.grey.shade700,
-            fontFamily: 'Kanit',
-          ),
-        ),
+        Icon(icon, size: 18, color: Colors.grey.shade600),
+        const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: valueColor,
-              fontFamily: 'Kanit',
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade500,
+                  fontFamily: 'Kanit',
+                ),
+              ),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: valueColor,
+                  fontFamily: 'Kanit',
+                ),
+              ),
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  void _showEventDetailDialog(CalendarEvent event) {
+    final dateFormat = DateFormat('d MMMM yyyy', 'th');
+    final timeFormat = DateFormat('HH:mm');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(
+            24.0,
+          ).copyWith(bottom: MediaQuery.of(context).padding.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'รายละเอียดการจอง',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'Kanit',
+                ),
+              ),
+              const SizedBox(height: 20),
+              _buildDetailRow(
+                Icons.meeting_room,
+                'ห้องประชุม',
+                event.title,
+                Colors.black87,
+              ),
+              const SizedBox(height: 16),
+              _buildDetailRow(
+                Icons.person,
+                'ผู้จอง',
+                event.bookerName,
+                Colors.black87,
+              ),
+              const SizedBox(height: 16),
+              _buildDetailRow(
+                Icons.calendar_today,
+                'วันที่',
+                dateFormat.format(event.start),
+                Colors.black87,
+              ),
+              const SizedBox(height: 16),
+              _buildDetailRow(
+                Icons.access_time,
+                'เวลา',
+                '${timeFormat.format(event.start)} - ${timeFormat.format(event.end)} น.',
+                Colors.black87,
+              ),
+              const SizedBox(height: 16),
+              _buildDetailRow(
+                Icons.info_outline,
+                'สถานะ',
+                event.status,
+                event.color,
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
