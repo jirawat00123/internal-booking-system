@@ -607,6 +607,9 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
 
     String vName = vehicle.vehicleName?.toString() ?? '';
     String vPlate = vehicle.plateNumber?.toString() ?? '';
+    if (vehicle.province != null && vehicle.province!.isNotEmpty) {
+      vPlate = '$vPlate ${vehicle.province}';
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -645,7 +648,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E3A8A),
+                            color: Color(0xFF003E75),
                             fontFamily: 'Kanit',
                           ),
                           maxLines: 1,
@@ -684,33 +687,67 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                   const SizedBox(height: 4),
                   Text(
                     vPlate.isNotEmpty ? vPlate : 'ไม่ระบุทะเบียน',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
-                      color: Color(0xFF6B7280),
+                      color: Colors.grey.shade600,
                       fontFamily: 'Kanit',
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
-                      const Icon(
-                        Icons.people_alt_outlined,
-                        size: 16,
-                        color: Color(0xFF1D4ED8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F4F8),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          vehicle.type == 'CAR' ? 'รถยนต์' : vehicle.type,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF0056A0),
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Kanit',
+                          ),
+                        ),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${vehicle.seats} ที่นั่ง',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF1D4ED8),
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Kanit',
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F4F8),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.people_outline,
+                              size: 14,
+                              color: Color(0xFF0056A0),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${vehicle.seats} ที่นั่ง',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF0056A0),
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Kanit',
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     height: 48,

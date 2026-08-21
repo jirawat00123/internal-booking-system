@@ -22,6 +22,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController nameController = TextEditingController();
   final TextEditingController plateController = TextEditingController();
+  final TextEditingController provinceController =
+      TextEditingController(); // 🟢 เพิ่ม Controller สำหรับจังหวัด
   final TextEditingController actDocNumberController = TextEditingController();
   final TextEditingController actExpiryDateController = TextEditingController();
 
@@ -42,6 +44,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
   void dispose() {
     nameController.dispose();
     plateController.dispose();
+    provinceController.dispose(); // 🟢 คืนหน่วยความจำ
     actDocNumberController.dispose();
     actExpiryDateController.dispose();
     super.dispose();
@@ -128,6 +131,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
 
       // 🚨 [ชุดที่ 2] ส่งคีย์เพิ่มเติมแบบตรงตัว (Explicit) เพื่อเคลียร์ Error 400 จากด่านตรวจ Backend
       request.fields['plate'] = plateText; // ทะเบียน
+      request.fields['province'] = provinceController.text
+          .trim(); // 🟢 ส่งฟิลด์จังหวัด
       request.fields['brand'] = brandStr; // ยี่ห้อ (เช่น Toyota)
       request.fields['model'] = modelStr; // รุ่น (เช่น Camry)
 
@@ -577,16 +582,26 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                         isRequired: true,
                       ),
                       const SizedBox(height: 24),
-                      Center(
-                        child: SizedBox(
-                          width: 200,
-                          child: _buildTextField(
-                            label: 'ทะเบียนรถ',
-                            controller: plateController,
-                            hint: 'กข 1234',
-                            isRequired: true,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              label: 'ทะเบียนรถ',
+                              controller: plateController,
+                              hint: 'กข 1234',
+                              isRequired: true,
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildTextField(
+                              label: 'จังหวัด',
+                              controller: provinceController,
+                              hint: 'กรุงเทพมหานคร',
+                              isRequired: false,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 24),
                       Divider(color: Colors.indigo.shade50, thickness: 1.5),

@@ -27,12 +27,14 @@ class BookingPermissions {
 class VehicleModel {
   final int id;
   final String plateNumber;
+  final String? province;
   final String brand;
   final String model;
   final int seats;
   final String status;
   final String? uploadUrl;
   final bool isDeleted;
+  final String type;
   final String vehicleName;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -44,12 +46,14 @@ class VehicleModel {
   VehicleModel({
     required this.id,
     required this.plateNumber,
+    this.province,
     required this.brand,
     required this.model,
     required this.seats,
     required this.status,
     this.uploadUrl,
     this.isDeleted = false,
+    this.type = 'รถยนต์',
     required this.vehicleName,
     this.createdAt,
     this.updatedAt,
@@ -62,12 +66,14 @@ class VehicleModel {
   VehicleModel copyWith({
     int? id,
     String? plateNumber,
+    String? province,
     String? brand,
     String? model,
     int? seats,
     String? status,
     String? uploadUrl,
     bool? isDeleted,
+    String? type,
     String? vehicleName,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -79,12 +85,14 @@ class VehicleModel {
     return VehicleModel(
       id: id ?? this.id,
       plateNumber: plateNumber ?? this.plateNumber,
+      province: province ?? this.province,
       brand: brand ?? this.brand,
       model: model ?? this.model,
       seats: seats ?? this.seats,
       status: status ?? this.status,
       uploadUrl: uploadUrl ?? this.uploadUrl,
       isDeleted: isDeleted ?? this.isDeleted,
+      type: type ?? this.type,
       vehicleName: vehicleName ?? this.vehicleName,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -128,12 +136,14 @@ class VehicleModel {
           json['plateNumber'] ??
           json['license_plate'] ??
           '', // รองรับทั้ง camelCase และ snake_case
+      province: json['province'],
       brand: json['brand'] ?? '',
       model: json['model'] ?? '',
       seats: json['seats'] ?? 4,
       status: json['status'] ?? 'AVAILABLE',
       uploadUrl: json['uploadUrl'] ?? json['upload_url'],
       isDeleted: json['isDeleted'] ?? json['is_deleted'] ?? false,
+      type: json['type'] ?? 'รถยนต์',
       vehicleName: json['vehicleName'] ?? json['vehicle_name'] ?? '',
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'])

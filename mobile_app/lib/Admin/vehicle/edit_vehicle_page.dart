@@ -52,8 +52,8 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     nameController = TextEditingController(text: widget.vehicle.vehicleName);
     plateController = TextEditingController(text: widget.vehicle.plate);
     provinceController = TextEditingController(
-      text: '',
-    ); // 🟢 กำหนดค่าเริ่มต้นจังหวัด
+      text: widget.vehicle.province ?? '',
+    ); // 🟢 ดึงข้อมูลจังหวัดเดิมมาแสดงแทนค่าว่าง
     actDocNumberController = TextEditingController();
     actExpiryDateController = TextEditingController();
     currentStatus = widget.vehicle.status;

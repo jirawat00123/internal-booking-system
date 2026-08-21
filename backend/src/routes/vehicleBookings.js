@@ -123,7 +123,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
           vehicleId: parsedVehicleId,
           status: { notIn: ["CANCELLED", "COMPLETED", "REJECTED"] },
           startDatetime: { lt: new Date(finalReturnDate) },
-          returnDate: { gt: new Date(startDatetime) }
+          endDatetime: { gt: new Date(startDatetime) } // 🟢 เปลี่ยนจาก returnDate เป็น endDatetime
         }
       });
 
@@ -135,7 +135,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
           destination: destination || 'ไม่ระบุเป้าหมาย',
           passengers: parsedPassengers,
           startDatetime: new Date(startDatetime),
-          returnDate: new Date(finalReturnDate),
+          endDatetime: new Date(finalReturnDate), // 🟢 เปลี่ยนจาก returnDate เป็น endDatetime
           purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
           status: 'PENDING' // 🟢 เปลี่ยนจาก Pending แบบ String เป็นตัวพิมพ์ใหญ่ตามมาตรฐาน
         }
@@ -199,10 +199,11 @@ router.get('/history', async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
-    // 🟢 Map returnDate กลับไปเป็น endDatetime เพื่อให้ Frontend ทำงานได้ปกติ
+    // 🟢 Map ส่งกลับไปทั้งสองคีย์ เพื่อให้ Frontend เก่าและใหม่ทำงานได้ปกติ
     const mappedHistoryBookings = historyBookings.map(booking => ({
       ...booking,
-      endDatetime: booking.returnDate
+      endDatetime: booking.endDatetime,
+      returnDate: booking.endDatetime
     }));
 
     return res.status(200).json({
@@ -239,10 +240,11 @@ router.get('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจองนี้" });
     }
 
-    // 🟢 Map returnDate กลับไปเป็น endDatetime เพื่อให้ Frontend ทำงานได้ปกติ
+    // 🟢 Map ส่งกลับไปทั้งสองคีย์ เพื่อให้ Frontend เก่าและใหม่ทำงานได้ปกติ
     const mappedBooking = {
       ...booking,
-      endDatetime: booking.returnDate
+      endDatetime: booking.endDatetime,
+      returnDate: booking.endDatetime
     };
 
     return res.status(200).json({
@@ -270,9 +272,11 @@ router.get('/', authenticateToken, async (req, res) => {
     });
 
     // 🟢 Map returnDate กลับไปเป็น endDatetime เพื่อให้ Frontend ทำงานได้ปกติ
+// 🟢 Map ส่งกลับไปทั้งสองคีย์ เพื่อให้ Frontend เก่าและใหม่ทำงานได้ปกติ
     const mappedBookings = bookings.map(booking => ({
       ...booking,
-      endDatetime: booking.returnDate
+      endDatetime: booking.endDatetime,
+      returnDate: booking.endDatetime
     }));
 
     return res.status(200).json({
