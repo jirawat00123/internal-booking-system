@@ -130,7 +130,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       return;
     }
 
-    final baseUrl = 'http://192.168.88.25:3001';
+    final baseUrl = 'http://localhost:3001';
     final fullUrl = '$baseUrl$urlPath';
     final Uri url = Uri.parse(fullUrl);
 
@@ -163,12 +163,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       };
 
       final roomResponseFuture = http.get(
-        Uri.parse('http://192.168.88.25:3001/api/bookings?page=1&limit=50'),
+        Uri.parse('http://localhost:3001/api/bookings?page=1&limit=50'),
         headers: headers,
       );
       final vehicleResponseFuture = http.get(
         Uri.parse(
-          'http://192.168.88.25:3001/api/vehicle-bookings?page=1&limit=50',
+          'http://localhost:3001/api/vehicle-bookings?page=1&limit=50',
         ),
         headers: headers,
       );
@@ -377,7 +377,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
       if (booking.type == 'จองรถ' && newStatus == 'Cancelled') {
         String endpoint =
-            'http://192.168.88.25:3001/api/vehicle-bookings/${booking.id}/cancel';
+            'http://localhost:3001/api/vehicle-bookings/${booking.id}/cancel';
         response = await http.patch(
           Uri.parse(endpoint),
           headers: {
@@ -387,7 +387,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         );
         newStatus = 'Cancelled';
       } else if (booking.type == 'จองรถ') {
-        String baseUrl = 'http://192.168.88.25:3001';
+        String baseUrl = 'http://localhost:3001';
         String endpoint =
             '$baseUrl/api/vehicle-bookings/${booking.id}/complete';
 
@@ -401,7 +401,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         );
       } else {
         String endpoint =
-            'http://192.168.88.25:3001/api/bookings/${booking.id}';
+            'http://localhost:3001/api/bookings/${booking.id}';
         response = await http.put(
           Uri.parse(endpoint),
           headers: {
@@ -629,7 +629,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     child: booking.imageUrl.isNotEmpty
                         ? Image.network(
                             booking.imageUrl.startsWith('/uploads')
-                                ? 'http://192.168.88.25:3001${booking.imageUrl}'
+                                ? 'http://localhost:3001${booking.imageUrl}'
                                 : booking.imageUrl,
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => Icon(
@@ -1018,7 +1018,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                 height: 44,
                                 child: Image.network(
                                   booking.imageUrl.startsWith('/uploads')
-                                      ? 'http://192.168.88.25:3001${booking.imageUrl}'
+                                      ? 'http://localhost:3001${booking.imageUrl}'
                                       : booking.imageUrl,
                                   fit: BoxFit.cover,
                                   errorBuilder: (c, e, s) => Container(

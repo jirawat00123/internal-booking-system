@@ -113,10 +113,10 @@ class _DashboardPageState extends State<DashboardPage> {
           await _storage.read(key: 'jwt') ??
           prefs.getString('token');
 
-      // กำหนด Base URL ตามสภาพแวดล้อม (Web ใช้ localhost, Emulator ใช้ 192.168.88.25:3001.2.2)
+      // กำหนด Base URL ตามสภาพแวดล้อม (Web ใช้ localhost, Emulator ใช้ localhost:3001.2.2)
       final String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'http://localhost:3001'
+          : 'http://localhost:3001';
       final Uri exportUrl = Uri.parse(
         '$baseUrl/api/reports/export?type=$type&format=csv&token=$token',
       );

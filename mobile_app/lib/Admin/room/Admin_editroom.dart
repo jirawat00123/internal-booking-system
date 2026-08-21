@@ -170,8 +170,8 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                         }
 
                                         final String baseUrl = kIsWeb
-                                            ? 'http://192.168.88.25:3001'
-                                            : 'http://192.168.88.25:3001';
+                                            ? 'http://localhost:3001'
+                                            : 'http://localhost:3001';
                                         final uri = Uri.parse(
                                           '$baseUrl/api/rooms/${widget.room.id}',
                                         );
@@ -527,7 +527,7 @@ class _AdminEditRoomScreenState extends State<AdminEditRoomScreen> {
                                 widget.room.imagePath!.startsWith('http')
                                     ? widget.room.imagePath!
                                     // 🟢 5. เปลี่ยน URL ดึงภาพเป็น Dynamic ตาม Platform (Web หรือ Emulator)
-                                    : '${kIsWeb ? "http://192.168.88.25:3001" : "http://192.168.88.25:3001"}${widget.room.imagePath!.startsWith('/') ? widget.room.imagePath! : '/${widget.room.imagePath!}'}',
+                                    : '${kIsWeb ? "http://localhost:3001" : "http://localhost:3001"}${widget.room.imagePath!.startsWith('/') ? widget.room.imagePath! : '/${widget.room.imagePath!}'}',
                               ),
                               fit: BoxFit.cover,
                               onError: (exception, stackTrace) {

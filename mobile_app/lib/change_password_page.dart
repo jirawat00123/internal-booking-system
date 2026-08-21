@@ -26,7 +26,7 @@ class _ChangePasswordPageState extends State<ChangePasswordPage> {
   String? _confirmPinErrorMsg;
   bool _isLoading = false;
 
-  final String baseUrl = 'http://192.168.88.25:3001/api';
+  final String baseUrl = 'http://localhost:3001/api';
 
   @override
   void dispose() {

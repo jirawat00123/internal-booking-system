@@ -19,6 +19,9 @@ class Vehicle {
   final int seats;
   final String status;
   final String? uploadUrl;
+  
+  // 🟢 แก้ไขให้รองรับค่า null จาก Database ได้อย่างปลอดภัย
+  final String? province;
 
   final bool isDeleted;
   final String type;
@@ -37,6 +40,7 @@ class Vehicle {
     required this.seats,
     required this.status,
     this.uploadUrl,
+    this.province, // 🟢 เอา default ออกเพื่อให้รับค่า null ได้
     this.isDeleted = false,
     this.type = 'รถยนต์',
     this.hasFutureBooking = false,
@@ -59,6 +63,8 @@ class Vehicle {
           : 4,
       status: json['status'] ?? 'AVAILABLE',
       uploadUrl: json['uploadUrl'] ?? json['upload_url'] ?? json['imagePath'],
+      // 🟢 ดักจับ null ด้วย ?.toString() ป้องกันแอปพัง 100%
+      province: json['province']?.toString() ?? '', 
       isDeleted: json['isDeleted'] ?? json['is_deleted'] ?? false,
       type: json['type'] ?? 'รถยนต์',
       hasFutureBooking: json['hasFutureBooking'] ?? false,
@@ -74,6 +80,7 @@ class Vehicle {
     int? seats,
     String? status,
     String? uploadUrl,
+    String? province,
     bool? isDeleted,
     String? type,
     bool? hasFutureBooking,
@@ -87,6 +94,7 @@ class Vehicle {
       seats: seats ?? this.seats,
       status: status ?? this.status,
       uploadUrl: uploadUrl ?? this.uploadUrl,
+      province: province ?? this.province,
       isDeleted: isDeleted ?? this.isDeleted,
       type: type ?? this.type,
       hasFutureBooking: hasFutureBooking ?? this.hasFutureBooking,
@@ -105,7 +113,7 @@ class VehiclePage extends StatefulWidget {
 
 class _VehiclePageState extends State<VehiclePage> {
   bool isLoading = true;
-  String selectedFilterStatus = 'ALL'; // 🟢 เพิ่มตัวแปรสำหรับ Filter สถานะ
+  String selectedFilterStatus = 'ALL'; 
   @override
   void initState() {
     super.initState();
@@ -119,7 +127,6 @@ class _VehiclePageState extends State<VehiclePage> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      // 🟢 ดึง Token จากทั้ง 'token' และ 'jwt_token' เพื่อรองรับทุก Key ป้องกัน 401
       final token =
           prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
 
@@ -247,7 +254,6 @@ class _VehiclePageState extends State<VehiclePage> {
               });
 
               if (isReservedToday) {
-                // 🟢 ใช้ hasFutureBooking แทนการแก้ไข status เพื่อไม่ให้กระทบ Business Logic ของ Vehicle
                 fetchedList[i] = vehicle.copyWith(hasFutureBooking: true);
               }
             }
@@ -277,7 +283,6 @@ class _VehiclePageState extends State<VehiclePage> {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 
-      // 🟢 ปรับไปใช้ PATCH ตาม Backend ของเรา
       final patchUrl = Uri.parse('$baseUrl/api/vehicles/${vehicle.id}/status');
       final response = await http.patch(
         patchUrl,
@@ -820,7 +825,6 @@ class _VehiclePageState extends State<VehiclePage> {
             ),
             const SizedBox(height: 16),
 
-            // 🟢 เพิ่ม UI สำหรับ Filter สถานะรถ (Checklist Week 14)
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -889,12 +893,10 @@ class _VehiclePageState extends State<VehiclePage> {
                   : ValueListenableBuilder<List<Vehicle>>(
                       valueListenable: globalVehicles,
                       builder: (context, vehicles, child) {
-                        // 🟢 นำเงื่อนไข Filter มาใช้ในการกรองข้อมูลก่อนแสดงผล
                         List<Vehicle> activeVehicles = vehicles.where((v) {
                           if (v.isDeleted) return false;
                           if (selectedFilterStatus == 'ALL') return true;
 
-                          // จัดฟอร์แมตสถานะให้ตรงกับ Dropdown เพื่อใช้ตรวจสอบ
                           String rawStatus = v.status.trim().toUpperCase();
                           if (rawStatus == 'IN USE' ||
                               rawStatus == 'IN-USE' ||
@@ -973,7 +975,6 @@ class _VehiclePageState extends State<VehiclePage> {
     } else if (vehicle.hasFutureBooking ||
         rawStatus == 'PENDING' ||
         rawStatus == 'จองแล้ว') {
-      // 🟢 นำ rawStatus == 'RESERVED' ออก และใช้ vehicle.hasFutureBooking แสดงผล UI แทน
       displayStatus = 'Reserved';
       statusColor = const Color(0xFFF59E0B);
       statusBgColor = const Color(0xFFFEF3C7);
@@ -1077,8 +1078,11 @@ class _VehiclePageState extends State<VehiclePage> {
 
                 const SizedBox(height: 4),
 
+                // 🟢 โชว์ ทะเบียนรถ + จังหวัด (ดักจับ Null เรียบร้อย)
                 Text(
-                  vehicle.plate,
+                  (vehicle.province != null && vehicle.province!.isNotEmpty)
+                      ? '${vehicle.plate} ${vehicle.province}'
+                      : vehicle.plate,
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey.shade600,
@@ -1099,11 +1103,9 @@ class _VehiclePageState extends State<VehiclePage> {
                 ),
                 const SizedBox(height: 16),
 
-                // 🟢 จัดการปุ่ม: เปลี่ยนสถานะ (ซ้าย) | แก้ไข, ลบ (ขวา)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // 🚨 ปุ่มซ้าย: เปลี่ยนสถานะด่วน
                     ElevatedButton(
                       onPressed: () => _showQuickStatusDialog(context, vehicle),
                       style: ElevatedButton.styleFrom(
@@ -1124,7 +1126,6 @@ class _VehiclePageState extends State<VehiclePage> {
                       ),
                     ),
 
-                    // 🟢 ปุ่มขวา: แก้ไข และ ลบ
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

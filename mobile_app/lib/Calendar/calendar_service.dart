@@ -5,7 +5,7 @@ import 'calendar_model.dart';
 
 class CalendarService {
   // TODO: ปรับ Base URL ให้ตรงกับไฟล์ config หรือ auth_service.dart ที่โปรเจกต์ของคุณใช้งาน
-  static const String baseUrl = 'http://192.168.88.25:3001/api';
+  static const String baseUrl = 'http://localhost:3001/api';
 
   Future<List<CalendarEvent>> fetchUnifiedEvents(
     DateTime startDate,

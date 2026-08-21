@@ -69,7 +69,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
           prefs.getString('employee_code') ??
           prefs.getString('employeeCode');
 
-      // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น 192.168.88.25:3001.2.2 สำหรับมือถือจำลอง (Android Emulator)
+      // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น localhost:3001.2.2 สำหรับมือถือจำลอง (Android Emulator)
       // (ถ้าคุณปิ่นรันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
       final url = Uri.parse('${AuthService.baseUrl}/api/login-pin');
 

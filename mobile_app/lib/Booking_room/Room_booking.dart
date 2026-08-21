@@ -66,8 +66,8 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   Future<bool> _checkTimeSlotAvailability() async {
     try {
       final String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'http://localhost:3001'
+          : 'http://localhost:3001';
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 

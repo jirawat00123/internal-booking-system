@@ -21,7 +21,7 @@ class AuthService {
       'pin_reset_required'; // 🟢 เพิ่ม Key สำหรับเก็บ Flag รีเซ็ต PIN
 
   // Base URL กลางสำหรับเรียกใช้งาน API ทุกตัวในระบบ
-  static const String baseUrl = 'http://192.168.88.25:3001';
+  static const String baseUrl = 'http://localhost:3001';
 
   // 4. Private Variable สำหรับเก็บ Token ไว้ใน Memory (Runtime) เพื่อจะได้ไม่ต้อง I/O อ่านจาก Storage ทุกครั้งที่เรียก API
   String? _accessToken;

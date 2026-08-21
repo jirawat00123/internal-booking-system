@@ -1,12 +1,12 @@
 import 'dart:io';
-import 'dart:convert'; // 🟢 เพิ่มสำหรับการแปลง JSON
+import 'dart:convert'; 
 import 'package:flutter/material.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:http/http.dart' as http; // 🟢 เพิ่ม HTTP
-import 'package:shared_preferences/shared_preferences.dart'; // 🟢 เพิ่ม SharedPreferences
+import 'package:http/http.dart' as http; 
+import 'package:shared_preferences/shared_preferences.dart'; 
 
 import 'addvehicle_successpage.dart';
 import 'vehicle_page.dart';
@@ -22,19 +22,20 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController nameController = TextEditingController();
   final TextEditingController plateController = TextEditingController();
+  // 🟢 เพิ่ม Controller สำหรับรับจังหวัด
+  final TextEditingController provinceController = TextEditingController(); 
   final TextEditingController actDocNumberController = TextEditingController();
   final TextEditingController actExpiryDateController = TextEditingController();
 
-  final String currentStatus =
-      'AVAILABLE'; // 🔄 ปรับให้ตรงกับ Backend (AVAILABLE)
+  final String currentStatus = 'AVAILABLE'; 
   int passengerCount = 4;
 
   XFile? _vehicleImage;
-  PlatformFile? _pickedDocFile; // 🟢 เพิ่มการเก็บไฟล์สำหรับ Web/Mobile
-  String? _docFilePath; // เก็บพาธไฟล์เอกสาร
-  String? _docFileName; // เก็บชื่อไฟล์เอกสารไว้โชว์
+  PlatformFile? _pickedDocFile; 
+  String? _docFilePath; 
+  String? _docFileName; 
 
-  bool isSubmitting = false; // 🟢 ตัวแปรสำหรับเช็คสถานะกำลังโหลดส่งข้อมูล
+  bool isSubmitting = false; 
 
   final ImagePicker _picker = ImagePicker();
 
@@ -42,6 +43,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
   void dispose() {
     nameController.dispose();
     plateController.dispose();
+    provinceController.dispose(); // 🟢 คืนค่าหน่วยความจำจังหวัด
     actDocNumberController.dispose();
     actExpiryDateController.dispose();
     super.dispose();
@@ -70,7 +72,6 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     }
   }
 
-  // 📄 ฟังก์ชันเลือกไฟล์เอกสาร (รองรับ PDF, DOC, รูปภาพ)
   Future<void> _pickDocFile() async {
     FilePickerResult? result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -87,60 +88,49 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     }
   }
 
-  // 🚀 ฟังก์ชันยิง API บันทึกข้อมูลรถยนต์
   Future<void> _submitVehicleToApi(BuildContext dialogContext) async {
     setState(() {
-      isSubmitting = true; // เริ่มหมุนติ้วๆ
+      isSubmitting = true; 
     });
 
     try {
       final baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'http://localhost:3001'
+          : 'http://localhost:3001';
       final url = Uri.parse('$baseUrl/api/vehicles');
 
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 
-      // ใช้ MultipartRequest เพราะมีการอัปโหลดไฟล์รูปภาพ
       var request = http.MultipartRequest('POST', url);
-
-      // 1. แนบ Token
       request.headers['Authorization'] = 'Bearer ${token.trim()}';
 
-      // 2. แนบข้อมูล Text (ต้องแปลงเป็น String ทั้งหมด)
       String fullName = nameController.text.trim();
       String plateText = plateController.text.trim();
 
-      // 🟢 ลอจิกหั่นคำอัจฉริยะ: แยกชื่อรถออกเป็น 'ยี่ห้อ' และ 'รุ่น' อัตโนมัติ (เช่น "Toyota Camry")
       List<String> nameParts = fullName.split(' ');
       String brandStr = nameParts.isNotEmpty ? nameParts[0] : 'ไม่ระบุ';
       String modelStr = nameParts.length > 1
           ? nameParts.sublist(1).join(' ')
           : fullName;
 
-      // [ชุดที่ 1] ส่งคีย์เดิมที่ตัวแอปเคยมีอยู่แล้ว
       request.fields['vehicleName'] = fullName;
       request.fields['plateNumber'] = plateText;
       request.fields['capacity'] = passengerCount.toString();
-      request.fields['type'] = 'CAR'; // ค่าเริ่มต้น
+      request.fields['type'] = 'CAR'; 
       request.fields['status'] = currentStatus;
 
-      // 🚨 [ชุดที่ 2] ส่งคีย์เพิ่มเติมแบบตรงตัว (Explicit) เพื่อเคลียร์ Error 400 จากด่านตรวจ Backend
-      request.fields['plate'] = plateText; // ทะเบียน
-      request.fields['brand'] = brandStr; // ยี่ห้อ (เช่น Toyota)
-      request.fields['model'] = modelStr; // รุ่น (เช่น Camry)
+      request.fields['plate'] = plateText; 
+      // 🟢 ส่งค่าจังหวัดไปให้ Backend
+      request.fields['province'] = provinceController.text.trim();
+      request.fields['brand'] = brandStr; 
+      request.fields['model'] = modelStr; 
 
-      // 🔥 เพิ่มเติม: ส่งคีย์จำนวนที่นั่งเผื่อไว้ทุกรูปแบบ ป้องกันหลังบ้านตรวจหาคีย์ไม่เจอ
-      request.fields['seats'] = passengerCount
-          .toString(); // เผื่อหลังบ้านใช้คำว่า seats
-      request.fields['seatCount'] = passengerCount
-          .toString(); // เผื่อหลังบ้านใช้คำว่า seatCount
+      request.fields['seats'] = passengerCount.toString(); 
+      request.fields['seatCount'] = passengerCount.toString(); 
 
-      // 🟢 เพิ่มการส่งข้อมูลเลขที่ และวันหมดอายุ พ.ร.บ.
       if (actDocNumberController.text.trim().isNotEmpty) {
-        request.fields['actDocumentNumber'] = actDocNumberController.text
-            .trim();
+        request.fields['actDocumentNumber'] = actDocNumberController.text.trim();
         request.fields['documentNumber'] = actDocNumberController.text.trim();
       }
       if (actExpiryDateController.text.trim().isNotEmpty) {
@@ -148,12 +138,9 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
         request.fields['expiryDate'] = actExpiryDateController.text.trim();
       }
 
-      // 3. แนบไฟล์รูปภาพรถ (รองรับทั้ง Web และ Mobile)
       if (_vehicleImage != null) {
         if (kIsWeb) {
           final bytes = await _vehicleImage!.readAsBytes();
-
-          // ตรวจสอบและบังคับนามสกุลไฟล์บน Web
           String finalFileName = _vehicleImage!.name;
           String lowerName = finalFileName.toLowerCase();
           if (!lowerName.endsWith('.png') &&
@@ -164,10 +151,9 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
 
           request.files.add(
             http.MultipartFile.fromBytes(
-              'image', // 🚨 ชื่อฟิลด์ต้องตรงกับที่ Multer ใน Backend ตั้งไว้
+              'image', 
               bytes,
-              filename:
-                  finalFileName, // ส่งชื่อไฟล์ที่การันตีว่ามีนามสกุลแน่นอน
+              filename: finalFileName,
               contentType: MediaType('image', 'png'),
             ),
           );
@@ -182,7 +168,6 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
         }
       }
 
-      // 🟢 เพิ่มการแนบไฟล์เอกสาร (พรบ.) ไปยัง Backend (รองรับทั้ง Web และ Mobile)
       if (_pickedDocFile != null || _docFilePath != null) {
         if (kIsWeb && _pickedDocFile?.bytes != null) {
           request.files.add(
@@ -203,9 +188,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
       final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // ✅ สำเร็จ! ปิด Pop-up แล้วเด้งไปหน้า Success
         if (mounted) {
-          Navigator.pop(dialogContext); // ปิด Dialog ยืนยัน
+          Navigator.pop(dialogContext); 
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -214,11 +198,10 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
           );
         }
       } else {
-        // ❌ ไม่สำเร็จ
         debugPrint('🔥 Error API: ${response.body}');
         if (mounted) {
-          Navigator.pop(dialogContext); // ปิด Dialog ยืนยันก่อน
-          _showUploadErrorDialog(context); // เปิด Dialog แดง
+          Navigator.pop(dialogContext); 
+          _showUploadErrorDialog(context); 
         }
       }
     } catch (e) {
@@ -230,13 +213,12 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     } finally {
       if (mounted) {
         setState(() {
-          isSubmitting = false; // หยุดหมุนติ้วๆ
+          isSubmitting = false; 
         });
       }
     }
   }
 
-  // 🔴 ฟังก์ชันแสดง Popup อัปโหลดรูปภาพไม่สำเร็จ
   void _showUploadErrorDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -255,7 +237,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                   width: 80,
                   height: 80,
                   decoration: const BoxDecoration(
-                    color: Color(0xFFFF0000), // สีแดง
+                    color: Color(0xFFFF0000), 
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -310,7 +292,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
 
   void _showConfirmationDialog(BuildContext context) {
     showDialog(
-      barrierDismissible: false, // ห้ามกดข้างนอกปิดตอนกำลังโหลด
+      barrierDismissible: false, 
       context: context,
       builder: (BuildContext dialogContext) {
         return StatefulBuilder(
@@ -386,10 +368,10 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                                   onPressed: () {
                                     setStateDialog(() {
                                       isSubmitting = true;
-                                    }); // อัปเดต UI Pop-up เป็นกำลังโหลด
+                                    }); 
                                     _submitVehicleToApi(
                                       dialogContext,
-                                    ); // 🚀 ยิง API ของจริง!
+                                    ); 
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: const Color(0xFF009CB4),
@@ -473,7 +455,6 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
             key: _formKey,
             child: Column(
               children: [
-                // 📸 กล่อง 1: เลือกรูปภาพรถยนต์
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
@@ -553,7 +534,6 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
 
                 const SizedBox(height: 16),
 
-                // 📝 กล่อง 2: ฟอร์มกรอกข้อมูล
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
@@ -577,16 +557,27 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                         isRequired: true,
                       ),
                       const SizedBox(height: 24),
-                      Center(
-                        child: SizedBox(
-                          width: 200,
-                          child: _buildTextField(
-                            label: 'ทะเบียนรถ',
-                            controller: plateController,
-                            hint: 'กข 1234',
-                            isRequired: true,
+                      // 🟢 เปลี่ยนหน้าตาให้แบ่งเป็น 2 ช่อง: ทะเบียนรถ กับ จังหวัด แบบหน้า Edit
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              label: 'ทะเบียนรถ',
+                              controller: plateController,
+                              hint: 'กข 1234',
+                              isRequired: true,
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _buildTextField(
+                              label: 'จังหวัด',
+                              controller: provinceController,
+                              hint: 'กรุงเทพมหานคร',
+                              isRequired: false,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 24),
                       Divider(color: Colors.indigo.shade50, thickness: 1.5),
@@ -655,7 +646,6 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                       Divider(color: Colors.indigo.shade50, thickness: 1.5),
                       const SizedBox(height: 20),
 
-                      // 📄 เอกสารรถ (พรบ)
                       const Text(
                         'เอกสารรถ (พรบ)',
                         style: TextStyle(
@@ -674,9 +664,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                         label: 'วันหมดอายุ พ.ร.บ. (YYYY-MM-DD)',
                         controller: actExpiryDateController,
                         hint: 'YYYY-MM-DD',
-                        readOnly: true, // 🟢 บังคับไม่ให้พิมพ์เอง
+                        readOnly: true, 
                         onTap: () async {
-                          // 🟢 เรียกใช้ปฏิทินเมื่อกดช่องกรอก
                           DateTime? pickedDate = await showDatePicker(
                             context: context,
                             initialDate: DateTime.now(),
@@ -767,7 +756,6 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
 
                 const SizedBox(height: 30),
 
-                // 🟢 ปุ่มยืนยัน
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 40),
                   child: SizedBox(
@@ -820,8 +808,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     required TextEditingController controller,
     String? hint,
     bool isRequired = false,
-    bool readOnly = false, // 🟢 เพิ่มพารามิเตอร์ readOnly
-    VoidCallback? onTap, // 🟢 เพิ่มพารามิเตอร์ onTap
+    bool readOnly = false, 
+    VoidCallback? onTap, 
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -837,8 +825,8 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
-          readOnly: readOnly, // 🟢 นำมาใช้ที่นี่
-          onTap: onTap, // 🟢 นำมาใช้ที่นี่
+          readOnly: readOnly, 
+          onTap: onTap, 
           style: const TextStyle(color: Colors.black87, fontSize: 14),
           decoration: InputDecoration(
             hintText: hint,

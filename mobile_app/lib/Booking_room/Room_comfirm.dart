@@ -95,8 +95,8 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
 
                               try {
                                 final String baseUrl = kIsWeb
-                                    ? 'http://192.168.88.25:3001'
-                                    : 'http://192.168.88.25:3001';
+                                    ? 'http://localhost:3001'
+                                    : 'http://localhost:3001';
 
                                 final prefs =
                                     await SharedPreferences.getInstance();
@@ -422,7 +422,7 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                       ? Image.network(
                           widget.room.imagePath!.startsWith('http')
                               ? widget.room.imagePath!
-                              : '${kIsWeb ? "http://192.168.88.25:3001" : "http://192.168.88.25:3001"}${widget.room.imagePath}',
+                              : '${kIsWeb ? "http://localhost:3001" : "http://localhost:3001"}${widget.room.imagePath}',
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) =>
                               const Icon(

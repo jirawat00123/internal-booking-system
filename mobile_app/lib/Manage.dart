@@ -29,7 +29,7 @@ class _ManagePageState extends State<ManagePage> {
   bool _isLoadingEmployees = false;
   bool _isLoggingIn = false; // 🟢 ป้องกันการกดปุ่มยืนยันรัวๆ
 
-  final String baseUrl = 'http://192.168.88.25:3001/api';
+  final String baseUrl = 'http://localhost:3001/api';
 
   @override
   void initState() {

@@ -180,8 +180,8 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
       }
 
       String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'http://localhost:3001'
+          : 'http://localhost:3001';
 
       // 🎯 เปลี่ยน URL API ไปที่ /return สำหรับการคืนรถ
       var request = http.MultipartRequest(
