@@ -155,7 +155,7 @@ class _EditUserPageState extends State<EditUserPage> {
 
                             final response = await http.put(
                               Uri.parse(
-                                'http://192.168.88.25:3001/api/employees/${widget.employee.id}',
+                                'https://192.168.88.25:3002/api/employees/${widget.employee.id}',
                               ),
                               headers: {'Content-Type': 'application/json'},
                               body: bodyData,

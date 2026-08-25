@@ -25,7 +25,7 @@ class _UsersPageState extends State<UsersPage> {
   bool _isLoading = true;
   bool _isDeleting = false;
 
-  final String _baseUrl = 'http://192.168.88.25:3001';
+  final String _baseUrl = 'https://192.168.88.25:3002';
 
   @override
   void initState() {

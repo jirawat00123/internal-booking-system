@@ -50,10 +50,12 @@ const swaggerUi = require('swagger-ui-express');
 // ==========================================
 process.on('uncaughtException', (err) => {
   console.error('🔴 [Uncaught Exception] พบข้อผิดพลาดร้ายแรงที่ไม่ถูกจัดการ:', err);
+  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('🔴 [Unhandled Rejection] Promise ไม่ถูกจัดการ:', reason);
+  process.exit(1);
 });
 
 // ==========================================
@@ -61,6 +63,8 @@ process.on('unhandledRejection', (reason, promise) => {
 // ==========================================
 // ล็อก Path ให้ชี้ตรงไปที่ uploads ของ Container (/app/uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// 🟢 ผูก Path ให้ชี้ตรงไปที่ attachments ของ Container (/app/attachments)
+app.use('/attachments', express.static(path.join(__dirname, '../attachments')));
 // ==========================================
 // 📑 ตั้งค่าหน้าปกคู่มือ API (Swagger)
 // ==========================================
@@ -374,6 +378,10 @@ app.post('/api/vehicle-bookings/book', authenticateToken, async (req, res) => {
     const parsedVehicleId = parseInt(vehicleId, 10);
     const parsedUserId = parseInt(userId, 10);
 
+    if (isNaN(parsedVehicleId) || isNaN(parsedUserId)) {
+      return res.status(400).json({ message: 'รูปแบบ vehicleId หรือ userId ไม่ถูกต้อง (ต้องเป็นตัวเลขเท่านั้น)' });
+    }
+
     // 1. ตรวจสอบว่ามีรถยนต์คันนี้ในระบบจริงไหม
     const vehicleExists = await prisma.vehicle.findUnique({
       where: { id: parsedVehicleId }
@@ -523,3 +531,18 @@ server.on('error', (err) => {
   }
   process.exit(1);
 });
+
+// ==========================================
+// 🛑 จัดการ Graceful Shutdown (ปิดการเชื่อมต่อ Database อย่างปลอดภัย)
+// ==========================================
+const shutdown = async () => {
+  console.log('🛑 กำลังปิดเซิร์ฟเวอร์อย่างปลอดภัย...');
+  await prisma.$disconnect();
+  server.close(() => {
+    console.log('✅ ปิดการทำงานเซิร์ฟเวอร์และการเชื่อมต่อฐานข้อมูลสำเร็จ');
+    process.exit(0);
+  });
+};
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

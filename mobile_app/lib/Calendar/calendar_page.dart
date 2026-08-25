@@ -6,7 +6,9 @@ import 'calendar_service.dart';
 import '../Booking_room/Room_model.dart';
 
 class CalendarPage extends StatefulWidget {
-  const CalendarPage({Key? key}) : super(key: key);
+  final String category;
+
+  const CalendarPage({Key? key, this.category = 'ROOM'}) : super(key: key);
 
   @override
   State<CalendarPage> createState() => _CalendarPageState();
@@ -24,6 +26,7 @@ class _CalendarPageState extends State<CalendarPage> {
   Map<DateTime, List<CalendarEvent>> _groupedEvents = {};
   String? _selectedLocation;
   int? _selectedRoomId;
+  int? _selectedVehicleId;
 
   @override
   void initState() {
@@ -32,23 +35,42 @@ class _CalendarPageState extends State<CalendarPage> {
     _fetchEventsForCurrentView();
   }
 
-  // ฟังก์ชันดึงข้อมูลการจอง โดยดึงข้อมูลครอบคลุมเดือนปัจจุบัน (เผื่อล่วงหน้าและย้อนหลังเล็กน้อย)
   Future<void> _fetchEventsForCurrentView() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // ดึงข้อมูลย้อนหลัง 1 เดือน และล่วงหน้า 2 เดือน สำหรับการโหลดแต่ละรอบ
       DateTime startDate = DateTime(_focusedDay.year, _focusedDay.month - 1, 1);
       DateTime endDate = DateTime(_focusedDay.year, _focusedDay.month + 2, 0);
 
-      List<CalendarEvent> events = await _calendarService.fetchRoomEvents(
-        startDate,
-        endDate,
-        roomId: _selectedRoomId,
-        location: _selectedLocation,
-      );
+      List<CalendarEvent> events;
+      if (widget.category == 'VEHICLE') {
+        events = await _calendarService.fetchVehicleEvents(
+          startDate,
+          endDate,
+          vehicleId: _selectedVehicleId,
+        );
+      } else {
+        events = await _calendarService.fetchRoomEvents(
+          startDate,
+          endDate,
+          roomId: _selectedRoomId,
+          location: _selectedLocation,
+        );
+      }
+
+      // กรองเฉพาะรายการปัจจุบันและอนาคต ไม่รวมรายการที่เสร็จสิ้น สิ้นสุดเวลา หรืออยู่ในอดีต
+      final now = DateTime.now();
+      events = events.where((event) {
+        final status = event.status.toUpperCase();
+        final isCompletedOrExpired =
+            status == 'COMPLETED' || status == 'EXPIRED';
+        final hasEnded =
+            event.end.isBefore(now) || event.end.isAtSameMomentAs(now);
+
+        return !isCompletedOrExpired && !hasEnded;
+      }).toList();
 
       _groupEvents(events);
 
@@ -113,9 +135,11 @@ class _CalendarPageState extends State<CalendarPage> {
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'ตารางการจองห้องประชุม',
-          style: TextStyle(
+        title: Text(
+          widget.category == 'VEHICLE'
+              ? 'ตารางการจองรถยนต์'
+              : 'ตารางการจองห้องประชุม',
+          style: const TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -132,203 +156,221 @@ class _CalendarPageState extends State<CalendarPage> {
       ),
       body: Column(
         children: [
-          // 🏷️ Filter เลือกฝั่งและห้อง
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(
               horizontal: 16.0,
-              vertical: 4.0, // ลด Padding เพื่อเพิ่มพื้นที่แนวตั้งให้ Calendar
+              vertical: 4.0,
             ),
             color: Colors.white,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // เช็คความกว้างของหน้าจอ (>500 ให้แสดงในบรรทัดเดียวกัน)
-                final bool isWide = constraints.maxWidth > 500;
-
-                Widget locationFilter = Row(
-                  children: [
-                    const Text(
-                      'ฝั่ง:',
-                      style: TextStyle(
-                        fontFamily: 'Kanit',
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
+            child: widget.category == 'VEHICLE'
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      children: const [
+                        Icon(
+                          Icons.directions_car,
+                          color: Color(0xFF003E75),
+                          size: 18,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'ปฏิทินรายการจองรถยนต์',
+                          style: TextStyle(
+                            fontFamily: 'Kanit',
+                            fontSize: 14,
+                            color: Color(0xFF003E75),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: DropdownButton<String?>(
-                        value: _selectedLocation,
-                        isExpanded: true,
-                        isDense: true, // ลดความสูงของ Dropdown
-                        underline: const SizedBox(),
-                        icon: const Icon(Icons.arrow_drop_down),
-                        items: [
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text(
-                              'ทุกฝั่ง',
-                              style: TextStyle(
-                                fontFamily: 'Kanit',
-                                fontSize: 14,
-                              ),
+                  )
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final bool isWide = constraints.maxWidth > 500;
+
+                      Widget locationFilter = Row(
+                        children: [
+                          const Text(
+                            'ฝั่ง:',
+                            style: TextStyle(
+                              fontFamily: 'Kanit',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
                             ),
                           ),
-                          ...globalMeetingRooms.value
-                              .map((room) => room.location)
-                              .where((loc) => loc.trim().isNotEmpty)
-                              .toSet()
-                              .map((location) {
-                                return DropdownMenuItem<String?>(
-                                  value: location,
-                                  child: Text(
-                                    location,
-                                    style: const TextStyle(
-                                      fontFamily: 'Kanit',
-                                      fontSize: 14,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
-                              })
-                              .toList(),
-                        ],
-                        onChanged: (val) {
-                          setState(() {
-                            _selectedLocation = val;
-                            _selectedRoomId =
-                                null; // รีเซ็ตห้องเป็นทุกห้องเมื่อเปลี่ยนฝั่ง
-                          });
-                          _fetchEventsForCurrentView();
-                        },
-                      ),
-                    ),
-                  ],
-                );
-
-                Widget roomFilter = Row(
-                  children: [
-                    const Text(
-                      'ห้อง:',
-                      style: TextStyle(
-                        fontFamily: 'Kanit',
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Builder(
-                        builder: (context) {
-                          // กรองห้องตามฝั่งที่เลือก
-                          final filteredRooms = globalMeetingRooms.value.where((
-                            room,
-                          ) {
-                            if (_selectedLocation == null) return true;
-                            return room.location == _selectedLocation;
-                          }).toList();
-
-                          // เช็ค Empty State
-                          if (_selectedLocation != null &&
-                              filteredRooms.isEmpty) {
-                            return DropdownButton<int?>(
-                              value: null,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButton<String?>(
+                              value: _selectedLocation,
                               isExpanded: true,
                               isDense: true,
                               underline: const SizedBox(),
-                              icon: const Icon(
-                                Icons.arrow_drop_down,
-                                color: Colors.grey,
-                              ),
-                              items: const [
-                                DropdownMenuItem<int?>(
+                              icon: const Icon(Icons.arrow_drop_down),
+                              items: [
+                                const DropdownMenuItem<String?>(
                                   value: null,
                                   child: Text(
-                                    'ไม่มีห้องประชุม',
+                                    'ทุกฝั่ง',
                                     style: TextStyle(
                                       fontFamily: 'Kanit',
-                                      color: Colors.grey,
                                       fontSize: 14,
                                     ),
                                   ),
                                 ),
+                                ...globalMeetingRooms.value
+                                    .map((room) => room.location)
+                                    .where((loc) => loc.trim().isNotEmpty)
+                                    .toSet()
+                                    .map((location) {
+                                      return DropdownMenuItem<String?>(
+                                        value: location,
+                                        child: Text(
+                                          location,
+                                          style: const TextStyle(
+                                            fontFamily: 'Kanit',
+                                            fontSize: 14,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      );
+                                    })
+                                    .toList(),
                               ],
-                              onChanged: null, // ปิดการใช้งานเมื่อไม่มีห้อง
-                            );
-                          }
+                              onChanged: (val) {
+                                setState(() {
+                                  _selectedLocation = val;
+                                  _selectedRoomId = null;
+                                });
+                                _fetchEventsForCurrentView();
+                              },
+                            ),
+                          ),
+                        ],
+                      );
 
-                          return DropdownButton<int?>(
-                            value: _selectedRoomId,
-                            isExpanded: true,
-                            isDense: true,
-                            underline: const SizedBox(),
-                            icon: const Icon(Icons.arrow_drop_down),
-                            items: [
-                              const DropdownMenuItem<int?>(
-                                value: null,
-                                child: Text(
-                                  'ทุกห้อง',
-                                  style: TextStyle(
-                                    fontFamily: 'Kanit',
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                              ...filteredRooms.map((room) {
-                                return DropdownMenuItem<int?>(
-                                  value: int.tryParse(room.id.toString()),
-                                  child: Text(
-                                    room.roomName,
-                                    style: const TextStyle(
-                                      fontFamily: 'Kanit',
-                                      fontSize: 14,
+                      Widget roomFilter = Row(
+                        children: [
+                          const Text(
+                            'ห้อง:',
+                            style: TextStyle(
+                              fontFamily: 'Kanit',
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Builder(
+                              builder: (context) {
+                                final filteredRooms = globalMeetingRooms.value
+                                    .where((room) {
+                                      if (_selectedLocation == null)
+                                        return true;
+                                      return room.location == _selectedLocation;
+                                    })
+                                    .toList();
+
+                                if (_selectedLocation != null &&
+                                    filteredRooms.isEmpty) {
+                                  return DropdownButton<int?>(
+                                    value: null,
+                                    isExpanded: true,
+                                    isDense: true,
+                                    underline: const SizedBox(),
+                                    icon: const Icon(
+                                      Icons.arrow_drop_down,
+                                      color: Colors.grey,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
-                              }).toList(),
-                            ],
-                            onChanged: (val) {
-                              setState(() {
-                                _selectedRoomId = val;
-                              });
-                              _fetchEventsForCurrentView();
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                );
+                                    items: const [
+                                      DropdownMenuItem<int?>(
+                                        value: null,
+                                        child: Text(
+                                          'ไม่มีห้องประชุม',
+                                          style: TextStyle(
+                                            fontFamily: 'Kanit',
+                                            color: Colors.grey,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    onChanged: null,
+                                  );
+                                }
 
-                if (isWide) {
-                  return Row(
-                    children: [
-                      Expanded(flex: 2, child: locationFilter),
-                      Container(
-                        width: 1,
-                        height: 20,
-                        color: Colors.grey.shade300,
-                        margin: const EdgeInsets.symmetric(horizontal: 16),
-                      ),
-                      Expanded(
-                        flex: 3,
-                        child: roomFilter,
-                      ), // ห้องใช้พื้นที่เยอะกว่า
-                    ],
-                  );
-                } else {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      locationFilter,
-                      const SizedBox(height: 6),
-                      roomFilter,
-                    ],
-                  );
-                }
-              },
-            ),
+                                return DropdownButton<int?>(
+                                  value: _selectedRoomId,
+                                  isExpanded: true,
+                                  isDense: true,
+                                  underline: const SizedBox(),
+                                  icon: const Icon(Icons.arrow_drop_down),
+                                  items: [
+                                    const DropdownMenuItem<int?>(
+                                      value: null,
+                                      child: Text(
+                                        'ทุกห้อง',
+                                        style: TextStyle(
+                                          fontFamily: 'Kanit',
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
+                                    ...filteredRooms.map((room) {
+                                      return DropdownMenuItem<int?>(
+                                        value: int.tryParse(room.id.toString()),
+                                        child: Text(
+                                          room.roomName,
+                                          style: const TextStyle(
+                                            fontFamily: 'Kanit',
+                                            fontSize: 14,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ],
+                                  onChanged: (val) {
+                                    setState(() {
+                                      _selectedRoomId = val;
+                                    });
+                                    _fetchEventsForCurrentView();
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      );
+
+                      if (isWide) {
+                        return Row(
+                          children: [
+                            Expanded(flex: 2, child: locationFilter),
+                            Container(
+                              width: 1,
+                              height: 20,
+                              color: Colors.grey.shade300,
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                            ),
+                            Expanded(flex: 3, child: roomFilter),
+                          ],
+                        );
+                      } else {
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            locationFilter,
+                            const SizedBox(height: 6),
+                            roomFilter,
+                          ],
+                        );
+                      }
+                    },
+                  ),
           ),
           const Divider(height: 1),
 
@@ -399,13 +441,60 @@ class _CalendarPageState extends State<CalendarPage> {
               markerSize: 6.0,
             ),
             calendarBuilders: CalendarBuilders(
-              // ปรับแต่งจุด Marker ใต้วันที่ ให้เป็นสีตามประเภทการจอง (ห้อง/รถ)
+              // ปรับแต่งการแสดงผลแถบสถานะหรือ Marker ใต้วันที่
               markerBuilder: (context, day, events) {
                 if (events.isEmpty) return const SizedBox();
+
+                final normalizedDay = DateTime(day.year, day.month, day.day);
+
+                // หากเป็นปฏิทินรถยนต์ ให้แสดงเป็น Continuous Event Bar ลากยาวต่อเนื่องตั้งแต่วันเริ่มต้นถึงวันสิ้นสุด
+                if (widget.category == 'VEHICLE') {
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: events.take(2).map((event) {
+                      final startDay = DateTime(
+                        event.start.year,
+                        event.start.month,
+                        event.start.day,
+                      );
+                      final endDay = DateTime(
+                        event.end.year,
+                        event.end.month,
+                        event.end.day,
+                      );
+
+                      final isStart = isSameDay(normalizedDay, startDay);
+                      final isEnd = isSameDay(normalizedDay, endDay);
+
+                      return Container(
+                        height: 5.0,
+                        margin: EdgeInsets.only(
+                          top: 1.0,
+                          bottom: 1.0,
+                          left: isStart ? 4.0 : 0.0,
+                          right: isEnd ? 4.0 : 0.0,
+                        ),
+                        decoration: BoxDecoration(
+                          color: event.color,
+                          borderRadius: BorderRadius.horizontal(
+                            left: isStart
+                                ? const Radius.circular(3.0)
+                                : Radius.zero,
+                            right: isEnd
+                                ? const Radius.circular(3.0)
+                                : Radius.zero,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  );
+                }
+
+                // สำหรับห้องประชุม คงจุด Marker แบบเดิม
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: events.take(4).map((event) {
-                    // แสดงจุดสูงสุด 4 จุด
                     return Container(
                       margin: const EdgeInsets.symmetric(horizontal: 1.0),
                       width: 6.0,
@@ -663,6 +752,9 @@ class _CalendarPageState extends State<CalendarPage> {
   void _showEventDetailDialog(CalendarEvent event) {
     final dateFormat = DateFormat('d MMMM yyyy', 'th');
     final timeFormat = DateFormat('HH:mm');
+    final room = event.roomInfo;
+    final vehicle = event.vehicleInfo;
+    final isVehicle = event.type == 'VEHICLE' || widget.category == 'VEHICLE';
 
     showModalBottomSheet(
       context: context,
@@ -690,9 +782,11 @@ class _CalendarPageState extends State<CalendarPage> {
                 ),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'รายละเอียดการจอง',
-                style: TextStyle(
+              Text(
+                isVehicle
+                    ? 'รายละเอียดการจองรถยนต์'
+                    : 'รายละเอียดการจองห้องประชุม',
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   fontFamily: 'Kanit',
@@ -700,11 +794,31 @@ class _CalendarPageState extends State<CalendarPage> {
               ),
               const SizedBox(height: 20),
               _buildDetailRow(
-                Icons.meeting_room,
-                'ห้องประชุม',
+                isVehicle ? Icons.directions_car : Icons.meeting_room,
+                isVehicle ? 'ยานพาหนะ' : 'ห้องประชุม',
                 event.title,
                 Colors.black87,
               ),
+              if (!isVehicle && room != null && room['location'] != null) ...[
+                const SizedBox(height: 16),
+                _buildDetailRow(
+                  Icons.location_on,
+                  'สถานที่ / ชั้น',
+                  '${room['location'] ?? '-'} ชั้น ${room['floor'] ?? '-'}',
+                  Colors.black87,
+                ),
+              ],
+              if (isVehicle &&
+                  vehicle != null &&
+                  vehicle['plateNumber'] != null) ...[
+                const SizedBox(height: 16),
+                _buildDetailRow(
+                  Icons.badge,
+                  'ทะเบียนรถ',
+                  '${vehicle['plateNumber'] ?? '-'}',
+                  Colors.black87,
+                ),
+              ],
               const SizedBox(height: 16),
               _buildDetailRow(
                 Icons.person,

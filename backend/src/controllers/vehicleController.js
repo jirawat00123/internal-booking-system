@@ -145,15 +145,15 @@ exports.createVehicle = async (req, res) => {
         }
 
         let uploadUrl = uploadedFile
-            ? '/uploads/vehicles/' + uploadedFile.filename
+            ? '/attachments/vehicles/images/' + uploadedFile.filename
             : (req.body.uploadUrl || null);
 
         if (
             uploadUrl &&
-            uploadUrl.startsWith('/uploads/') &&
-            !uploadUrl.startsWith('/uploads/vehicles/')
+            uploadUrl.startsWith('/attachments/') &&
+            !uploadUrl.startsWith('/attachments/vehicles/images/')
         ) {
-            uploadUrl = uploadUrl.replace('/uploads/', '/uploads/vehicles/');
+            uploadUrl = uploadUrl.replace('/attachments/', '/attachments/vehicles/images/');
         }
 
         const newVehicle = await prisma.vehicle.create({
@@ -184,7 +184,7 @@ exports.createVehicle = async (req, res) => {
             docExpiry = parsedDate;
         }
 
-        const actUploadUrl = actFile ? '/uploads/vehicles/' + actFile.filename : null;
+        const actUploadUrl = actFile ? '/attachments/vehicles/images/' + actFile.filename : null;
 
         if (actFile || docNum || docExpiry) {
             const docType = await prisma.documentType.upsert({
@@ -315,13 +315,13 @@ exports.updateVehicle = async (req, res) => {
         let newUploadUrl = existingVehicle.uploadUrl;
         if (uploadedFile) {
             // ประกอบ Web URL Path โดยใช้ filename เพื่อให้พร้อมสำหรับ Frontend นำไปใช้งาน
-            newUploadUrl = '/uploads/vehicles/' + uploadedFile.filename;
+            newUploadUrl = '/attachments/vehicles/images/' + uploadedFile.filename;
             if (existingVehicle.uploadUrl) {
                 const oldFilePath = path.join(
                     __dirname,
                     '..',
                     '..',
-                    existingVehicle.uploadUrl.replace(/^\/uploads\//, 'uploads/')
+                    existingVehicle.uploadUrl.replace(/^\/attachments\//, 'attachments/')
                 );
                 await safeDeleteFile(oldFilePath);
             }
@@ -329,12 +329,12 @@ exports.updateVehicle = async (req, res) => {
             newUploadUrl = req.body.uploadUrl; // รองรับกรณีส่ง path มาตรงๆ
 
             if (
-                newUploadUrl.startsWith('/uploads/') &&
-                !newUploadUrl.startsWith('/uploads/vehicles/')
+                newUploadUrl.startsWith('/attachments/') &&
+                !newUploadUrl.startsWith('/attachments/vehicles/images/')
             ) {
                 newUploadUrl = newUploadUrl.replace(
-                    '/uploads/',
-                    '/uploads/vehicles/'
+                    '/attachments/',
+                    '/attachments/vehicles/images/'
                 );
             }
         }
@@ -368,7 +368,7 @@ exports.updateVehicle = async (req, res) => {
             docExpiry = parsedDate;
         }
 
-        let actUploadUrl = actFile ? '/uploads/vehicles/' + actFile.filename : undefined;
+        let actUploadUrl = actFile ? '/attachments/vehicles/images/' + actFile.filename : undefined;
 
         if (actFile || docNum !== undefined || docExpiry !== undefined) {
             const docType = await prisma.documentType.upsert({

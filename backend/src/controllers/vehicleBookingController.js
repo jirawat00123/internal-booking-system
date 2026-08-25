@@ -15,10 +15,11 @@ exports.createBooking = async (req, res) => {
         }
 
         const finalPassengers = parseInt(passengerCount || passengers) || 1;
-        const finalUserId = parseInt(req.user.userId, 10);
+        const finalUserId = parseInt(req.user?.userId || req.user?.id, 10);
 
         const reqStart = new Date(startDatetime);
         const reqEnd = new Date(finalEndDate);
+        const now = new Date();
 
         if (reqStart < now) {
             return res.status(400).json({ success: false, error: "ไม่สามารถทำรายการจองรถยนต์ย้อนหลังได้ กรุณาเลือกเวลาที่เป็นปัจจุบันหรืออนาคต" });
@@ -36,7 +37,7 @@ exports.createBooking = async (req, res) => {
                         notIn: [BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.REJECTED] 
                     },
                     startDatetime: { lt: reqEnd },
-                    returnDate: { gt: reqStart }
+                    endDatetime: { gt: reqStart }
                 }
             });
 
@@ -50,16 +51,15 @@ exports.createBooking = async (req, res) => {
                     userId: finalUserId, 
                     destination: destination || "-",
                     startDatetime: reqStart,
-                    returnDate: reqEnd,
+                    endDatetime: reqEnd,
                     passengers: finalPassengers, 
                     purpose: purpose || "ใช้งานบริษัท",
-                    status: BookingStatus.PENDING // 🟢 เปลี่ยนจาก RESERVED เป็น PENDING รออนุมัติ
+                    status: BookingStatus.PENDING
                 },
-                include: { vehicle: true } // ดึงข้อมูลรถมาเพื่อใช้ในการแจ้งเตือน
+                include: { vehicle: true }
             });
 
-            // 🟢 ย้าย AuditLog เข้ามาใน Transaction + จัดฟอร์แมต JSON
-            const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : finalUserId;
+            const actionUserId = parseInt(req.user?.userId || req.user?.id, 10) || finalUserId;
             if (actionUserId) {
                 await tx.auditLog.create({
                     data: {
@@ -79,7 +79,6 @@ exports.createBooking = async (req, res) => {
             return booking;
         });
 
-        // 🔔 2. แจ้งเตือน Admin ว่ามีรายการขอจองรถยนต์ใหม่
         await notificationService.notifyAdmins({
             title: "มีคำขอจองรถยนต์ใหม่",
             message: `รอการอนุมัติ: รถยนต์ทะเบียน ${newBooking.vehicle.plateNumber} (ปลายทาง: ${destination || '-'})`,
@@ -104,7 +103,34 @@ exports.createBooking = async (req, res) => {
 // =======================================================
 exports.getBookings = async (req, res) => {
     try {
+        const { startDate, endDate, vehicleId, status } = req.query;
+
+        let whereClause = {};
+
+        if (startDate && endDate) {
+            const now = new Date();
+            const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
+
+            whereClause.startDatetime = { lte: new Date(endDate) };
+            whereClause.endDatetime = { gte: effectiveStartDate };
+
+            if (status) {
+                whereClause.status = status;
+            } else {
+                whereClause.status = {
+                    notIn: [BookingStatus.COMPLETED, BookingStatus.CANCELLED, BookingStatus.EXPIRED, BookingStatus.REJECTED]
+                };
+            }
+        } else if (status) {
+            whereClause.status = status;
+        }
+
+        if (vehicleId) {
+            whereClause.vehicleId = parseInt(vehicleId, 10);
+        }
+
         const bookings = await prisma.vehicleBooking.findMany({
+            where: whereClause,
             orderBy: { createdAt: 'desc' },
             include: {
                 vehicle: true,
@@ -112,8 +138,7 @@ exports.getBookings = async (req, res) => {
             }
         });
 
-        // 🟢 แปลงข้อมูลและแนบสิทธิ์ (Permissions) กลับไปให้ Frontend อัตโนมัติ
-        const currentUserId = req.user ? parseInt(req.user.userId, 10) : null;
+        const currentUserId = req.user ? parseInt(req.user?.userId || req.user?.id, 10) : null;
         const currentUserRole = req.user ? req.user.role : 'USER';
         
         const bookingsWithPermissions = bookings.map(booking => {
@@ -125,8 +150,8 @@ exports.getBookings = async (req, res) => {
                 ...booking,
                 permissions: {
                     canCancel: (isOwner || isAdmin) && isPendingOrApproved,
-                    canEdit: (isOwner || isAdmin) && booking.status === BookingStatus.PENDING, // แก้เป็น PENDING ตาม Workflow
-                    canApprove: isAdmin && booking.status === BookingStatus.PENDING // เพิ่มสิทธิ์อนุมัติ
+                    canEdit: (isOwner || isAdmin) && booking.status === BookingStatus.PENDING,
+                    canApprove: isAdmin && booking.status === BookingStatus.PENDING
                 }
             };
         });
@@ -158,11 +183,13 @@ exports.updateBookingStatus = async (req, res) => {
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจองนี้" });
         }
 
+        const currentUserId = parseInt(req.user?.userId || req.user?.id, 10);
+
         if (req.user.role === 'ADMIN') {
             // อนุญาตให้ Admin จัดการสถานะ
         } else if (
             req.user.role === 'USER' &&
-            existingBooking.userId === parseInt(req.user.userId, 10) &&
+            existingBooking.userId === currentUserId &&
             ['CANCELLED'].includes(status?.toUpperCase())
         ) {
             // USER สามารถยกเลิกเฉพาะ Booking ของตัวเอง
@@ -188,8 +215,8 @@ exports.updateBookingStatus = async (req, res) => {
                                 BookingStatus.REJECTED
                             ]
                         },
-                        startDatetime: { lt: existingBooking.returnDate },
-                        returnDate: { gt: existingBooking.startDatetime }
+                        startDatetime: { lt: existingBooking.endDatetime },
+                        endDatetime: { gt: existingBooking.startDatetime }
                     }
                 });
 
@@ -203,7 +230,6 @@ exports.updateBookingStatus = async (req, res) => {
                 data: { status: validStatus }
             });
 
-            // อัปเดตสถานะของตัวรถให้สอดคล้องกับสถานะการจอง
             if (validStatus === BookingStatus.CANCELLED || validStatus === BookingStatus.COMPLETED || validStatus === BookingStatus.REJECTED) {
                 await tx.vehicle.update({
                     where: { id: existingBooking.vehicleId },
@@ -216,9 +242,7 @@ exports.updateBookingStatus = async (req, res) => {
                 });
             }
 
-            // 🟢 AuditLog เป็น JSON
-            const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-            if (actionUserId) {
+            if (!isNaN(currentUserId)) {
                 const auditAction = validStatus === BookingStatus.APPROVED ? "APPROVE_VEHICLE_BOOKING" : 
                                    (validStatus === BookingStatus.COMPLETED ? "COMPLETED_VEHICLE_BOOKING" : "UPDATE_VEHICLE_BOOKING");
 
@@ -226,7 +250,7 @@ exports.updateBookingStatus = async (req, res) => {
                     data: {
                         action: auditAction,
                         module: 'VEHICLE_BOOKING',
-                        userId: actionUserId,
+                        userId: currentUserId,
                         entityId: bookingId,
                         entityType: 'VEHICLE_BOOKING',
                         details: JSON.stringify({
@@ -237,6 +261,14 @@ exports.updateBookingStatus = async (req, res) => {
                     }
                 });
             }
+
+            if ([BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.REJECTED].includes(validStatus)) {
+                await tx.notification.updateMany({
+                    where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
+                    data: { isRead: true, status: 'read' }
+                });
+            }
+
             return booking;
         });
 
@@ -269,30 +301,72 @@ exports.releaseVehicle = async (req, res) => {
         const validStatus = status ? BookingStatus[status.toUpperCase()] : BookingStatus.IN_USE;
 
         const bookingExists = await prisma.vehicleBooking.findUnique({
-            where: { id: bookingId }
+            where: { id: bookingId },
+            include: { vehicle: true }
         });
 
         if (!bookingExists) {
             return res.status(404).json({ success: false, error: `ไม่พบรายการจองรหัส #${bookingId} ในระบบ` });
         }
 
-        // 🟢 มัดรวม Update Booking, Upload Image, Vehicle Status และ AuditLog เข้าด้วยกัน
+        const now = new Date();
+        if (now < bookingExists.startDatetime) {
+            const consentLog = await prisma.auditLog.findFirst({
+                where: {
+                    module: 'VEHICLE_BOOKING',
+                    entityId: bookingId,
+                    action: 'EARLY_RELEASE_CONSENT_GRANTED'
+                }
+            });
+
+            if (!consentLog) {
+                return res.status(409).json({
+                    success: false,
+                    code: "EARLY_RELEASE_REQUIRES_APPROVAL",
+                    error: "ยังไม่ถึงเวลาปล่อยรถ และยังไม่มีการยินยอมรับรถก่อนเวลาจากผู้จอง"
+                });
+            }
+        }
+
         const updatedData = await prisma.$transaction(async (tx) => {
+            const previousActive = await tx.vehicleBooking.findFirst({
+                where: {
+                    vehicleId: bookingExists.vehicleId,
+                    status: BookingStatus.IN_USE,
+                    id: { not: bookingId }
+                }
+            });
+
+            if (previousActive) {
+                throw new Error("PREVIOUS_BOOKING_ACTIVE");
+            }
+
             const updatedBooking = await tx.vehicleBooking.update({
                 where: { id: bookingId },
                 data: { status: validStatus }
             });
 
-            // อัปเดตสถานะในตาราง Vehicle เป็น IN_USE (กำลังใช้งาน)
             await tx.vehicle.update({
                 where: { id: bookingExists.vehicleId },
                 data: { status: VehicleStatus.IN_USE }
             });
 
-if (req.files && Object.keys(req.files).length > 0) {
+            const currentUserId = parseInt(req.user?.userId || req.user?.id, 10);
+
+            await tx.vehicleLog.create({
+                data: {
+                    vehicleBookingId: bookingId,
+                    checkoutTime: now,
+                    checkoutMileage: bookingExists.vehicle.currentMileage || 0,
+                    checkoutFuelLevel: 100,
+                    checkoutById: currentUserId
+                }
+            });
+
+            if (req.files && Object.keys(req.files).length > 0) {
                 const imagesToSave = [];
                 if (req.files['frontImage']) imagesToSave.push(req.files['frontImage'][0]);
-                if (req.files['backImage']) imagesToSave.push(req.files['backImage'][0]); // 👈 เพิ่มบรรทัดนี้สำหรับรูปหลังรถ
+                if (req.files['backImage']) imagesToSave.push(req.files['backImage'][0]);
                 if (req.files['plateImage']) imagesToSave.push(req.files['plateImage'][0]);
 
                 for (const file of imagesToSave) {
@@ -303,20 +377,19 @@ if (req.files && Object.keys(req.files).length > 0) {
                             fileName: file.originalname,
                             filePath: file.path,
                             fileType: file.mimetype,
-                            uploadedBy: { connect: { id: parseInt(req.user.userId, 10) } },
+                            uploadedBy: { connect: { id: currentUserId } },
                             bookingVehicle: { connect: { id: bookingId } }
                         }
                     });
                 }
             }
 
-            const actionUserId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-            if (actionUserId) {
+            if (!isNaN(currentUserId)) {
                 await tx.auditLog.create({
                     data: {
                         action: 'RELEASE_VEHICLE',
                         module: 'VEHICLE_BOOKING',
-                        userId: actionUserId,
+                        userId: currentUserId,
                         entityId: bookingId,
                         entityType: 'VEHICLE_BOOKING',
                         details: JSON.stringify({
@@ -329,6 +402,11 @@ if (req.files && Object.keys(req.files).length > 0) {
                 });
             }
 
+            await tx.notification.updateMany({
+                where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
+                data: { isRead: true, status: 'read' }
+            });
+
             return updatedBooking;
         });
 
@@ -340,6 +418,9 @@ if (req.files && Object.keys(req.files).length > 0) {
 
     } catch (error) {
         console.error("Release Vehicle Error:", error);
+        if (error.message === 'PREVIOUS_BOOKING_ACTIVE') {
+            return res.status(409).json({ success: false, code: "PREVIOUS_BOOKING_ACTIVE", error: "มีคิวก่อนหน้าที่ยังใช้งานรถอยู่" });
+        }
         return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการบันทึกข้อมูลปล่อยรถ" });
     }
 };
@@ -350,8 +431,8 @@ if (req.files && Object.keys(req.files).length > 0) {
 exports.completeVehicleBooking = async (req, res) => {
     try {
         const bookingId = parseInt(req.params.id, 10);
-        const reqUserId = parseInt(req.user.userId, 10);
-        const userRole = req.user.role;
+        const reqUserId = parseInt(req.user?.userId || req.user?.id, 10);
+        const userRole = req.user?.role;
 
         const booking = await prisma.vehicleBooking.findUnique({
             where: { id: bookingId }
@@ -361,8 +442,31 @@ exports.completeVehicleBooking = async (req, res) => {
             return res.status(404).json({ success: false, message: "ไม่พบรายการจอง" });
         }
 
-        if (userRole !== 'ADMIN' && booking.userId !== reqUserId) {
+        if (booking.status !== BookingStatus.IN_USE) {
+            return res.status(409).json({ success: false, code: "NOT_IN_USE", message: "รายการจองนี้ยังไม่ได้ถูกปล่อยรถ หรือเสร็จสิ้นไปแล้ว" });
+        }
+
+        if (userRole !== 'ADMIN' && userRole !== 'GUARD' && userRole !== 'SECURITY' && booking.userId !== reqUserId) {
             return res.status(403).json({ success: false, message: "คุณไม่มีสิทธิ์ทำรายการนี้" });
+        }
+
+        const now = new Date();
+        if (now < booking.endDatetime) {
+            const consentLog = await prisma.auditLog.findFirst({
+                where: {
+                    module: 'VEHICLE_BOOKING',
+                    entityId: bookingId,
+                    action: 'EARLY_RETURN_CONSENT_GRANTED'
+                }
+            });
+
+            if (!consentLog) {
+                return res.status(409).json({
+                    success: false,
+                    code: "EARLY_RETURN_REQUIRES_APPROVAL",
+                    message: "ยังไม่ถึงเวลาคืนรถตามกำหนด และยังไม่มีการยินยอมคืนรถก่อนเวลาจากผู้จอง"
+                });
+            }
         }
 
         await prisma.$transaction(async (tx) => {
@@ -371,12 +475,47 @@ exports.completeVehicleBooking = async (req, res) => {
                 data: { status: BookingStatus.COMPLETED } 
             });
 
+            const latestLog = await tx.vehicleLog.findFirst({
+                where: { vehicleBookingId: bookingId },
+                orderBy: { createdAt: 'desc' }
+            });
+
+            if (latestLog) {
+                await tx.vehicleLog.update({
+                    where: { id: latestLog.id },
+                    data: {
+                        returnTime: new Date(),
+                        returnById: reqUserId
+                    }
+                });
+            }
+
             await tx.vehicle.update({
                 where: { id: booking.vehicleId },
                 data: { status: VehicleStatus.AVAILABLE } 
             });
 
-            // 🟢 AuditLog เป็น JSON
+            if (req.files && Object.keys(req.files).length > 0) {
+                const imagesToSave = [];
+                if (req.files['frontImage']) imagesToSave.push(req.files['frontImage'][0]);
+                if (req.files['backImage']) imagesToSave.push(req.files['backImage'][0]);
+                if (req.files['plateImage']) imagesToSave.push(req.files['plateImage'][0]);
+
+                for (const file of imagesToSave) {
+                    await tx.attachment.create({
+                        data: {
+                            entityType: "VEHICLE_RETURN_IMAGE",
+                            entityId: bookingId,
+                            fileName: file.originalname,
+                            filePath: file.path,
+                            fileType: file.mimetype,
+                            uploadedBy: { connect: { id: reqUserId } },
+                            bookingVehicle: { connect: { id: bookingId } }
+                        }
+                    });
+                }
+            }
+
             await tx.auditLog.create({
                 data: {
                     action: 'COMPLETE_VEHICLE_BOOKING',
@@ -387,9 +526,15 @@ exports.completeVehicleBooking = async (req, res) => {
                     details: JSON.stringify({
                         oldStatus: booking.status,
                         newStatus: BookingStatus.COMPLETED,
-                        remark: "เสร็จสิ้นการใช้งานและคืนสถานะรถว่าง"
+                        hasAttachments: req.files ? true : false,
+                        remark: "เสร็จสิ้นการใช้งานและคืนสถานะรถว่าง (รับรถเข้า)"
                     })
                 }
+            });
+
+            await tx.notification.updateMany({
+                where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
+                data: { isRead: true, status: 'read' }
             });
         });
 
@@ -410,7 +555,7 @@ exports.completeVehicleBooking = async (req, res) => {
 exports.approveVehicleBooking = async (req, res) => {
     try {
         const bookingId = parseInt(req.params.id, 10);
-        const adminId = parseInt(req.user.userId, 10);
+        const adminId = parseInt(req.user?.userId || req.user?.id, 10);
 
         const booking = await prisma.vehicleBooking.findUnique({ where: { id: bookingId } });
         if (!booking) return res.status(404).json({ success: false, error: "ไม่พบการจอง" });
@@ -434,8 +579,8 @@ exports.approveVehicleBooking = async (req, res) => {
                             BookingStatus.REJECTED
                         ]
                     },
-                    startDatetime: { lt: booking.returnDate },
-                    returnDate: { gt: booking.startDatetime }
+                    startDatetime: { lt: booking.endDatetime },
+                    endDatetime: { gt: booking.startDatetime }
                 }
             });
 
@@ -492,7 +637,7 @@ exports.approveVehicleBooking = async (req, res) => {
 exports.rejectVehicleBooking = async (req, res) => {
     try {
         const bookingId = parseInt(req.params.id, 10);
-        const adminId = parseInt(req.user.userId, 10);
+        const adminId = parseInt(req.user?.userId || req.user?.id, 10);
         const { remark } = req.body;
 
         const booking = await prisma.vehicleBooking.findUnique({ where: { id: bookingId } });
@@ -543,6 +688,280 @@ exports.rejectVehicleBooking = async (req, res) => {
     } catch (error) {
         console.error("Reject Vehicle Error:", error);
         return res.status(500).json({ success: false, error: "ไม่สามารถปฏิเสธได้" });
+    }
+};
+
+// =======================================================
+// 🟢 8. ส่งคำขอปล่อยรถก่อนเวลาไปยังผู้จอง (POST /:id/early-request)
+// =======================================================
+exports.requestEarlyRelease = async (req, res) => {
+    try {
+        const bookingId = parseInt(req.params.id, 10);
+        const requesterId = parseInt(req.user?.userId || req.user?.id, 10);
+
+        const booking = await prisma.vehicleBooking.findUnique({
+            where: { id: bookingId },
+            include: { vehicle: true }
+        });
+
+        if (!booking) return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจอง" });
+
+        const now = new Date();
+        if (now >= booking.startDatetime) {
+            return res.status(400).json({ success: false, error: "ถึงเวลารับรถตามปกติแล้ว ไม่จำเป็นต้องขอปลดล็อกก่อนเวลา" });
+        }
+
+        // ส่ง Notification หายูสเซอร์ผู้จอง
+        await notificationService.createNotification({
+            recipientId: booking.userId, // 🟢 แก้ไข: ใช้ recipientId แทน/เพิ่ม เพื่อให้ Map ID ผู้รับถูกต้อง
+            userId: booking.userId,      // (คงไว้เผื่อ Service เดิมมี validation เช็คค่านี้ด้วย)
+            title: "⚠️ คำขอรับรถก่อนเวลา",
+            message: `เจ้าหน้าที่ขอคำยินยอมปล่อยรถยนต์ทะเบียน ${booking.vehicle.plateNumber} ก่อนเวลาจอง กรุณากดยืนยันหากท่านต้องการรับรถเลย`,
+            type: 'EARLY_RELEASE_REQUEST', // 🟢 แก้ไข: ระบุ Type เฉพาะเจาะจง เพื่อให้ Mobile App ดักไปสร้าง Action ยืนยัน/ปฏิเสธ ได้
+            entityType: 'VEHICLE_BOOKING',
+            entityId: bookingId,
+            status: 'unread' // 🟢 เพิ่ม status บังคับให้เป็น unread เสมอเมื่อสร้างใหม่
+        });
+
+        // บันทึก AuditLog สถานะการร้องขอ
+        await prisma.auditLog.create({
+            data: {
+                action: 'EARLY_RELEASE_REQUESTED',
+                module: 'VEHICLE_BOOKING',
+                userId: requesterId,
+                entityId: bookingId,
+                entityType: 'VEHICLE_BOOKING',
+                details: JSON.stringify({ remark: "ส่งคำขอรับรถก่อนเวลาไปยังผู้จอง" })
+            }
+        });
+
+        return res.status(200).json({ success: true, message: "ส่งคำขอรับรถก่อนเวลาไปยังผู้จองเรียบร้อยแล้ว" });
+    } catch (error) {
+        console.error("Request Early Release Error:", error);
+        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการส่งคำขอรับรถก่อนเวลา" });
+    }
+};
+
+// =======================================================
+// 🟢 9. ผู้จองตอบรับหรือปฏิเสธคำขอปล่อยรถก่อนเวลา (POST /:id/early-respond)
+// =======================================================
+exports.respondEarlyRelease = async (req, res) => {
+    try {
+        const bookingId = parseInt(req.params.id, 10);
+        const userId = parseInt(req.user?.userId || req.user?.id, 10);
+        const { approved, action } = req.body;
+
+        if (isNaN(userId)) {
+            return res.status(401).json({ success: false, error: "ไม่พบสิทธิ์การใช้งานหรือรูปแบบผู้ใช้งานไม่ถูกต้อง" });
+        }
+
+        const booking = await prisma.vehicleBooking.findUnique({ where: { id: bookingId } });
+        if (!booking) return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจอง" });
+
+        if (booking.userId !== userId) {
+            return res.status(403).json({ success: false, error: "คุณไม่มีสิทธิ์ตอบรับคำขอนี้" });
+        }
+
+        if (['COMPLETED', 'CANCELLED', 'REJECTED'].includes(booking.status)) {
+            return res.status(400).json({ success: false, error: "รายการจองนี้สิ้นสุดไปแล้ว ไม่สามารถตอบรับคำขอได้" });
+        }
+
+        const normalizedAction = action ? String(action).toUpperCase() : '';
+        const isApproved = approved === true || approved === 'true' || ['APPROVE', 'CONFIRM', 'ACCEPT', 'AGREE', 'YES'].includes(normalizedAction);
+        const finalAction = isApproved ? 'EARLY_RELEASE_CONSENT_GRANTED' : 'EARLY_RELEASE_CONSENT_DENIED';
+
+        await prisma.auditLog.create({
+            data: {
+                action: finalAction,
+                module: 'VEHICLE_BOOKING',
+                userId: userId,
+                entityId: bookingId,
+                entityType: 'VEHICLE_BOOKING',
+                details: JSON.stringify({ approved: isApproved, actionReceived: action })
+            }
+        });
+
+        await prisma.notification.updateMany({
+            where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
+            data: { isRead: true, status: 'read' }
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: isApproved ? "ยินยอมให้ปล่อยรถก่อนเวลาเรียบร้อยแล้ว" : "ปฏิเสธการรับรถก่อนเวลา"
+        });
+    } catch (error) {
+        console.error("Respond Early Release Error:", error);
+        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการตอบรับคำขอรับรถก่อนเวลา" });
+    }
+};
+
+// =======================================================
+// 🟢 10. ส่งคำขอรับรถคืนก่อนเวลาไปยังผู้จอง (POST /:id/early-return-request)
+// =======================================================
+exports.requestEarlyReturn = async (req, res) => {
+    try {
+        const bookingId = parseInt(req.params.id, 10);
+        const requesterId = parseInt(req.user?.userId || req.user?.id, 10);
+
+        const booking = await prisma.vehicleBooking.findUnique({
+            where: { id: bookingId },
+            include: { vehicle: true }
+        });
+
+        if (!booking) return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจอง" });
+
+        if (booking.status !== BookingStatus.IN_USE) {
+            return res.status(409).json({ success: false, error: "รายการจองนี้ไม่อยู่ในสถานะใช้งาน" });
+        }
+
+        const now = new Date();
+        if (now >= booking.endDatetime) {
+            return res.status(400).json({ success: false, error: "ถึงเวลาคืนรถตามปกติแล้ว ไม่จำเป็นต้องขอปลดล็อกก่อนเวลา" });
+        }
+
+        // ส่ง Notification หายูสเซอร์ผู้จอง
+        await notificationService.createNotification({
+            recipientId: booking.userId,
+            userId: booking.userId,
+            title: "⚠️ คำขอคืนรถก่อนเวลา",
+            message: `เจ้าหน้าที่ขอคำยินยอมรับคืนรถยนต์ทะเบียน ${booking.vehicle.plateNumber} ก่อนเวลาจอง กรุณากดยืนยันหากท่านคืนรถแล้ว`,
+            type: 'EARLY_RETURN_REQUEST',
+            entityType: 'VEHICLE_BOOKING',
+            entityId: bookingId,
+            status: 'unread'
+        });
+
+        // บันทึก AuditLog สถานะการร้องขอ
+        await prisma.auditLog.create({
+            data: {
+                action: 'EARLY_RETURN_REQUESTED',
+                module: 'VEHICLE_BOOKING',
+                userId: requesterId,
+                entityId: bookingId,
+                entityType: 'VEHICLE_BOOKING',
+                details: JSON.stringify({ remark: "ส่งคำขอคืนรถก่อนเวลาไปยังผู้จอง" })
+            }
+        });
+
+        return res.status(200).json({ success: true, message: "ส่งคำขอรับรถคืนก่อนเวลาไปยังผู้จองเรียบร้อยแล้ว" });
+    } catch (error) {
+        console.error("Request Early Return Error:", error);
+        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการส่งคำขอรับรถคืนก่อนเวลา" });
+    }
+};
+
+// =======================================================
+// 🟢 11. ผู้จองตอบรับหรือปฏิเสธคำขอรับรถคืนก่อนเวลา (POST /:id/early-return-respond)
+// =======================================================
+exports.respondEarlyReturn = async (req, res) => {
+    try {
+        const bookingId = parseInt(req.params.id, 10);
+        const userId = parseInt(req.user?.userId || req.user?.id, 10);
+        const { approved, action } = req.body;
+
+        if (isNaN(userId)) {
+            return res.status(401).json({ success: false, error: "ไม่พบสิทธิ์การใช้งานหรือรูปแบบผู้ใช้งานไม่ถูกต้อง" });
+        }
+
+        const booking = await prisma.vehicleBooking.findUnique({ where: { id: bookingId } });
+        if (!booking) return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจอง" });
+
+        if (booking.userId !== userId) {
+            return res.status(403).json({ success: false, error: "คุณไม่มีสิทธิ์ตอบรับคำขอนี้" });
+        }
+
+        if (['COMPLETED', 'CANCELLED', 'REJECTED'].includes(booking.status)) {
+            return res.status(400).json({ success: false, error: "รายการจองนี้สิ้นสุดไปแล้ว ไม่สามารถตอบรับคำขอได้" });
+        }
+
+        const normalizedAction = action ? String(action).toUpperCase() : '';
+        const isApproved = approved === true || approved === 'true' || ['APPROVE', 'CONFIRM', 'ACCEPT', 'AGREE', 'YES'].includes(normalizedAction);
+        const finalAction = isApproved ? 'EARLY_RETURN_CONSENT_GRANTED' : 'EARLY_RETURN_CONSENT_DENIED';
+
+        await prisma.auditLog.create({
+            data: {
+                action: finalAction,
+                module: 'VEHICLE_BOOKING',
+                userId: userId,
+                entityId: bookingId,
+                entityType: 'VEHICLE_BOOKING',
+                details: JSON.stringify({ approved: isApproved, actionReceived: action })
+            }
+        });
+
+        await prisma.notification.updateMany({
+            where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
+            data: { isRead: true, status: 'read' }
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: isApproved ? "ยินยอมให้คืนรถก่อนเวลาเรียบร้อยแล้ว" : "ปฏิเสธการคืนรถก่อนเวลา"
+        });
+    } catch (error) {
+        console.error("Respond Early Return Error:", error);
+        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการตอบรับคำขอรับรถคืนก่อนเวลา" });
+    }
+};
+
+// =======================================================
+// 12. ดึงข้อมูลปฏิทินการจองรถยนต์ (GET /calendar)
+// =======================================================
+exports.getVehicleCalendar = async (req, res) => {
+    try {
+        const { startDate, endDate, vehicleId, status } = req.query;
+
+        if (!startDate || !endDate) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'กรุณาระบุ startDate และ endDate' 
+            });
+        }
+
+        const now = new Date();
+        const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
+
+        let whereClause = {
+            startDatetime: { lte: new Date(endDate) },
+            endDatetime: { gte: effectiveStartDate }
+        };
+
+        if (vehicleId) {
+            whereClause.vehicleId = parseInt(vehicleId, 10);
+        }
+
+        if (status) {
+            whereClause.status = status;
+        } else {
+            whereClause.status = {
+                notIn: [BookingStatus.COMPLETED, BookingStatus.CANCELLED, BookingStatus.EXPIRED, BookingStatus.REJECTED]
+            };
+        }
+
+        const bookings = await prisma.vehicleBooking.findMany({
+            where: whereClause,
+            include: {
+                vehicle: true,
+                user: {
+                    include: {
+                        employee: {
+                            include: { department: true }
+                        }
+                    }
+                }
+            },
+            orderBy: { startDatetime: 'asc' }
+        });
+
+        return res.status(200).json({
+            success: true,
+            data: bookings
+        });
+
+    } catch (error) {
+        console.error("Get Vehicle Calendar Error:", error);
+        return res.status(500).json({ success: false, error: "ไม่สามารถดึงข้อมูลปฏิทินการจองรถยนต์ได้" });
     }
 };
 

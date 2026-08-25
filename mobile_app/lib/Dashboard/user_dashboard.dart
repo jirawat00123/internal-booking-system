@@ -63,6 +63,7 @@ class UserDashboardView extends StatelessWidget {
                         if (role == 'ADMIN') {
                           return OutlinedButton.icon(
                             onPressed: () async {
+                              final navigator = Navigator.of(context);
                               // อัปเดตสถานะกลับเป็น ADMIN_MODE
                               await prefs.setString(
                                 'current_mode',
@@ -80,9 +81,7 @@ class UserDashboardView extends StatelessWidget {
                                 );
                               }
 
-                              if (!context.mounted) return;
-                              Navigator.pushReplacement(
-                                context,
+                              navigator.pushReplacement(
                                 MaterialPageRoute(
                                   builder: (context) => const AdminGroupPage(),
                                 ),

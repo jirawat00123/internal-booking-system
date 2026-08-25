@@ -31,7 +31,7 @@ class _ConfirmResetPinDialogState extends State<ConfirmResetPinDialog> {
 
       // ✅ นำ Config จริงมาใส่แทน Placeholder (สมมติว่าเป็น Android Emulator port 3000)
       // หากคุณมีไฟล์ ApiConfig (เช่น ApiConfig.baseUrl) ให้เปลี่ยนมาเรียกใช้ตัวแปรแทนเพื่อไม่ให้ Hardcode
-      final String baseUrl = 'http://192.168.88.25:3001';
+      final String baseUrl = 'https://192.168.88.25:3002';
       final url = Uri.parse(
         // 🟢 แก้ไข URL ให้ตรงกับ Backend API (ตัด admin/users/ ที่ซ้ำซ้อนออก)
         '$baseUrl/api/users/${widget.userId}/reset-pin',

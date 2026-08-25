@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
@@ -39,11 +40,8 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
   }
 
   void _checkAndSubmit() {
-    // 🎯 แก้ไข: ตรวจสอบแค่รูปภาพ 3 มุม (เอาเช็กช่องจอดรถออก)
     if (frontImage == null || backImage == null || plateImage == null) {
-      _showErrorDialog(
-        'กรุณาถ่ายรูปให้ครบทั้ง 3 มุมก่อนดำเนินการต่อ', // 🎯 เปลี่ยนข้อความแจ้งเตือน
-      );
+      _showErrorDialog('กรุณาถ่ายรูปให้ครบทั้ง 3 มุมก่อนดำเนินการต่อ');
       return;
     }
     _showConfirmDialog();
@@ -183,8 +181,8 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       }
 
       String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
 
       var request = http.MultipartRequest(
         'PUT',
@@ -194,8 +192,7 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       request.headers.addAll({'Authorization': 'Bearer $token'});
 
       // ❌ ลบการส่งข้อมูล parkingSlot ออกไปแล้ว
-      request.fields['status'] =
-          'IN_USE'; // 🟢 เปลี่ยนเป็นตัวพิมพ์ใหญ่ตาม API Contract ใหม่
+      request.fields['status'] = 'IN_USE';
 
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -222,15 +219,29 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       );
 
       var response = await request.send();
+      final respStr = await response.stream.bytesToString();
+
+      if (!mounted)
+        return; // 🟢 ตรวจสอบสถานะ Widget ก่อนใช้ context เพื่อป้องกัน Crash
       Navigator.pop(context);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        Navigator.push(
+        Navigator.pushReplacement(
+          // 🟢 เปลี่ยนเป็น pushReplacement ป้องกันการกดย้อนกลับมาทำซ้ำ
           context,
           MaterialPageRoute(
             builder: (context) => const VehicleOutCompletedScreen(),
           ),
         );
+      } else if (response.statusCode == 409) {
+        final resData = json.decode(respStr);
+        if (resData['code'] == 'NOT_YET_TIME') {
+          _showEarlyReleaseRequestDialog();
+        } else if (resData['code'] == 'PREVIOUS_BOOKING_ACTIVE') {
+          _showErrorDialog('มีคิวก่อนหน้าที่ยังไม่คืนรถ');
+        } else {
+          _showErrorDialog(resData['error'] ?? 'เกิดข้อผิดพลาดในการปล่อยรถ');
+        }
       } else {
         print('Upload failed with status: ${response.statusCode}');
         _showErrorDialog(
@@ -238,8 +249,133 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
         );
       }
     } catch (e) {
+      if (!mounted)
+        return; // 🟢 ตรวจสอบสถานะ Widget ก่อนใช้ context ใน catch block
       Navigator.pop(context);
       print('Network Error: $e');
+      _showErrorDialog('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
+    }
+  }
+
+  void _showEarlyReleaseRequestDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.access_time_filled,
+              color: Colors.orange,
+              size: 60,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'ยังไม่ถึงเวลารับรถ',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Kanit',
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'ยังไม่ถึงเวลารับรถ ต้องการส่งคำขอรับรถก่อนเวลาไปยังผู้จองหรือไม่?',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Kanit'),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _requestEarlyRelease();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF009CB4),
+                    ),
+                    child: const Text(
+                      'ตกลง',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                    ),
+                    child: const Text(
+                      'ยกเลิก',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _requestEarlyRelease() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+
+      String baseUrl = kIsWeb
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
+
+      final response = await http.post(
+        Uri.parse(
+          '$baseUrl/api/vehicle-bookings/${widget.bookingId}/early-request',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'ส่งคำขอรับรถก่อนเวลาไปยังผู้จองเรียบร้อยแล้ว',
+              style: TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        final resData = json.decode(response.body);
+        _showErrorDialog(resData['error'] ?? 'ส่งคำขอไม่สำเร็จ');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
       _showErrorDialog('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
     }
   }

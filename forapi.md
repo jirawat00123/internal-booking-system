@@ -60,7 +60,7 @@ final response = await http.get(
 เพื่อให้เทสต์ได้ทั้ง Web และ Mobile ให้ประกาศ URL ตามมาตรฐานนี้เสมอ ห้าม Hardcode IP ตรงๆ ในฟังก์ชัน:
 
 ```dart
-final baseUrl = kIsWeb ? 'http://192.168.88.25:3001' : '[http://192.168.88.25:3001](http://192.168.88.25:3001)';
+final baseUrl = kIsWeb ? 'https://192.168.88.25:3002' : '[https://192.168.88.25:3002](https://192.168.88.25:3002)';
 final url = Uri.parse('$baseUrl/api/vehicles');
 
 ```

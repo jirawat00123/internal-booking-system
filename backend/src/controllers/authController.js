@@ -58,7 +58,7 @@ const setupPin = async (req, res) => {
     });
 
     // 🟢 เพิ่ม AuditLog เมื่อตั้งค่า PIN ครั้งแรกสำเร็จ
-await prisma.auditLog.create({
+    await prisma.auditLog.create({
       data: {
         action: "SETUP_PIN",
         module: "AUTH",
@@ -128,8 +128,8 @@ const changePin = async (req, res) => {
       data: {
         action: 'CHANGE_PIN',
         module: 'AUTH',
-        userId: userId,
-        entityId: userId,
+        userId: parseInt(userId, 10),
+        entityId: parseInt(userId, 10),
         entityType: 'USER',
         details: `User ${userId} changed their PIN`
       }
@@ -155,7 +155,7 @@ const resetUserPin = async (req, res) => {
     const adminId = req.user.userId; 
 
     const targetUser = await prisma.user.findUnique({
-      where: { id: parseInt(id) },
+      where: { id: parseInt(id, 10) },
       include: { employee: true }
     });
 
@@ -164,7 +164,7 @@ const resetUserPin = async (req, res) => {
     }
 
     await prisma.user.update({
-      where: { id: parseInt(id) },
+      where: { id: parseInt(id, 10) },
       data: {
         pin: null, 
         pinInitialized: false, 
@@ -176,10 +176,10 @@ const resetUserPin = async (req, res) => {
     });
 
     // 🟢 ปรับเปลี่ยนให้ส่งครบทุก Field ตาม Schema ใหม่ (action, module, userId, entityId, entityType, details)
-await prisma.auditLog.create({
+    await prisma.auditLog.create({
       data: {
         action: "RESET_PIN",
-        module: "USER",
+        module: "AUTH",
         entityId: parseInt(targetUser.id, 10),
         entityType: "USER",
         userId: parseInt(adminId, 10),
@@ -278,7 +278,8 @@ const login = async (req, res) => {
         if (userRoleName !== 'SECURITY' && userRoleName !== 'GUARD' && userRoleName !== 'ADMIN') {
           return res.status(403).json({ success: false, error: "ไม่มีสิทธิ์เข้าใช้งานในส่วน รปภ." });
         }
-        effectiveRole = requestedRole;
+        // ดึง Role จริงจากฐานข้อมูลมาใช้ เพื่อลดความขัดแย้งระหว่าง SECURITY กับ GUARD
+        effectiveRole = userRoleName === 'ADMIN' ? 'ADMIN' : userRoleName;
       } else {
         if (userRoleName === 'SECURITY' || userRoleName === 'GUARD') {
           return res.status(403).json({ success: false, error: "เจ้าหน้าที่ รปภ. ไม่มีสิทธิ์เข้าใช้งานในส่วนผู้ใช้ทั่วไป" });
@@ -288,11 +289,18 @@ const login = async (req, res) => {
     } else {
       // 🟢 กรณีไม่ระบุรหัสพนักงาน (Admin PIN-Only Login Flow: กรอก PIN อย่างเดียว)
       const targetRole = expectedRole ? expectedRole.toUpperCase() : 'ADMIN';
+      
+      // รองรับให้ค้นหาเจอทั้งคู่ หากเป้าหมายคือ SECURITY หรือ GUARD
+      let roleCondition = { name: targetRole };
+      if (targetRole === 'SECURITY' || targetRole === 'GUARD') {
+        roleCondition = { name: { in: ['SECURITY', 'GUARD'] } };
+      }
+
       const users = await prisma.user.findMany({
         where: { 
           pin: { not: null },
           active: true,
-          role: { name: targetRole }
+          role: roleCondition
         },
         include: {
           role: true,
@@ -309,7 +317,7 @@ const login = async (req, res) => {
           }
           user = candidate;
           employee = candidate.employee;
-          effectiveRole = targetRole;
+          effectiveRole = candidate.role?.name ? candidate.role.name.toUpperCase() : targetRole;
           break;
         }
       }
@@ -318,11 +326,11 @@ const login = async (req, res) => {
       if (!user && lockedCandidate) {
         user = lockedCandidate;
         employee = lockedCandidate.employee;
-        effectiveRole = targetRole;
+        effectiveRole = lockedCandidate.role?.name ? lockedCandidate.role.name.toUpperCase() : targetRole;
       }
 
       if (!user) {
-        return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์แอดมิน" });
+        return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์เข้าถึงระบบในส่วนนี้" });
       }
     }
 

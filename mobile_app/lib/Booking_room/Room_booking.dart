@@ -67,8 +67,8 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
   ) async {
     try {
       final String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token') ?? '';
 

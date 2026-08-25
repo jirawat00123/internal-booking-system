@@ -69,8 +69,8 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
       }
 
       final String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
 
       final response = await http.get(
         Uri.parse('$baseUrl/api/vehicle-bookings?page=1&limit=100'),
@@ -86,9 +86,11 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
             // 1. รอปล่อยรถออก (คำขอที่ได้รับอนุมัติแล้ว หรือรอปล่อย)
             pendingVehicles = allBookings.where((b) {
               String status = b['status']?.toString().toUpperCase() ?? '';
-              // 🟢 เจ้าหน้าที่รักษาความปลอดภัยควรเห็นเฉพาะรายการที่ "อนุมัติแล้ว" (APPROVED) เพื่อทำการปล่อยรถ
-              // ไม่ควรดึงรายการที่ยัง "รออนุมัติ" (PENDING) มาให้ รปภ. กดปล่อยรถได้
-              return status == 'APPROVED';
+              // 🟢 รองรับสถานะ APPROVED, PENDING, RESERVED และ PENDING_EARLY_RELEASE
+              return status == 'APPROVED' ||
+                  status == 'PENDING' ||
+                  status == 'RESERVED' ||
+                  status == 'PENDING_EARLY_RELEASE';
             }).toList();
 
             // 2. กำลังใช้งาน (รับรถเข้า)
@@ -218,16 +220,20 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
       itemBuilder: (context, index) {
         var booking = currentList[index];
         var vehicle = booking['vehicle'] ?? {};
-        var user = booking['user']?['employee'] ?? {};
+        var user = booking['user']?['employee'] ?? booking['user'] ?? {};
 
         return _buildVehicleCard(
-          bookingId: booking['id'].toString(),
-          carName: vehicle['vehicleName'] ?? 'ไม่ระบุรุ่นรถ',
-          plate: vehicle['plateNumber'] ?? '-',
-          booker: user['fullName'] ?? 'ไม่ระบุชื่อ',
-          imageUrl: vehicle['uploadUrl'] ?? '',
-          startDate: booking['startDatetime'], // ส่งวันที่ไปแปลง
-          endDate: booking['endDatetime'], // ส่งวันที่ไปแปลง
+          bookingId: (booking['id'] ?? booking['bookingId'] ?? '').toString(),
+          carName:
+              vehicle['vehicleName'] ?? vehicle['model'] ?? 'ไม่ระบุรุ่นรถ',
+          plate: vehicle['plateNumber'] ?? vehicle['licensePlate'] ?? '-',
+          booker: user['fullName'] ?? user['name'] ?? 'ไม่ระบุชื่อ',
+          imageUrl: vehicle['uploadUrl'] ?? vehicle['imageUrl'] ?? '',
+          startDate:
+              booking['startDatetime'] ??
+              booking['startDate'], // ส่งวันที่ไปแปลง
+          endDate:
+              booking['endDatetime'] ?? booking['endDate'], // ส่งวันที่ไปแปลง
         );
       },
     );
@@ -301,7 +307,7 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
                     color: Colors.grey.shade200,
                     child: imageUrl.isNotEmpty
                         ? Image.network(
-                            '${kIsWeb ? "http://192.168.88.25:3001" : "http://192.168.88.25:3001"}$imageUrl',
+                            '${kIsWeb ? "https://192.168.88.25:3002" : "https://192.168.88.25:3002"}$imageUrl',
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => const Icon(
                               Icons.directions_car,
@@ -392,7 +398,7 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
 
             const SizedBox(height: 8),
 
-            // 🎯 แสดงปุ่มถ่ายรูปเฉพาะตอน "ปล่อยรถออก" และ "รับรถเข้า" (ซ่อนตอนอยู่หน้าประวัติ)
+            // 🎯 แสดงปุ่มปล่อยรถออก / รับรถเข้า เฉพาะตอนอยู่หน้าที่เกี่ยวข้อง (ซ่อนตอนอยู่หน้าประวัติ)
             if (isPending || isInUse) ...[
               const SizedBox(height: 8),
               SizedBox(
@@ -428,9 +434,9 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
-                    'ถ่ายรูป',
-                    style: TextStyle(
+                  child: Text(
+                    isPending ? 'ปล่อยรถออก (ถ่ายรูป)' : 'รับรถเข้า (ถ่ายรูป)',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
                       fontSize: 16,

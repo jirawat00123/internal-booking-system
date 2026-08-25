@@ -1,6 +1,10 @@
 // lib/Notification/notification_page.dart
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'notification_repository.dart';
 import 'notification_model.dart';
 import 'notification_constants.dart';
@@ -62,6 +66,7 @@ class _NotificationPageState extends State<NotificationPage> {
       final newItems = await _repository.getNotifications(
         page: _currentPage,
         limit: _limit,
+        forceRefresh: isRefresh,
       );
 
       setState(() {
@@ -158,6 +163,82 @@ class _NotificationPageState extends State<NotificationPage> {
     );
   }
 
+  Future<void> _respondEarlyRelease(
+    dynamic bookingId,
+    bool approved, {
+    bool isEarlyReturn = false,
+  }) async {
+    final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+
+      String baseUrl = kIsWeb
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
+
+      String endpoint = isEarlyReturn
+          ? 'early-return-respond'
+          : 'early-respond';
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/vehicle-bookings/$bookingId/$endpoint'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: json.encode({'approved': approved}),
+      );
+
+      if (navigator.canPop()) navigator.pop();
+      if (!mounted) return;
+
+      final resData = json.decode(response.body);
+      if (response.statusCode == 200) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              resData['message'] ?? 'บันทึกคำตอบเรียบร้อยแล้ว',
+              style: const TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: approved ? Colors.green : Colors.red,
+          ),
+        );
+        _fetchNotifications(isRefresh: true);
+      } else {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              resData['error'] ?? 'เกิดข้อผิดพลาด',
+              style: const TextStyle(fontFamily: 'Kanit'),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (navigator.canPop()) navigator.pop();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด',
+            style: TextStyle(fontFamily: 'Kanit'),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Widget _buildBody(ThemeData theme) {
     if (_isLoading) {
       return const NotificationLoading();
@@ -183,9 +264,76 @@ class _NotificationPageState extends State<NotificationPage> {
           }
 
           final notification = _notifications[index];
-          return NotificationCard(
-            notification: notification,
-            onTap: () => _onNotificationTap(notification, index),
+
+          // 🟢 เปลี่ยนมาเช็คด้วย type ที่ Backend ส่งมาให้รัดกุม 100%
+          final bool isEarlyReleaseRequest =
+              notification.type == 'EARLY_RELEASE_REQUEST' ||
+              notification.title.contains('คำขอรับรถก่อนเวลา');
+
+          final bool isEarlyReturnRequest =
+              notification.type == 'EARLY_RETURN_REQUEST' ||
+              notification.title.contains('คำขอคืนรถก่อนเวลา');
+
+          return Column(
+            children: [
+              NotificationCard(
+                notification: notification,
+                onTap: () => _onNotificationTap(notification, index),
+              ),
+              // 🟢 แก้ไข .entityId != null เป็น .isNotEmpty เพราะใน Model เป็น String
+              if ((isEarlyReleaseRequest || isEarlyReturnRequest) &&
+                  notification.entityId.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 4.0,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _respondEarlyRelease(
+                            notification
+                                .entityId, // 🟢 เอาเครื่องหมาย ! ออก ป้องกัน Compile Error
+                            true,
+                            isEarlyReturn: isEarlyReturnRequest,
+                          ),
+                          icon: const Icon(Icons.check, size: 18),
+                          label: Text(
+                            isEarlyReturnRequest
+                                ? 'ยินยอมคืนรถ'
+                                : 'ยินยอมรับรถ',
+                            style: const TextStyle(fontFamily: 'Kanit'),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _respondEarlyRelease(
+                            notification.entityId, // 🟢 เอาเครื่องหมาย ! ออก
+                            false,
+                            isEarlyReturn: isEarlyReturnRequest,
+                          ),
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text(
+                            'ปฏิเสธ',
+                            style: TextStyle(fontFamily: 'Kanit'),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           );
         },
       ),

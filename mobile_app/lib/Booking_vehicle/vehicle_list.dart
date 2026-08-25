@@ -10,6 +10,7 @@ import 'package:shimmer/shimmer.dart';
 import 'vehicle_bookingstep_a.dart';
 import '../../Booking_vehicle/Vehicle_model.dart';
 import '../../auth_service.dart';
+import '../Calendar/calendar_page.dart';
 
 class VehicleBooking extends StatefulWidget {
   final bool isGuest;
@@ -276,6 +277,19 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
           ),
         ),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month, color: Colors.white),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CalendarPage(category: 'VEHICLE'),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -586,8 +600,10 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
         rawStatus == 'IN-USE' ||
         rawStatus == 'กำลังใช้งาน') {
       displayStatus = 'In Use';
-      statusColor = const Color(0xFFEF4444);
-      statusBgColor = const Color(0xFFFEE2E2);
+      statusBgColor = const Color(0xFFE6F2FF);
+      statusColor = const Color(
+        0xFF004381,
+      ); // 🟢 เปลี่ยนจาก statusTextColor เป็น statusColor
       buttonText = 'รถกำลังใช้งาน';
     } else if (vehicle.hasFutureBooking ||
         rawStatus == 'PENDING' ||
@@ -754,19 +770,27 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                     child: ElevatedButton(
                       onPressed: (widget.isGuest || !isAvailable)
                           ? null
-                          : () {
-                              Navigator.push(
+                          : () async {
+                              final result = await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       VehicleBookingStep2Page(vehicle: vehicle),
                                 ),
                               );
+                              if (result == true) {
+                                if (!mounted) return;
+                                setState(() {
+                                  isLoading = true;
+                                });
+                                _fetchVehicles();
+                              }
                             },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: isAvailable
                             ? const Color(0xFF009CB4)
                             : Colors.grey.shade300,
+                        disabledBackgroundColor: Colors.grey.shade300,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -775,7 +799,9 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
                       child: Text(
                         buttonText,
                         style: TextStyle(
-                          color: isAvailable ? Colors.white : Colors.white,
+                          color: isAvailable
+                              ? Colors.white
+                              : Colors.grey.shade600,
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                           fontFamily: 'Kanit',

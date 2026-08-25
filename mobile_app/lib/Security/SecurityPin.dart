@@ -62,19 +62,15 @@ class _Security_PinpageState extends State<Security_Pinpage> {
     });
 
     try {
-      // 🟢 ดึงรหัสพนักงานจาก AuthService หรือ Storage ก่อนส่งไปยัง Backend
+      // 🟢 ดึง SharedPreferences เตรียมไว้สำหรับบันทึกข้อมูล (นำการดึง employeeCode ออกตาม Flow PIN-Only)
       final prefs = await SharedPreferences.getInstance();
-      final employeeCode =
-          await AuthService.instance.getEmployeeCode() ??
-          prefs.getString('employee_code') ??
-          prefs.getString('employeeCode');
 
       // 🚨 จุดที่ 1: เปลี่ยนจาก localhost เป็น 192.168.88.25:3001.2.2 สำหรับมือถือจำลอง (Android Emulator)
       // (ถ้าคุณปิ่นรันบนเว็บ Chrome ให้ใช้ localhost เหมือนเดิมได้เลยนะครับ)
       final url = Uri.parse('${AuthService.baseUrl}/api/login-pin');
 
       print(
-        '📱 [Flutter] กำลังส่งรหัส $pin (รหัสพนักงาน: $employeeCode) ไปหาหลังบ้าน...',
+        '📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน (เข้าสู่ระบบด้วย PIN อย่างเดียว)...',
       ); // 👈 ดักฟังว่าแอปเริ่มทำงานไหม
 
       final response = await http
@@ -82,10 +78,9 @@ class _Security_PinpageState extends State<Security_Pinpage> {
             url,
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
-              'employeeCode':
-                  employeeCode, // 🟢 แนบ employeeCode ส่งให้ Backend เพื่อแก้ไขปัญหา employeeCode = undefined
               'pin': pin,
-              'expectedRole': 'SECURITY', // ✅ เปลี่ยนให้ตรงกับ Backend
+              'expectedRole':
+                  'SECURITY', // ✅ ตัด employeeCode ออก เพื่อให้ Backend เข้าสู่เงื่อนไข PIN-Only Flow
             }),
           )
           .timeout(const Duration(seconds: 5));

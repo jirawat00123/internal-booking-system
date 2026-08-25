@@ -973,8 +973,8 @@ class _VehiclePageState extends State<VehiclePage> {
         rawStatus == 'IN-USE' ||
         rawStatus == 'กำลังใช้งาน') {
       displayStatus = 'In Use';
-      statusColor = const Color(0xFFEF4444);
-      statusBgColor = const Color(0xFFFEE2E2);
+      statusColor = const Color(0xFF0056A0); // 🟢 แก้เป็น statusColor และใช้สีน้ำเงินให้เหมือนหน้าจองรถ
+      statusBgColor = const Color(0xFFE6EDF5); // 🟢 ปรับพื้นหลังให้เข้าคู่กับสีน้ำเงิน
     } else if (vehicle.hasFutureBooking ||
         rawStatus == 'PENDING' ||
         rawStatus == 'จองแล้ว') {

@@ -30,6 +30,8 @@ class BookingHistoryModel {
   final String destination;
   final String driverType;
   final String? pororborUrl;
+  final bool isEarlyReleaseRequested; // 🟢 เพิ่มตัวแปรสำหรับรออนุมัติรับรถ
+  final bool isEarlyReturnRequested; // 🟢 เพิ่มตัวแปรสำหรับรออนุมัติคืนรถ
 
   BookingHistoryModel({
     required this.id,
@@ -51,6 +53,8 @@ class BookingHistoryModel {
     this.destination = '-',
     this.driverType = '-',
     this.pororborUrl,
+    this.isEarlyReleaseRequested = false,
+    this.isEarlyReturnRequested = false,
   });
 }
 
@@ -130,7 +134,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       return;
     }
 
-    final baseUrl = 'http://192.168.88.25:3001';
+    final baseUrl = 'https://192.168.88.25:3002';
     final fullUrl = '$baseUrl$urlPath';
     final Uri url = Uri.parse(fullUrl);
 
@@ -163,12 +167,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       };
 
       final roomResponseFuture = http.get(
-        Uri.parse('http://192.168.88.25:3001/api/bookings?page=1&limit=50'),
+        Uri.parse('https://192.168.88.25:3002/api/bookings?page=1&limit=50'),
         headers: headers,
       );
       final vehicleResponseFuture = http.get(
         Uri.parse(
-          'http://192.168.88.25:3001/api/vehicle-bookings?page=1&limit=50',
+          'https://192.168.88.25:3002/api/vehicle-bookings?page=1&limit=50',
         ),
         headers: headers,
       );
@@ -331,6 +335,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               destination: item['destination'] ?? '-',
               driverType: item['driverType'] ?? 'ขับขี่เอง',
               pororborUrl: item['vehicle']?['uploadPororborUrl'],
+              isEarlyReleaseRequested:
+                  item['isEarlyReleaseRequested'] == true ||
+                  item['is_early_release_requested'] == true,
+              isEarlyReturnRequested:
+                  item['isEarlyReturnRequested'] == true ||
+                  item['is_early_return_requested'] == true,
             ),
           );
         }
@@ -377,7 +387,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
       if (booking.type == 'จองรถ' && newStatus == 'Cancelled') {
         String endpoint =
-            'http://192.168.88.25:3001/api/vehicle-bookings/${booking.id}/cancel';
+            'https://192.168.88.25:3002/api/vehicle-bookings/${booking.id}/cancel';
         response = await http.patch(
           Uri.parse(endpoint),
           headers: {
@@ -387,7 +397,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         );
         newStatus = 'Cancelled';
       } else if (booking.type == 'จองรถ') {
-        String baseUrl = 'http://192.168.88.25:3001';
+        String baseUrl = 'https://192.168.88.25:3002';
         String endpoint =
             '$baseUrl/api/vehicle-bookings/${booking.id}/complete';
 
@@ -402,7 +412,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       } else if (booking.type == 'ห้องประชุม' && newStatus == 'Cancelled') {
         // 💡 เพิ่มการยิง PATCH request ไปที่ /cancel สำหรับห้องประชุม เพื่อรองรับ State Machine ใหม่
         String endpoint =
-            'http://192.168.88.25:3001/api/bookings/${booking.id}/cancel';
+            'https://192.168.88.25:3002/api/bookings/${booking.id}/cancel';
         response = await http.patch(
           Uri.parse(endpoint),
           headers: {
@@ -412,7 +422,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         );
       } else {
         String endpoint =
-            'http://192.168.88.25:3001/api/bookings/${booking.id}';
+            'https://192.168.88.25:3002/api/bookings/${booking.id}';
         response = await http.put(
           Uri.parse(endpoint),
           headers: {
@@ -603,7 +613,15 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     Color statusBgColor = const Color(0xFFF59E0B);
     Color statusTextColor = Colors.white;
 
-    if (status == 'In Use') {
+    if (booking.isEarlyReturnRequested) {
+      status = 'รออนุมัติคืนรถ';
+      statusBgColor = const Color(0xFF9333EA); // สีม่วงให้โดดเด่น
+      statusTextColor = Colors.white;
+    } else if (booking.isEarlyReleaseRequested) {
+      status = 'รออนุมัติรับรถ';
+      statusBgColor = const Color(0xFF9333EA);
+      statusTextColor = Colors.white;
+    } else if (status == 'In Use') {
       statusBgColor = const Color(0xFFE6F2FF);
       statusTextColor = const Color(0xFF004381);
     } else if (status == 'Completed' || status == 'Cancelled') {
@@ -640,7 +658,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     child: booking.imageUrl.isNotEmpty
                         ? Image.network(
                             booking.imageUrl.startsWith('/uploads')
-                                ? 'http://192.168.88.25:3001${booking.imageUrl}'
+                                ? 'https://192.168.88.25:3002${booking.imageUrl}'
                                 : booking.imageUrl,
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => Icon(
@@ -1029,7 +1047,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                 height: 44,
                                 child: Image.network(
                                   booking.imageUrl.startsWith('/uploads')
-                                      ? 'http://192.168.88.25:3001${booking.imageUrl}'
+                                      ? 'https://192.168.88.25:3002${booking.imageUrl}'
                                       : booking.imageUrl,
                                   fit: BoxFit.cover,
                                   errorBuilder: (c, e, s) => Container(
@@ -1103,7 +1121,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                       children: [
                         _buildPopupDetailRow(
                           'สถานะ',
-                          booking.currentStatus,
+                          booking.isEarlyReturnRequested
+                              ? 'รออนุมัติคืนรถ'
+                              : (booking.isEarlyReleaseRequested
+                                    ? 'รออนุมัติรับรถ'
+                                    : booking.currentStatus),
                           isStatus: true,
                         ),
                         const SizedBox(height: 12),
@@ -1309,7 +1331,10 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     Color bgStatusColor = const Color(0xFFF59E0B);
     Color textStatusColor = Colors.white;
 
-    if (value == 'In Use') {
+    if (value == 'รออนุมัติคืนรถ' || value == 'รออนุมัติรับรถ') {
+      bgStatusColor = const Color(0xFF9333EA);
+      textStatusColor = Colors.white;
+    } else if (value == 'In Use') {
       bgStatusColor = const Color(0xFFE6F2FF);
       textStatusColor = const Color(0xFF004381);
     } else if (value == 'Completed' || value == 'Cancelled') {

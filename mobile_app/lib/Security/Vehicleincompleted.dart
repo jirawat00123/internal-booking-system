@@ -23,7 +23,7 @@ class VehicleInCompletedScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             const Text(
-              'ทำการปล่อยรถสำเร็จ',
+              'ทำการรับรถเข้าสำเร็จ',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 22,
@@ -41,8 +41,6 @@ class VehicleInCompletedScreen extends StatelessWidget {
                 height: 50,
                 child: ElevatedButton(
                   onPressed: () {
-                    // 🟢 ย้อนกลับไปหน้าก่อนหน้า (SecurityVehiclelist) โดยไม่ลบประวัติ Backstack ทิ้ง
-                    // หมายเหตุ: หากกดแล้วย้อนไปเจอหน้ากรอกข้อมูล ให้เพิ่ม Navigator.pop(context); ซ้อนอีก 1 บรรทัด
                     Navigator.pop(context);
                   },
                   style: ElevatedButton.styleFrom(

@@ -14,7 +14,7 @@ exports.getAvailableVehicles = async (req, res, next) => {
       include: {
         bookings: {
           where: {
-            status: 'Pending'
+            status: { in: ['Approved', 'APPROVED', 'RESERVED'] }
           },
           include: {
             user: {
@@ -110,6 +110,21 @@ exports.checkOut = async (req, res, next) => {
         throw new Error('BOOKING_NOT_FOUND');
       }
 
+      const now = new Date();
+      if (now < booking.startDatetime) {
+        const consentLog = await tx.auditLog.findFirst({
+          where: {
+            module: 'VEHICLE_BOOKING',
+            entityId: bookingId,
+            action: 'EARLY_RELEASE_CONSENT_GRANTED'
+          }
+        });
+
+        if (!consentLog) {
+          throw new Error('EARLY_RELEASE_REQUIRES_APPROVAL');
+        }
+      }
+
       const vehicle = await tx.vehicle.findUnique({ where: { id: booking.vehicleId } });
       if (!vehicle || vehicle.status !== 'RESERVED') {
         throw new Error('VEHICLE_NOT_READY');
@@ -171,6 +186,13 @@ exports.checkOut = async (req, res, next) => {
     if (error.message === 'BOOKING_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลการจองรถยนต์รายการนี้ในระบบ' });
     }
+    if (error.message === 'EARLY_RELEASE_REQUIRES_APPROVAL') {
+      return res.status(409).json({
+        success: false,
+        code: 'EARLY_RELEASE_REQUIRES_APPROVAL',
+        message: 'ยังไม่ถึงเวลาปล่อยรถ และยังไม่มีการยินยอมรับรถก่อนเวลาจากผู้จอง'
+      });
+    }
     if (error.message === 'VEHICLE_NOT_READY') {
       return res.status(400).json({ success: false, message: 'รถคันนี้ไม่ได้อยู่ในสถานะจองพร้อมปล่อยใช้งาน หรืออาจมีผู้ทำรายการไปก่อนหน้านี้แล้ว' });
     }
@@ -213,6 +235,21 @@ exports.checkIn = async (req, res, next) => {
         throw new Error('BOOKING_NOT_FOUND');
       }
 
+      const now = new Date();
+      if (now < booking.endDatetime) {
+        const consentLog = await tx.auditLog.findFirst({
+          where: {
+            module: 'VEHICLE_BOOKING',
+            entityId: bookingId,
+            action: 'EARLY_RETURN_CONSENT_GRANTED'
+          }
+        });
+
+        if (!consentLog) {
+          throw new Error('EARLY_RETURN_REQUIRES_APPROVAL');
+        }
+      }
+
       const existingLog = await tx.vehicleLog.findFirst({
         where: { vehicleBookingId: bookingId },
         orderBy: { createdAt: 'desc' }
@@ -245,7 +282,7 @@ exports.checkIn = async (req, res, next) => {
       await tx.vehicleBooking.update({
         where: { id: bookingId },
         data: {
-          status: 'Completed'
+          status: 'COMPLETED'
         }
       });
 
@@ -254,7 +291,7 @@ exports.checkIn = async (req, res, next) => {
           vehicleBookingId: bookingId,
           changedById: guardId,
           action: 'CHECK_IN',
-          statusSnapshot: 'Completed',
+          statusSnapshot: 'COMPLETED',
           remark: 'เจ้าหน้าที่รักษาความปลอดภัยทำการรับรถคืนเข้าคลังและตรวจสอบความเรียบร้อยแล้ว'
         }
       });
@@ -282,6 +319,13 @@ exports.checkIn = async (req, res, next) => {
   } catch (error) {
     if (error.message === 'BOOKING_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลการจองรถยนต์รายการนี้ในระบบ' });
+    }
+    if (error.message === 'EARLY_RETURN_REQUIRES_APPROVAL') {
+      return res.status(409).json({
+        success: false,
+        code: 'EARLY_RETURN_REQUIRES_APPROVAL',
+        message: 'ยังไม่ถึงเวลาคืนรถตามกำหนด และยังไม่มีการยินยอมคืนรถก่อนเวลาจากผู้จอง'
+      });
     }
     if (error.message === 'LOG_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'ไม่พบประวัติการปล่อยบันทึกเบื้องต้นของรถยนต์คันนี้' });
@@ -317,7 +361,7 @@ exports.getVehicleLogById = async (req, res, next) => {
         returnBy: {
           include: { employee: true }
         },
-        booking: {
+        vehicleBooking: {
           include: {
             user: {
               include: { employee: true }

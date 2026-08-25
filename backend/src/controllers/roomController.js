@@ -155,10 +155,10 @@ exports.createRoom = async (req, res, next) => {
     // 💡 รองรับทั้งกรณีอัปโหลดไฟล์ผ่าน multer (req.file) และส่ง URL/Path มาใน req.body
     let uploadUrl = null;
     if (req.file) {
-      uploadUrl = '/uploads/rooms/' + req.file.filename;
+      uploadUrl = '/attachments/rooms/images/' + req.file.filename;
     } else if (req.body.uploadUrl) {
       const fileName = req.body.uploadUrl.split(/[\/\\]/).pop();
-      uploadUrl = fileName ? '/uploads/rooms/' + fileName : null;
+      uploadUrl = fileName ? '/attachments/rooms/images/' + fileName : null;
     }
 
     if (!roomName || !capacity) {
@@ -244,11 +244,11 @@ exports.updateRoom = async (req, res, next) => {
 
     if (req.file) {
       // ประกอบ Web URL Path โดยใช้ filename เพื่อให้พร้อมสำหรับ Frontend นำไปใช้งาน
-      uploadUrl = '/uploads/rooms/' + req.file.filename;
+      uploadUrl = '/attachments/rooms/images/' + req.file.filename;
     } else if (req.body.uploadUrl) {
       const fileName = req.body.uploadUrl.split(/[\/\\]/).pop();
       if (fileName) {
-        uploadUrl = '/uploads/rooms/' + fileName;
+        uploadUrl = '/attachments/rooms/images/' + fileName;
       }
     }
 

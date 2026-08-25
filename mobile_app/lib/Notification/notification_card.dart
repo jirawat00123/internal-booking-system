@@ -26,6 +26,13 @@ class NotificationCard extends StatelessWidget {
 
   /// Helper เลือก Icon ตาม Entity Type หรือ Action
   IconData _getIconData() {
+    if (notification.type == 'EARLY_RETURN' || notification.type == 'EARLY_RETURN_REQUEST') {
+      return Icons.assignment_return_outlined; // ไอคอนสำหรับการคืนรถ
+    }
+    if (notification.type == 'EARLY_RELEASE' || notification.type == 'EARLY_RELEASE_REQUEST') {
+      return Icons.time_to_leave_outlined; // ไอคอนสำหรับการขอรับรถก่อนเวลา
+    }
+    
     switch (notification.entityType.toUpperCase()) {
       case NotificationConstants.entityRoom:
         return Icons.meeting_room_outlined;
@@ -41,6 +48,12 @@ class NotificationCard extends StatelessWidget {
   /// Helper เลือกสี Icon (สามารถนำไปผูกกับ Theme ได้)
   Color _getIconColor(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    
+    if (notification.type == 'EARLY_RETURN' || notification.type == 'EARLY_RETURN_REQUEST' ||
+        notification.type == 'EARLY_RELEASE' || notification.type == 'EARLY_RELEASE_REQUEST') {
+      return const Color(0xFF9333EA); // สีม่วงสำหรับคำขอพิเศษ (Early Return / Early Release)
+    }
+    
     if (notification.type == NotificationConstants.actionApproval) {
       return colorScheme.error; // แจ้งเตือนรอการอนุมัติมักต้องการความสนใจ
     }

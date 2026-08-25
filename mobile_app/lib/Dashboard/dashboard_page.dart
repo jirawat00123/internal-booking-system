@@ -115,8 +115,8 @@ class _DashboardPageState extends State<DashboardPage> {
 
       // กำหนด Base URL ตามสภาพแวดล้อม (Web ใช้ localhost, Emulator ใช้ 192.168.88.25:3001.2.2)
       final String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
       final Uri exportUrl = Uri.parse(
         '$baseUrl/api/reports/export?type=$type&format=csv&token=$token',
       );

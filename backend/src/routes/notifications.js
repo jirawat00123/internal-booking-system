@@ -15,7 +15,9 @@ router.patch('/read-all', notificationController.markAllAsRead);
 // PATCH /api/notifications/:id/read
 router.patch('/:id/read', notificationController.markAsRead);
 
-// DELETE /api/notifications/:id
 router.delete('/:id', notificationController.deleteNotification);
+
+// POST /api/notifications/:id/respond (รองรับการกด ยืนยัน/ยกเลิก คำขอปล่อยรถก่อนเวลา)
+router.post('/:id/respond', notificationController.respondToNotification);
 
 module.exports = router;

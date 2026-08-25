@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
@@ -172,6 +173,7 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
           prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
 
       if (token.isEmpty) {
+        if (!mounted) return;
         Navigator.pop(context);
         _showErrorDialog(
           'ไม่พบข้อมูลการเข้าสู่ระบบ (Token สูญหาย) กรุณาเข้าสู่ระบบใหม่',
@@ -180,8 +182,8 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
       }
 
       String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
 
       // 🎯 เปลี่ยน URL API ไปที่ /return สำหรับการคืนรถ
       var request = http.MultipartRequest(
@@ -191,9 +193,8 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
 
       request.headers.addAll({'Authorization': 'Bearer $token'});
 
-      // 🎯 เปลี่ยนสถานะเป็น Completed (เสร็จสิ้นการใช้งาน)
-      request.fields['status'] =
-          'COMPLETED'; // 🟢 เปลี่ยนเป็นตัวพิมพ์ใหญ่ตาม API Contract ใหม่
+      // 🎯 เปลี่ยนสถานะเป็น Completed
+      request.fields['status'] = 'COMPLETED';
 
       request.files.add(
         http.MultipartFile.fromBytes(
@@ -220,27 +221,213 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
       );
 
       var response = await request.send();
+      final respStr = await response.stream.bytesToString();
+
+      if (!mounted) return;
       Navigator.pop(context); // ปิดตัวโหลด
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            // 🎯 ไปหน้าเสร็จสิ้นการรับรถ (ต้องสร้างไฟล์ Vehicleincompleted.dart ไว้ด้วยนะครับ)
             builder: (context) => const VehicleInCompletedScreen(),
           ),
         );
       } else {
         print('Upload failed with status: ${response.statusCode}');
-        _showErrorDialog(
-          'อัปโหลดรูปภาพไม่สำเร็จ (รหัส: ${response.statusCode})',
-        );
+        try {
+          final resData = json.decode(respStr);
+          // 🟢 ดักจับ Error คืนรถก่อนเวลา เพื่อแสดงหน้าต่างขอคำยินยอม
+          if (response.statusCode == 409 &&
+              resData['code'] == 'EARLY_RETURN_REQUIRES_APPROVAL') {
+            _showEarlyReturnDialog(
+              resData['message'] ??
+                  resData['error'] ??
+                  'ยังไม่ถึงเวลาคืนรถตามกำหนด',
+            );
+          } else {
+            _showErrorDialog(
+              resData['error'] ??
+                  resData['message'] ??
+                  'อัปโหลดรูปภาพไม่สำเร็จ (รหัส: ${response.statusCode})',
+            );
+          }
+        } catch (e) {
+          _showErrorDialog(
+            'อัปโหลดรูปภาพไม่สำเร็จ (รหัส: ${response.statusCode})',
+          );
+        }
       }
     } catch (e) {
+      if (!mounted) return;
       Navigator.pop(context);
       print('Network Error: $e');
       _showErrorDialog('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
     }
+  }
+
+  void _showEarlyReturnDialog(String msg) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.access_time_filled,
+              color: Colors.orange,
+              size: 60,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'ขอคืนรถก่อนเวลา',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Kanit',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              msg,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Kanit'),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _sendEarlyReturnRequest();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                    ),
+                    child: const Text(
+                      'ส่งคำขอ',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey.shade400,
+                    ),
+                    child: const Text(
+                      'ยกเลิก',
+                      style: TextStyle(
+                        color: Colors.black87,
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendEarlyReturnRequest() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+      String baseUrl = kIsWeb
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
+
+      var response = await http.post(
+        Uri.parse(
+          '$baseUrl/api/vehicle-bookings/${widget.bookingId}/early-return-request',
+        ),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context); // ปิด loading
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        _showSuccessDialog(
+          'ส่งคำขอคืนรถก่อนเวลาเรียบร้อยแล้ว กรุณารอผู้จองยืนยัน',
+        );
+      } else {
+        final resData = json.decode(response.body);
+        _showErrorDialog(
+          resData['error'] ??
+              resData['message'] ??
+              'เกิดข้อผิดพลาดในการส่งคำขอ',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      _showErrorDialog('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
+    }
+  }
+
+  void _showSuccessDialog(String msg) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green, size: 60),
+            const SizedBox(height: 16),
+            const Text(
+              'สำเร็จ',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Kanit',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              msg,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontFamily: 'Kanit'),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.pop(context); // กลับไปหน้าก่อนหน้าหลังจากสำเร็จ
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF009CB4),
+              ),
+              child: const Text(
+                'ตกลง',
+                style: TextStyle(color: Colors.white, fontFamily: 'Kanit'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _getCurrentFormattedDate() {

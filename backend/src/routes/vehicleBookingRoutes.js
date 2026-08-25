@@ -4,6 +4,7 @@ const vehicleBookingController = require('../controllers/vehicleBookingControlle
 
 // ✅ นำเข้า Middleware สำหรับตรวจสอบ Token และสิทธิ์
 const { authenticateToken } = require('../middlewares/auth');
+const upload = require('../middlewares/uploadMiddleware'); // 🟢 เพิ่ม Middleware สำหรับจัดการอัปโหลดรูปภาพ
 
 // =========================================================================
 // 🚀 บังคับใช้ authenticateToken ในทุกๆ Route เพื่อความปลอดภัยระดับ Production
@@ -28,6 +29,32 @@ router.get('/:id', authenticateToken, vehicleBookingController.getBookingById);
 router.patch('/:id/cancel', authenticateToken, vehicleBookingController.cancelBooking);
 
 // API สำหรับบันทึกคืนรถ (ไม่ต้องมี Multer อัปโหลดไฟล์)
-router.put('/:id/complete', authenticateToken, vehicleBookingController.releaseVehicle);
+router.put('/:id/complete', authenticateToken, vehicleBookingController.completeVehicleBooking);
+
+// 🟢 API สำหรับ รปภ. ปล่อยรถออก (Vehicle Out)
+router.put('/:id/release', authenticateToken, upload.fields([
+  { name: 'frontImage', maxCount: 1 },
+  { name: 'backImage', maxCount: 1 },
+  { name: 'plateImage', maxCount: 1 }
+]), vehicleBookingController.releaseVehicle);
+
+// 🟢 API สำหรับ รปภ. รับรถเข้า (Vehicle In)
+router.put('/:id/return', authenticateToken, upload.fields([
+  { name: 'frontImage', maxCount: 1 },
+  { name: 'backImage', maxCount: 1 },
+  { name: 'plateImage', maxCount: 1 }
+]), vehicleBookingController.returnVehicle);
+
+// 🟢 API สำหรับ รปภ. ส่งคำขอรับรถก่อนเวลา
+router.post('/:id/early-request', authenticateToken, vehicleBookingController.requestEarlyRelease);
+
+// 🟢 API สำหรับ ผู้จอง ตอบรับหรือปฏิเสธ คำขอรับรถก่อนเวลา
+router.post('/:id/early-respond', authenticateToken, vehicleBookingController.respondEarlyRelease);
+
+// 🟢 API สำหรับ รปภ. ส่งคำขอคืนรถก่อนเวลา
+router.post('/:id/early-return-request', authenticateToken, vehicleBookingController.requestEarlyReturn);
+
+// 🟢 API สำหรับ ผู้จอง ตอบรับหรือปฏิเสธ คำขอคืนรถก่อนเวลา
+router.post('/:id/early-return-respond', authenticateToken, vehicleBookingController.respondEarlyReturn);
 
 module.exports = router;

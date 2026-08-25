@@ -30,8 +30,8 @@ class _RoomListScreenState extends State<RoomListScreen> {
   Future<void> _fetchRoomsFromApi() async {
     try {
       final String baseUrl = kIsWeb
-          ? 'http://192.168.88.25:3001'
-          : 'http://192.168.88.25:3001';
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
       final prefs = await SharedPreferences.getInstance();
       // 🟢 ดึง Token จากทั้ง 'token' และ 'jwt_token' เพื่อรองรับทุก Key
       final token =
@@ -150,7 +150,9 @@ class _RoomListScreenState extends State<RoomListScreen> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const CalendarPage()),
+                MaterialPageRoute(
+                  builder: (_) => const CalendarPage(category: 'ROOM'),
+                ),
               );
             },
           ),
@@ -383,7 +385,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
       displayStatus = 'In Use';
       statusColor = const Color(
         0xFF004381,
-      ); // 🟢 เปลี่ยนจากสีแดง (0xFFE11D48) เป็นสีน้ำเงิน
+      ); // 🟢 เปลี่ยนมากำหนดค่าให้ statusColor แทน
     } else if (isReserved) {
       displayStatus = 'Reserved';
       statusColor = const Color(0xFFF59E0B);
@@ -411,7 +413,7 @@ class _RoomListScreenState extends State<RoomListScreen> {
         );
       }
 
-      final String baseUrl = 'http://192.168.88.25:3001';
+      final String baseUrl = 'https://192.168.88.25:3002';
       final String imageUrl = imagePath.startsWith('http')
           ? imagePath
           : Uri.parse('$baseUrl$imagePath').toString();

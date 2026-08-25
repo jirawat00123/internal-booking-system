@@ -238,8 +238,16 @@ router.post('/login-pin', async (req, res) => {
         assignedRole = matchedUser.role ? matchedUser.role.name : (matchedUser.roles || 'USER');
         assignedDept = employee.position?.department?.departmentName || "ไม่ระบุแผนก";
 
-        if (expectedRole && assignedRole.toUpperCase() !== expectedRole.toUpperCase()) {
-          return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงผู้ดูแลระบบ' });
+        if (expectedRole) {
+          const expected = expectedRole.toUpperCase();
+          const assigned = assignedRole.toUpperCase();
+          if (expected === 'SECURITY' || expected === 'GUARD') {
+            if (assigned !== 'SECURITY' && assigned !== 'GUARD' && assigned !== 'ADMIN') {
+              return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงผู้ดูแลระบบ' });
+            }
+          } else if (expected !== assigned) {
+            return res.status(403).json({ success: false, message: 'คุณไม่มีสิทธิ์เข้าถึงผู้ดูแลระบบ' });
+          }
         }
     } else {
         // 🔐 กรณีไม่ส่ง employeeCode มา ให้ค้นหา User จาก PIN โดยตรง
@@ -290,14 +298,22 @@ router.post('/login-pin', async (req, res) => {
           matchedUser.employee?.position?.department?.departmentName ||
           "ไม่ระบุแผนก";
 
-        if (
-          expectedRole &&
-          assignedRole.toUpperCase() !== expectedRole.toUpperCase()
-        ) {
-          return res.status(403).json({
-            success: false,
-            message: 'คุณไม่มีสิทธิ์เข้าถึงผู้ดูแลระบบ'
-          });
+        if (expectedRole) {
+          const expected = expectedRole.toUpperCase();
+          const assigned = assignedRole.toUpperCase();
+          if (expected === 'SECURITY' || expected === 'GUARD') {
+            if (assigned !== 'SECURITY' && assigned !== 'GUARD' && assigned !== 'ADMIN') {
+              return res.status(403).json({
+                success: false,
+                message: 'คุณไม่มีสิทธิ์เข้าถึงผู้ดูแลระบบ'
+              });
+            }
+          } else if (expected !== assigned) {
+            return res.status(403).json({
+              success: false,
+              message: 'คุณไม่มีสิทธิ์เข้าถึงผู้ดูแลระบบ'
+            });
+          }
         }
 
         console.log("[LOGIN-PIN] Matched User ID:", matchedUser.id);

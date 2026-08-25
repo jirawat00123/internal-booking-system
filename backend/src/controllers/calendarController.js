@@ -17,13 +17,12 @@ exports.getRoomCalendar = async (req, res, next) => {
     }
 
     const now = new Date();
+    const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
 
-    // สร้างเงื่อนไขการค้นหา (Filter) - กรองเอาเฉพาะรายการที่ยังไม่หมดเวลา (endDatetime > now)
     let whereClause = {
       startDatetime: { lte: new Date(endDate) },
       endDatetime: { 
-        gte: new Date(startDate),
-        gt: now
+        gte: effectiveStartDate
       }
     };
 
@@ -39,7 +38,7 @@ exports.getRoomCalendar = async (req, res, next) => {
     if (status) {
       whereClause.status = status;
     } else {
-      whereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
+      whereClause.status = { notIn: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'REJECTED'] };
     }
     
     // Filter ตามแผนก (Department)
@@ -91,13 +90,12 @@ exports.getVehicleCalendar = async (req, res, next) => {
     }
 
     const now = new Date();
+    const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
 
-    // กรองเอาเฉพาะรายการที่ยังไม่หมดเวลา (endDatetime > now)
     let whereClause = {
       startDatetime: { lte: new Date(endDate) },
       endDatetime: { 
-        gte: new Date(startDate),
-        gt: now
+        gte: effectiveStartDate
       }
     };
 
@@ -106,7 +104,7 @@ exports.getVehicleCalendar = async (req, res, next) => {
     if (status) {
       whereClause.status = status;
     } else {
-      whereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
+      whereClause.status = { notIn: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'REJECTED'] };
     }
     if (departmentId) {
       whereClause.user = {
@@ -156,31 +154,28 @@ exports.getUnifiedCalendar = async (req, res, next) => {
     }
 
     const now = new Date();
+    const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
 
-    // กรองเอาเฉพาะรายการที่ยังไม่หมดเวลา (endDatetime > now)
     let roomWhereClause = {
       startDatetime: { lte: new Date(endDate) },
       endDatetime: { 
-        gte: new Date(startDate),
-        gt: now
+        gte: effectiveStartDate
       }
     };
 
     let vehicleWhereClause = {
       startDatetime: { lte: new Date(endDate) },
       endDatetime: { 
-        gte: new Date(startDate),
-        gt: now
+        gte: effectiveStartDate
       }
     };
 
-    // ไม่แสดงรายการที่ถูกยกเลิกหรือถูกปฏิเสธเพื่อแสดงบนปฏิทิน (เว้นแต่จะระบุ status อื่นมา)
     if (status) {
       roomWhereClause.status = status;
       vehicleWhereClause.status = status;
     } else {
-      roomWhereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
-      vehicleWhereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
+      roomWhereClause.status = { notIn: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'REJECTED'] };
+      vehicleWhereClause.status = { notIn: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'REJECTED'] };
     }
 
     // 1. ดึงข้อมูลการจองห้อง
@@ -212,7 +207,8 @@ exports.getUnifiedCalendar = async (req, res, next) => {
         start: b.startDatetime,
         end: b.endDatetime,
         color: '#42BCA4', // สามารถระบุสีแยกประเภทให้ Frontend ได้เลย
-        status: b.status
+        status: b.status,
+        roomInfo: b.room // ส่งข้อมูลห้องไปแสดงใน Modal ฝั่งแอป
       })),
       ...vehicleBookings.map(b => ({
         eventId: `VEHICLE-${b.id}`,
@@ -223,7 +219,8 @@ exports.getUnifiedCalendar = async (req, res, next) => {
         start: b.startDatetime,
         end: b.endDatetime,
         color: '#FF9800',
-        status: b.status
+        status: b.status,
+        vehicleInfo: b.vehicle // ส่งข้อมูลรถไปแสดงใน Modal ฝั่งแอป
       }))
     ];
 

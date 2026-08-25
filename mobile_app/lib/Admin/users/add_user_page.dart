@@ -14,7 +14,7 @@ class _AddUserPageState extends State<AddUserPage> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController empCodeController = TextEditingController();
 
-  final String baseUrl = 'http://192.168.88.25:3001/api';
+  final String baseUrl = 'https://192.168.88.25:3002/api';
 
   List<dynamic> departments = [];
   List<dynamic> roles = [];

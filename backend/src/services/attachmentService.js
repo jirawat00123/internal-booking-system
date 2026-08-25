@@ -129,7 +129,7 @@ const deleteAttachmentById = async (attachmentId, userId, roleId) => {
   });
 
   // 4. ลบ Physical File หลังจาก Soft Delete สำเร็จ
-  const baseUploadDir = path.join(__dirname, '../../uploads');
+  const baseUploadDir = path.join(__dirname, '../../../attachments');
   const absolutePath = path.resolve(baseUploadDir, attachment.filePath);
 
   if (!absolutePath.startsWith(path.resolve(baseUploadDir))) {

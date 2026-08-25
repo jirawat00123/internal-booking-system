@@ -5,7 +5,7 @@ import 'calendar_model.dart';
 
 class CalendarService {
   // TODO: ปรับ Base URL ให้ตรงกับไฟล์ config หรือ auth_service.dart ที่โปรเจกต์ของคุณใช้งาน
-  static const String baseUrl = 'http://192.168.88.25:3001/api';
+  static const String baseUrl = 'https://192.168.88.25:3002/api';
 
   Future<List<CalendarEvent>> fetchRoomEvents(
     DateTime startDate,
@@ -59,19 +59,30 @@ class CalendarService {
             final start = DateTime.parse(item['startDatetime']);
             final end = DateTime.parse(item['endDatetime']);
 
-            // หมดเวลาจองแล้ว (now >= endDatetime) -> ซ่อนจากปฏิทิน
-            if (!now.isBefore(end)) {
-              continue;
+            // เอาเงื่อนไข "ซ่อนจากปฏิทิน" ออก เพื่อให้แสดงประวัติย้อนหลังด้วย
+            // และปรับสีตามสถานะที่รับมาจาก Backend
+
+            String displayStatus = rawStatus;
+            String colorHex = '#F59E0B'; // 🟡 ค่าเริ่มต้น PENDING/RESERVED
+
+            // กำหนดสีพื้นฐานตามสถานะ (คล้ายๆ ใน Model)
+            if (rawStatus == 'APPROVED') {
+              colorHex = '#2EC4B6'; // 🟢 APPROVED
+            } else if (rawStatus == 'IN_USE') {
+              colorHex = '#004381'; // 🔵 IN_USE
+            } else if (rawStatus == 'COMPLETED') {
+              colorHex = '#9E9E9E'; // ⚪ COMPLETED (จบแล้ว)
             }
 
-            // คำนวณสถานะ Realtime: RESERVED หรือ IN_USE
-            String displayStatus = 'RESERVED';
-            String colorHex = '#F59E0B'; // 🟡 RESERVED (ยังไม่ถึงเวลาเริ่ม)
-
-            if (now.isAfter(start) || now.isAtSameMomentAs(start)) {
-              displayStatus = 'IN_USE';
-              colorHex =
-                  '#004381'; // 🔵 IN_USE (ถึงเวลาเริ่มแล้ว และยังไม่หมดเวลา)
+            // คำนวณสถานะ Realtime เพิ่มเติมกรณีสถานะยังเป็น APPROVED หรือ PENDING
+            if (rawStatus != 'COMPLETED' && rawStatus != 'IN_USE') {
+              if (now.isAfter(end) || now.isAtSameMomentAs(end)) {
+                displayStatus = 'EXPIRED'; // หมดเวลาแต่ไม่ได้คืนห้อง
+                colorHex = '#E11D48'; // 🔴 EXPIRED
+              } else if (now.isAfter(start) || now.isAtSameMomentAs(start)) {
+                displayStatus = 'IN_USE';
+                colorHex = '#004381'; // 🔵 IN_USE (ถึงเวลาเริ่มแล้ว)
+              }
             }
 
             events.add(
@@ -90,6 +101,117 @@ class CalendarService {
                 'purpose': item['purpose'] ?? 'ไม่ระบุวัตถุประสงค์',
                 'employeeCode':
                     item['user']?['employee']?['employeeCode'] ?? '-',
+                'roomInfo': item['room'], // ส่งต่อ roomInfo
+              }),
+            );
+          }
+          return events;
+        } else {
+          throw Exception(
+            decoded['message'] ?? 'เกิดข้อผิดพลาดในการดึงข้อมูลปฏิทิน',
+          );
+        }
+      } else if (response.statusCode == 401 || response.statusCode == 403) {
+        throw Exception(
+          'เซสชันหมดอายุ หรือไม่มีสิทธิ์เข้าถึง กรุณาเข้าสู่ระบบใหม่',
+        );
+      } else {
+        throw Exception(
+          'ดึงข้อมูลปฏิทินล้มเหลว (Status: ${response.statusCode})',
+        );
+      }
+    } catch (e) {
+      throw Exception('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้: $e');
+    }
+  }
+
+  Future<List<CalendarEvent>> fetchVehicleEvents(
+    DateTime startDate,
+    DateTime endDate, {
+    int? vehicleId,
+    String? status,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+
+      final startIso = startDate.toIso8601String();
+      final endIso = endDate.toIso8601String();
+
+      String url =
+          '$baseUrl/calendar/vehicles?startDate=$startIso&endDate=$endIso';
+      if (vehicleId != null && vehicleId > 0) {
+        url += '&vehicleId=$vehicleId';
+      }
+      if (status != null && status.isNotEmpty) {
+        url += '&status=$status';
+      }
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded['success'] == true) {
+          final List<dynamic> data = decoded['data'];
+          final now = DateTime.now();
+          final List<CalendarEvent> events = [];
+
+          for (var item in data) {
+            final rawStatus = item['status']?.toString().toUpperCase() ?? '';
+            if (rawStatus == 'CANCELLED' || rawStatus == 'REJECTED') {
+              continue;
+            }
+
+            final start = DateTime.parse(item['startDatetime']);
+            final end = DateTime.parse(item['endDatetime']);
+
+            String displayStatus = rawStatus;
+            String colorHex = '#F59E0B';
+
+            if (rawStatus == 'APPROVED') {
+              colorHex = '#2EC4B6';
+            } else if (rawStatus == 'IN_USE') {
+              colorHex = '#004381';
+            } else if (rawStatus == 'COMPLETED') {
+              colorHex = '#9E9E9E';
+            }
+
+            if (rawStatus != 'COMPLETED' && rawStatus != 'IN_USE') {
+              if (now.isAfter(end) || now.isAtSameMomentAs(end)) {
+                displayStatus = 'EXPIRED';
+                colorHex = '#E11D48';
+              } else if (now.isAfter(start) || now.isAtSameMomentAs(start)) {
+                displayStatus = 'IN_USE';
+                colorHex = '#004381';
+              }
+            }
+
+            events.add(
+              CalendarEvent.fromJson({
+                'eventId': 'VEHICLE-${item['id']}',
+                'originalId': item['id'],
+                'type': 'VEHICLE',
+                'title':
+                    '${item['vehicle']?['brand'] ?? ''} ${item['vehicle']?['model'] ?? ''} (${item['vehicle']?['plateNumber'] ?? ''})'
+                        .trim(),
+                'bookerName':
+                    item['user']?['employee']?['fullName'] ??
+                    'ไม่ระบุชื่อผู้จอง',
+                'start': item['startDatetime'],
+                'end': item['endDatetime'],
+                'color': colorHex,
+                'status': displayStatus,
+                'purpose': item['purpose'] ?? 'ไม่ระบุวัตถุประสงค์',
+                'employeeCode':
+                    item['user']?['employee']?['employeeCode'] ?? '-',
+                'vehicleInfo': item['vehicle'],
               }),
             );
           }
@@ -159,18 +281,25 @@ class CalendarService {
             final start = DateTime.parse(item['start']);
             final end = DateTime.parse(item['end']);
 
-            // หมดเวลาจองแล้ว -> ซ่อนจากปฏิทิน
-            if (!now.isBefore(end)) {
-              continue;
-            }
+            // เอาเงื่อนไข "ซ่อนจากปฏิทิน" ออก เพื่อให้แสดงประวัติย้อนหลังด้วย
 
-            // คำนวณสถานะ Realtime: RESERVED หรือ IN_USE
-            String displayStatus = 'RESERVED';
-            String colorHex = '#F59E0B'; // 🟡 RESERVED
+            String displayStatus = rawStatus;
+            String colorHex =
+                item['color'] ??
+                '#F59E0B'; // ใช้สีที่ Backend ส่งมาเป็นค่าเริ่มต้น
 
-            if (now.isAfter(start) || now.isAtSameMomentAs(start)) {
-              displayStatus = 'IN_USE';
-              colorHex = '#004381'; // 🔵 IN_USE
+            if (rawStatus == 'COMPLETED') {
+              colorHex = '#9E9E9E'; // ⚪ COMPLETED
+            } else if (rawStatus != 'IN_USE' && rawStatus != 'RELEASED') {
+              if (now.isAfter(end) || now.isAtSameMomentAs(end)) {
+                displayStatus = 'EXPIRED';
+                colorHex = '#E11D48'; // 🔴 EXPIRED
+              } else if (now.isAfter(start) || now.isAtSameMomentAs(start)) {
+                displayStatus = 'IN_USE';
+                colorHex = '#004381'; // 🔵 IN_USE
+              } else if (rawStatus == 'APPROVED') {
+                colorHex = '#2EC4B6'; // 🟢 APPROVED
+              }
             }
 
             Map<String, dynamic> updatedItem = Map<String, dynamic>.from(item);

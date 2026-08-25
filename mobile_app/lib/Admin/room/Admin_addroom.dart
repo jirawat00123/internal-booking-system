@@ -122,8 +122,8 @@ class _AddMeetingRoomScreenState extends State<AddMeetingRoomScreen> {
 
                                       try {
                                         final String baseUrl = kIsWeb
-                                            ? 'http://192.168.88.25:3001'
-                                            : 'http://192.168.88.25:3001';
+                                            ? 'https://192.168.88.25:3002'
+                                            : 'https://192.168.88.25:3002';
                                         var uri = Uri.parse(
                                           '$baseUrl/api/rooms',
                                         );

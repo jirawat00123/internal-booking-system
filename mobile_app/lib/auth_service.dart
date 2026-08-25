@@ -1,55 +1,58 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter/foundation.dart'; // เพิ่มสำหรับการใช้ debugPrint แก้ไข Warning avoid_print
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
-  // 1. สร้าง Singleton Pattern เพื่อให้เรียกใช้งานได้จากทุกที่อย่างปลอดภัย (หรือจะใช้คู่กับ Riverpod/Provider ก็ได้)
   AuthService._internal();
   static final AuthService instance = AuthService._internal();
 
-  // 2. เรียกใช้งาน Secure Storage
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
-  // 3. กำหนด Key เป็น Private Constant เพื่อป้องกันการพิมพ์ผิด
   static const String _tokenKey = 'jwt_token';
   static const String _roleKey = 'user_role';
-  static const String _modeKey = 'current_mode'; // เพิ่ม Key สำหรับเก็บ Mode
-  static const String _employeeCodeKey =
-      'employee_code'; // 🟢 เพิ่ม Key สำหรับเก็บรหัสพนักงาน
-  static const String _hasPinKey =
-      'has_pin'; // 🟢 เพิ่ม Key สำหรับเก็บสถานะ PIN
-  static const String _pinResetRequiredKey =
-      'pin_reset_required'; // 🟢 เพิ่ม Key สำหรับเก็บ Flag รีเซ็ต PIN
+  static const String _modeKey = 'current_mode';
+  static const String _employeeCodeKey = 'employee_code';
+  static const String _hasPinKey = 'has_pin';
+  static const String _pinResetRequiredKey = 'pin_reset_required';
 
-  // Base URL กลางสำหรับเรียกใช้งาน API ทุกตัวในระบบ
-  static const String baseUrl = 'http://192.168.88.25:3001';
+  static const String baseUrl = 'https://192.168.88.25:3002';
 
-  // 4. Private Variable สำหรับเก็บ Token ไว้ใน Memory (Runtime) เพื่อจะได้ไม่ต้อง I/O อ่านจาก Storage ทุกครั้งที่เรียก API
   String? _accessToken;
   String? _userRole;
-  String? _currentMode; // เพิ่มตัวแปรสำหรับเก็บ Mode ใน Memory
-  String? _employeeCode; // 🟢 เพิ่มตัวแปรสำหรับเก็บรหัสพนักงานใน Memory
-  bool? _hasPin; // 🟢 เพิ่มตัวแปรเก็บสถานะ PIN ใน Memory
-  bool? _pinResetRequired; // 🟢 เพิ่มตัวแปรเก็บ Flag รีเซ็ต PIN ใน Memory
+  String? _currentMode;
+  String? _employeeCode;
+  bool? _hasPin;
+  bool? _pinResetRequired;
 
-  /// บันทึก Token เมื่อ Login สำเร็จ
   Future<void> saveToken(String token) async {
-    _accessToken = token; // กำหนดค่าใน Memory ทันทีเพื่อให้ระบบทำงานต่อได้
+    _accessToken = token;
     try {
-      await _storage.write(key: _tokenKey, value: token);
-      await _storage.write(key: 'token', value: token);
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_tokenKey, token);
+        await prefs.setString('token', token);
+      } else {
+        await _storage.write(key: _tokenKey, value: token);
+        await _storage.write(key: 'token', value: token);
+      }
     } catch (e) {
       debugPrint('⚠️ Storage write error (Web fallback to memory): $e');
     }
   }
 
-  /// ดึง Token เพื่อนำไปใช้กับ API (เช่น นำไปใส่ใน Header)
   Future<String?> getToken() async {
     if (_accessToken != null && _accessToken!.isNotEmpty) {
       return _accessToken;
     }
     try {
-      _accessToken ??= await _storage.read(key: _tokenKey);
-      _accessToken ??= await _storage.read(key: 'token');
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        _accessToken ??= prefs.getString(_tokenKey);
+        _accessToken ??= prefs.getString('token');
+      } else {
+        _accessToken ??= await _storage.read(key: _tokenKey);
+        _accessToken ??= await _storage.read(key: 'token');
+      }
     } catch (e) {
       debugPrint('⚠️ Storage read error: $e');
     }
@@ -65,106 +68,137 @@ class AuthService {
     _hasPin = null; // 🟢 ลบสถานะ PIN ออกจาก Memory
     _pinResetRequired = null; // 🟢 ลบ Flag รีเซ็ต PIN ออกจาก Memory
     try {
-      await _storage.delete(key: _tokenKey);
-      await _storage.delete(key: 'token');
-      await _storage.delete(key: _roleKey);
-      await _storage.delete(key: _modeKey); // ลบ Mode ออกจาก Storage
-      await _storage.delete(
-        key: _employeeCodeKey,
-      ); // 🟢 ลบรหัสพนักงานออกจาก Storage
-      await _storage.delete(
-        key: 'employeeCode',
-      ); // 🟢 ลบ Key สำรองเพื่อป้องกัน State ค้าง
-      await _storage.delete(key: _hasPinKey); // 🟢 ลบสถานะ PIN ออกจาก Storage
-      await _storage.delete(
-        key: _pinResetRequiredKey,
-      ); // 🟢 ลบ Flag รีเซ็ต PIN ออกจาก Storage
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_tokenKey);
+        await prefs.remove('token');
+        await prefs.remove(_roleKey);
+        await prefs.remove(_modeKey);
+        await prefs.remove(_employeeCodeKey);
+        await prefs.remove('employeeCode');
+        await prefs.remove(_hasPinKey);
+        await prefs.remove(_pinResetRequiredKey);
+      } else {
+        await _storage.delete(key: _tokenKey);
+        await _storage.delete(key: 'token');
+        await _storage.delete(key: _roleKey);
+        await _storage.delete(key: _modeKey);
+        await _storage.delete(key: _employeeCodeKey);
+        await _storage.delete(key: 'employeeCode');
+        await _storage.delete(key: _hasPinKey);
+        await _storage.delete(key: _pinResetRequiredKey);
+      }
     } catch (e) {
       debugPrint('⚠️ Storage delete error: $e');
     }
   }
 
-  /// 🟢 ฟังก์ชันสำหรับเรียกใช้งานเมื่อกด Logout (Clear Session ออกจาก Memory และ Storage 100%)
   Future<void> logout() async {
     await deleteToken();
   }
 
-  /// บันทึก Role จาก API ลง Storage
   Future<void> saveRole(String role) async {
     _userRole = role;
     try {
-      await _storage.write(key: _roleKey, value: role);
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_roleKey, role);
+      } else {
+        await _storage.write(key: _roleKey, value: role);
+      }
     } catch (e) {
       debugPrint('⚠️ Storage write error (Role): $e');
     }
   }
 
-  /// ดึง Role เพื่อใช้ตรวจสอบสิทธิ์ในแอป
   Future<String?> getRole() async {
     if (_userRole != null && _userRole!.isNotEmpty) {
       return _userRole;
     }
     try {
-      _userRole = await _storage.read(key: _roleKey);
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        _userRole = prefs.getString(_roleKey);
+      } else {
+        _userRole = await _storage.read(key: _roleKey);
+      }
     } catch (e) {
       debugPrint('⚠️ Storage read error (Role): $e');
     }
     return _userRole;
   }
 
-  /// บันทึก Mode หน้าจอ (ADMIN_MODE, USER_MODE)
   Future<void> saveMode(String mode) async {
     _currentMode = mode;
     try {
-      await _storage.write(key: _modeKey, value: mode);
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_modeKey, mode);
+      } else {
+        await _storage.write(key: _modeKey, value: mode);
+      }
     } catch (e) {
       debugPrint('⚠️ Storage write error (Mode): $e');
     }
   }
 
-  /// ดึง Mode ที่กำลังใช้งานปัจจุบัน
   Future<String?> getMode() async {
     if (_currentMode != null && _currentMode!.isNotEmpty) {
       return _currentMode;
     }
     try {
-      _currentMode = await _storage.read(key: _modeKey);
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        _currentMode = prefs.getString(_modeKey);
+      } else {
+        _currentMode = await _storage.read(key: _modeKey);
+      }
     } catch (e) {
       debugPrint('⚠️ Storage read error (Mode): $e');
     }
     return _currentMode;
   }
 
-  /// เช็คว่า User Login อยู่หรือไม่
   Future<bool> isLoggedIn() async {
     final token = await getToken();
     return token != null && token.isNotEmpty;
   }
 
-  /// 🟢 บันทึกรหัสพนักงาน (Employee Code) ลง Storage
   Future<void> saveEmployeeCode(String employeeCode) async {
     _employeeCode = employeeCode;
     try {
-      await _storage.write(key: _employeeCodeKey, value: employeeCode);
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_employeeCodeKey, employeeCode);
+        await prefs.setString('employeeCode', employeeCode);
+      } else {
+        await _storage.write(key: _employeeCodeKey, value: employeeCode);
+        await _storage.write(key: 'employeeCode', value: employeeCode);
+      }
     } catch (e) {
       debugPrint('⚠️ Storage write error (EmployeeCode): $e');
     }
   }
 
-  /// 🟢 ดึงรหัสพนักงานที่กำลังใช้งาน
   Future<String?> getEmployeeCode() async {
     if (_employeeCode != null && _employeeCode!.isNotEmpty) {
       return _employeeCode;
     }
     try {
-      _employeeCode = await _storage.read(key: _employeeCodeKey);
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        _employeeCode ??= prefs.getString(_employeeCodeKey);
+        _employeeCode ??= prefs.getString('employeeCode');
+      } else {
+        _employeeCode ??= await _storage.read(key: _employeeCodeKey);
+        _employeeCode ??= await _storage.read(key: 'employeeCode');
+      }
     } catch (e) {
       debugPrint('⚠️ Storage read error (EmployeeCode): $e');
     }
     return _employeeCode;
   }
 
-  /// 🟢 บันทึกสถานะ PIN (hasPin, pinResetRequired)
   Future<void> savePinStatus({
     required bool hasPin,
     required bool pinResetRequired,
@@ -172,22 +206,32 @@ class AuthService {
     _hasPin = hasPin;
     _pinResetRequired = pinResetRequired;
     try {
-      await _storage.write(key: _hasPinKey, value: hasPin.toString());
-      await _storage.write(
-        key: _pinResetRequiredKey,
-        value: pinResetRequired.toString(),
-      );
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_hasPinKey, hasPin);
+        await prefs.setBool(_pinResetRequiredKey, pinResetRequired);
+      } else {
+        await _storage.write(key: _hasPinKey, value: hasPin.toString());
+        await _storage.write(
+          key: _pinResetRequiredKey,
+          value: pinResetRequired.toString(),
+        );
+      }
     } catch (e) {
       debugPrint('⚠️ Storage write error (PinStatus): $e');
     }
   }
 
-  /// 🟢 ดึงสถานะ hasPin
   Future<bool> getHasPin() async {
     if (_hasPin != null) return _hasPin!;
     try {
-      final val = await _storage.read(key: _hasPinKey);
-      _hasPin = val == 'true';
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        _hasPin = prefs.getBool(_hasPinKey);
+      } else {
+        final val = await _storage.read(key: _hasPinKey);
+        _hasPin = val == 'true';
+      }
     } catch (e) {
       debugPrint('⚠️ Storage read error (HasPin): $e');
       _hasPin = false;
@@ -195,12 +239,16 @@ class AuthService {
     return _hasPin ?? false;
   }
 
-  /// 🟢 ดึงสถานะ pinResetRequired
   Future<bool> getPinResetRequired() async {
     if (_pinResetRequired != null) return _pinResetRequired!;
     try {
-      final val = await _storage.read(key: _pinResetRequiredKey);
-      _pinResetRequired = val == 'true';
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        _pinResetRequired = prefs.getBool(_pinResetRequiredKey);
+      } else {
+        final val = await _storage.read(key: _pinResetRequiredKey);
+        _pinResetRequired = val == 'true';
+      }
     } catch (e) {
       debugPrint('⚠️ Storage read error (PinResetRequired): $e');
       _pinResetRequired = false;

@@ -10,6 +10,8 @@ class CalendarEvent {
   final DateTime end;
   final String colorHex;
   final String status;
+  final Map<String, dynamic>? roomInfo;
+  final Map<String, dynamic>? vehicleInfo;
 
   CalendarEvent({
     required this.eventId,
@@ -21,6 +23,8 @@ class CalendarEvent {
     required this.end,
     required this.colorHex,
     required this.status,
+    this.roomInfo,
+    this.vehicleInfo,
   });
 
   factory CalendarEvent.fromJson(Map<String, dynamic> json) {
@@ -37,6 +41,8 @@ class CalendarEvent {
       ).toLocal(),
       colorHex: json['color'] ?? '#42BCA4',
       status: json['status'] ?? 'UNKNOWN',
+      roomInfo: json['roomInfo'],
+      vehicleInfo: json['vehicleInfo'],
     );
   }
 

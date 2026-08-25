@@ -8,11 +8,24 @@ class NotificationRepository {
   // เรียกใช้ Service ที่เราสร้างไว้ในไฟล์ก่อนหน้า
   final NotificationService _service = NotificationService();
 
+  // State Guard & Cache Variable
+  bool _isFetchingNotifications = false;
+  List<NotificationModel> _notificationCache = [];
+  bool _isFetchingUnreadCount = false;
+  int _unreadCountCache = 0;
+
   /// ดึงรายการ Notification และแปลงเป็น List<NotificationModel>
   Future<List<NotificationModel>> getNotifications({
     int page = 1,
     int limit = 20,
+    bool forceRefresh = false,
   }) async {
+    if (_isFetchingNotifications) return _notificationCache;
+    if (!forceRefresh && _notificationCache.isNotEmpty && page == 1) {
+      return _notificationCache;
+    }
+
+    _isFetchingNotifications = true;
     try {
       final response = await _service.getNotifications(
         page: page,
@@ -25,7 +38,13 @@ class NotificationRepository {
         // รองรับ Response จาก Express ที่มักจะห่อด้วย key "data" หรือเป็น Array ตรงๆ
         final List<dynamic> data = decoded['data'] ?? decoded;
 
-        return data.map((json) => NotificationModel.fromJson(json)).toList();
+        final result = data
+            .map((json) => NotificationModel.fromJson(json))
+            .toList();
+        if (page == 1) {
+          _notificationCache = result;
+        }
+        return result;
       } else {
         throw Exception(
           'Failed to fetch notifications. Status: ${response.statusCode}',
@@ -33,11 +52,17 @@ class NotificationRepository {
       }
     } catch (e) {
       throw Exception('Repository Error (getNotifications): $e');
+    } finally {
+      _isFetchingNotifications = false;
     }
   }
 
   /// ดึงจำนวนแจ้งเตือนที่ยังไม่ได้อ่าน กลับไปเป็นตัวเลข (int)
-  Future<int> getUnreadCount() async {
+  Future<int> getUnreadCount({bool forceRefresh = false}) async {
+    if (_isFetchingUnreadCount) return _unreadCountCache;
+    if (!forceRefresh && _unreadCountCache > 0) return _unreadCountCache;
+
+    _isFetchingUnreadCount = true;
     try {
       final response = await _service.getUnreadCount();
 
@@ -45,7 +70,8 @@ class NotificationRepository {
         final decoded = json.decode(response.body);
 
         // รองรับ Format จาก Backend เช่น { "unreadCount": 5 } หรือ { "count": 5 }
-        return decoded['unreadCount'] ?? decoded['count'] ?? 0;
+        _unreadCountCache = decoded['unreadCount'] ?? decoded['count'] ?? 0;
+        return _unreadCountCache;
       } else {
         throw Exception(
           'Failed to fetch unread count. Status: ${response.statusCode}',
@@ -53,6 +79,8 @@ class NotificationRepository {
       }
     } catch (e) {
       throw Exception('Repository Error (getUnreadCount): $e');
+    } finally {
+      _isFetchingUnreadCount = false;
     }
   }
 

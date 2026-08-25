@@ -4,11 +4,12 @@ const prisma = new PrismaClient();
 /**
  * 🟢 1. สร้าง Notification สำหรับผู้ใช้ 1 คน
  */
-exports.createNotification = async ({ userId, title, message, type = 'BOOKING', entityType = null, entityId = null }) => {
+exports.createNotification = async ({ userId, recipientId, title, message, type = 'BOOKING', entityType = null, entityId = null }) => {
   try {
+    const targetUserId = userId || recipientId;
     return await prisma.notification.create({
       data: {
-        userId: parseInt(userId, 10),
+        userId: parseInt(targetUserId, 10),
         title,
         message,
         type,

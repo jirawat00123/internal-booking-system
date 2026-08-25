@@ -3,8 +3,8 @@ const path = require('path');
 const fs = require('fs');
 
 // 1. Storage Config (Root Upload Directory)
-// 💡 ชี้ไปที่ root uploads ให้ตรงกับ Express Static และ Docker Volume
-const uploadDir = path.join(__dirname, '../../uploads');
+// 💡 ชี้ไปที่ root attachments ให้ตรงกับ Express Static และ Docker Volume
+const uploadDir = path.join(__dirname, '../../../attachments');
 
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
@@ -20,9 +20,9 @@ const storage = multer.diskStorage({
     let subFolder = 'attachments';
 
     if (url.includes('/rooms')) {
-      subFolder = 'rooms';
+      subFolder = 'rooms/images';
     } else if (url.includes('/vehicles')) {
-      subFolder = 'vehicles';
+      subFolder = 'vehicles/images';
     }
 
     const dest = path.join(uploadDir, subFolder);

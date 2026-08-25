@@ -25,11 +25,13 @@ class _NotificationBadgeState extends State<NotificationBadge> {
   }
 
   /// ดึงจำนวน Unread Count จาก Repository
-  Future<void> _fetchUnreadCount() async {
+  Future<void> _fetchUnreadCount({bool forceRefresh = false}) async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final count = await _repository.getUnreadCount();
+      final count = await _repository.getUnreadCount(
+        forceRefresh: forceRefresh,
+      );
       if (mounted) {
         setState(() {
           _unreadCount = count;
@@ -72,7 +74,9 @@ class _NotificationBadgeState extends State<NotificationBadge> {
               // Navigation ไปหน้า Notification Center
               await Navigator.pushNamed(context, '/notifications');
               // เมื่อกดกลับมาจากหน้า Notification ให้ Refresh จำนวน Unread Count
-              _fetchUnreadCount();
+              if (mounted) {
+                _fetchUnreadCount(forceRefresh: true);
+              }
             }
           },
         ),
