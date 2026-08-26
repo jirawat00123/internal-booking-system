@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'Vehicleoutcompleted.dart';
@@ -21,6 +22,8 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
   XFile? frontImage;
   XFile? backImage;
   XFile? plateImage;
+  
+  bool _isSubmitting = false;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -121,6 +124,10 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
+                      if (_isSubmitting) return;
+                      setState(() {
+                        _isSubmitting = true;
+                      });
                       Navigator.pop(context);
                       _submitToDatabase();
                     },
@@ -177,6 +184,7 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
         _showErrorDialog(
           'ไม่พบข้อมูลการเข้าสู่ระบบ (Token สูญหาย) กรุณาเข้าสู่ระบบใหม่',
         );
+        if (mounted) setState(() { _isSubmitting = false; });
         return;
       }
 
@@ -194,27 +202,37 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       // ❌ ลบการส่งข้อมูล parkingSlot ออกไปแล้ว
       request.fields['status'] = 'IN_USE';
 
+      // ตรวจสอบชนิดไฟล์จากนามสกุลรูปภาพแบบไดนามิกเพื่อป้องกัน Error จาก MimeType
+      MediaType getMediaType(XFile file) {
+        final ext = file.name.split('.').last.toLowerCase();
+        if (ext == 'png') return MediaType('image', 'png');
+        return MediaType('image', 'jpeg');
+      }
+
       request.files.add(
         http.MultipartFile.fromBytes(
-          'frontImage', // 🟢 เปลี่ยนชื่อฟิลด์ให้ตรงกับ Backend Controller
+          'frontImage',
           await frontImage!.readAsBytes(),
           filename: frontImage!.name,
+          contentType: getMediaType(frontImage!),
         ),
       );
 
       request.files.add(
         http.MultipartFile.fromBytes(
-          'backImage', // 🟢 เปลี่ยนชื่อฟิลด์ให้ตรงกับ Backend Controller
+          'backImage',
           await backImage!.readAsBytes(),
           filename: backImage!.name,
+          contentType: getMediaType(backImage!),
         ),
       );
 
       request.files.add(
         http.MultipartFile.fromBytes(
-          'plateImage', // 🟢 เปลี่ยนชื่อฟิลด์ให้ตรงกับ Backend Controller
+          'plateImage',
           await plateImage!.readAsBytes(),
           filename: plateImage!.name,
+          contentType: getMediaType(plateImage!),
         ),
       );
 
@@ -224,6 +242,7 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       if (!mounted)
         return; // 🟢 ตรวจสอบสถานะ Widget ก่อนใช้ context เพื่อป้องกัน Crash
       Navigator.pop(context);
+      setState(() { _isSubmitting = false; });
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         Navigator.pushReplacement(
@@ -252,6 +271,7 @@ class _VehicleOutScreenState extends State<VehicleOutScreen> {
       if (!mounted)
         return; // 🟢 ตรวจสอบสถานะ Widget ก่อนใช้ context ใน catch block
       Navigator.pop(context);
+      setState(() { _isSubmitting = false; });
       print('Network Error: $e');
       _showErrorDialog('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
     }

@@ -6,15 +6,23 @@ const prisma = new PrismaClient();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const uploadMiddleware = require('../middlewares/uploadMiddleware');
 
 // 🟢 นำเข้า Controller สำหรับจัดการการจองรถยนต์
+const vehicleBookingController = require('../controllers/vehicleBookingController');
 const { 
   releaseVehicle, 
   completeVehicleBooking,
-  approveVehicleBooking, // เพิ่มใหม่
-  rejectVehicleBooking  // เพิ่มใหม่
-} = require('../controllers/vehicleBookingController');
-const vehicleBookingController = require('../controllers/vehicleBookingController');
+  approveVehicleBooking,
+  rejectVehicleBooking,
+  requestEarlyRelease,
+  respondEarlyRelease,
+  requestEarlyReturn,
+  respondEarlyReturn
+} = vehicleBookingController || {};
+
+// Helper ป้องกัน Server Crash กรณี Controller ฟังก์ชันใดฟังก์ชันหนึ่งเป็น undefined
+const safeHandler = (fn, name) => typeof fn === 'function' ? fn : (req, res) => res.status(501).json({ success: false, error: `Function ${name} is not implemented` });
 
 // ==========================================
 // 📂 ตั้งค่าระบบจัดการไฟล์ (Multer Configuration)
@@ -70,7 +78,14 @@ const deleteGarbageFile = (filePath) => {
 // 🟢 สเตปที่ 1: สร้างการจอง อัปโหลดไฟล์ และ The Brain (เช็กรถ + เช็กคนขับ)
 // ==========================================
 // 💡 เพิ่ม authenticateToken เพื่อยืนยันตัวตนผู้จองเสมอ
-router.post('/', authenticateToken, upload.single('document'), async (req, res) => {
+router.post('/', authenticateToken, (req, res, next) => {
+  upload.single('document')(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, returnDate, purpose, driverType } = req.body;
     
@@ -82,25 +97,43 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
       deleteGarbageFile(req.file?.path);
       return res.status(400).json({
         success: false,
-        error: "กรุณากรอกข้อมูลให้ครบถ้วน (รหัสรถ, วันเวลาเริ่มและสิ้นสุด)"
-      });
-    }
-
-    // 🛑 1.1 ตรวจสอบความถูกต้องของวันเวลา (เวลาคืนรถต้องมากกว่าเวลาเริ่มใช้งาน)
-    if (new Date(finalReturnDate) <= new Date(startDatetime)) {
-      deleteGarbageFile(req.file?.path);
-      return res.status(400).json({
-        success: false,
-        error: "เวลาคืนรถต้องมากกว่าเวลาเริ่มใช้งาน กรุณาตรวจสอบวันเวลาใหม่อีกครั้ง"
+        error: "กรุณากรอกข้อมูลให้ครบถ้วน (รหัสรถ, วันเวลาเริ่มและวันที่สิ้นสุด)"
       });
     }
 
     const parsedVehicleId = parseInt(vehicleId, 10);
+    if (isNaN(parsedVehicleId)) {
+      deleteGarbageFile(req.file?.path);
+      return res.status(400).json({ success: false, error: "รหัสรถยนต์ไม่ถูกต้อง" });
+    }
+
+    const startInput = new Date(startDatetime);
+    const returnInput = new Date(finalReturnDate);
+
+    if (isNaN(startInput.getTime()) || isNaN(returnInput.getTime())) {
+      deleteGarbageFile(req.file?.path);
+      return res.status(400).json({ success: false, error: "รูปแบบวันที่และเวลาไม่ถูกต้อง" });
+    }
+
+    // 🌟 Business Rule: ปรับ Expected Return Date ให้เป็นเวลาสิ้นวัน (23:59:59.999) 
+    // เพื่อครอบคลุมการจองตลอดทั้งวันที่ผู้ใช้เลือก (ระบบชนวัน ไม่ใช่ชนเวลา)
+    const expectedReturnDate = new Date(returnInput);
+    expectedReturnDate.setHours(23, 59, 59, 999);
+
+    // 🛑 1.1 ตรวจสอบความถูกต้องของวันเวลา
+    if (expectedReturnDate <= startInput) {
+      deleteGarbageFile(req.file?.path);
+      return res.status(400).json({
+        success: false,
+        error: "วันที่คืนรถต้องมากกว่าหรือเป็นวันเดียวกับวันที่เริ่มใช้งาน กรุณาตรวจสอบอีกครั้ง"
+      });
+    }
+
     // 💡 รองรับทั้ง key แบบเก่าและใหม่ที่ Flutter ส่งมา
     const parsedPassengers = parseInt(passengers || passengerCount || 1, 10);
     
     // 👤 2. ดึง User ID จาก Token ที่ผ่านการตรวจสอบแล้ว (มั่นใจได้ว่าถูกคน 100%)
-    const finalUserId = parseInt(req.user.userId, 10);
+    const finalUserId = parseInt(req.user.userId || req.user.id, 10); // 💡 รองรับทั้ง userId และ id ป้องกัน Token ผิดรูปแบบ
 
     if (!finalUserId || isNaN(finalUserId)) {
       deleteGarbageFile(req.file?.path);
@@ -118,13 +151,13 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
       if (!vehicle) throw new Error('NOT_FOUND');
       if (vehicle.status !== 'AVAILABLE') throw new Error('NOT_AVAILABLE');
 
-      // 3.2 ตรวจสอบคิวรถทับซ้อน
+      // 3.2 ตรวจสอบคิวรถทับซ้อน (Collision Detection: ยึดเวลาสิ้นวันเป็นหลัก)
       const overlappingVehicle = await tx.vehicleBooking.findFirst({
         where: {
           vehicleId: parsedVehicleId,
           status: { notIn: ["CANCELLED", "COMPLETED", "REJECTED"] },
-          startDatetime: { lt: new Date(finalReturnDate) },
-          endDatetime: { gt: new Date(startDatetime) }
+          startDatetime: { lt: expectedReturnDate },
+          endDatetime: { gt: startInput }
         }
       });
 
@@ -135,8 +168,8 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
           userId: finalUserId,
           destination: destination || 'ไม่ระบุเป้าหมาย',
           passengers: parsedPassengers,
-          startDatetime: new Date(startDatetime),
-          endDatetime: new Date(finalReturnDate),
+          startDatetime: startInput,
+          endDatetime: expectedReturnDate, // บันทึกเวลาที่ปัดเป็น 23:59:59 ลง Database
           purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
           status: 'PENDING'
         }
@@ -151,7 +184,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
             entityType: "VEHICLE_BOOKING",
             entityId: newBooking.id,
             fileName: req.file.originalname,
-            filePath: req.file.path,
+            filePath: req.file.path.replace(/\\/g, '/'),
             fileType: req.file.mimetype,
             uploadedBy: { connect: { id: finalUserId } },
             bookingVehicle: { connect: { id: newBooking.id } }
@@ -368,54 +401,50 @@ router.patch('/:id/cancel', authenticateToken, async (req, res) => {
 // ==========================================
 // 🚙 บันทึกการปล่อยรถออก (PUT /:id/release) - รปภ. ถ่ายรูปหน้ารถและเลขไมล์
 // ==========================================
-router.put('/:id/release', authenticateToken, upload.fields([
-  { name: 'frontImage', maxCount: 1 },
-  { name: 'backImage', maxCount: 1 },
-  { name: 'plateImage', maxCount: 1 }
-]), releaseVehicle);
+router.put('/:id/release', authenticateToken, requireRole(['ADMIN', 'GUARD', 'SECURITY']), uploadMiddleware.any(), safeHandler(releaseVehicle, 'releaseVehicle'));
+
+router.post('/:id/release', authenticateToken, requireRole(['ADMIN', 'GUARD', 'SECURITY']), uploadMiddleware.any(), safeHandler(releaseVehicle, 'releaseVehicle'));
 
 // ==========================================
 // 🏁 บันทึกการเสร็จสิ้นการใช้งานรถ (PUT /:id/complete)
 // ==========================================
-router.put('/:id/complete', authenticateToken, completeVehicleBooking);
+router.put('/:id/complete', authenticateToken, uploadMiddleware.any(), safeHandler(completeVehicleBooking, 'completeVehicleBooking'));
 
 // ==========================================
 // 🔄 บันทึกการรับรถคืน (PUT /:id/return) - รองรับรูปถ่ายตอนคืนรถและปรับสถานะรถว่าง
 // ==========================================
-router.put('/:id/return', authenticateToken, upload.fields([
-  { name: 'frontImage', maxCount: 1 },
-  { name: 'backImage', maxCount: 1 },
-  { name: 'plateImage', maxCount: 1 }
-]), completeVehicleBooking);
+router.put('/:id/return', authenticateToken, uploadMiddleware.any(), safeHandler(completeVehicleBooking, 'completeVehicleBooking'));
+
+router.post('/:id/return', authenticateToken, uploadMiddleware.any(), safeHandler(completeVehicleBooking, 'completeVehicleBooking'));
 
 // ==========================================
 // 🟢 อนุมัติการจองรถยนต์ (POST /:id/approve)
 // ==========================================
-router.post('/:id/approve', authenticateToken, requireRole(['ADMIN']), approveVehicleBooking);
+router.post('/:id/approve', authenticateToken, requireRole(['ADMIN']), safeHandler(approveVehicleBooking, 'approveVehicleBooking'));
 
 // ==========================================
 // 🔴 ปฏิเสธการจองรถยนต์ (POST /:id/reject)
 // ==========================================
-router.post('/:id/reject', authenticateToken, requireRole(['ADMIN']), rejectVehicleBooking);
+router.post('/:id/reject', authenticateToken, requireRole(['ADMIN']), safeHandler(rejectVehicleBooking, 'rejectVehicleBooking'));
 
 // ==========================================
 // 🟢 ส่งคำขอรับรถก่อนเวลาให้ผู้จอง (POST /:id/early-request)
 // ==========================================
-router.post('/:id/early-request', authenticateToken, vehicleBookingController.requestEarlyRelease);
+router.post('/:id/early-request', authenticateToken, safeHandler(requestEarlyRelease || vehicleBookingController.requestEarlyRelease, 'requestEarlyRelease'));
 
 // ==========================================
 // 🟢 ผู้จองตอบรับหรือปฏิเสธคำขอรับรถก่อนเวลา (POST /:id/early-respond)
 // ==========================================
-router.post('/:id/early-respond', authenticateToken, vehicleBookingController.respondEarlyRelease);
+router.post('/:id/early-respond', authenticateToken, safeHandler(respondEarlyRelease || vehicleBookingController.respondEarlyRelease, 'respondEarlyRelease'));
 
 // ==========================================
 // 🟢 ส่งคำขอคืนรถก่อนเวลาให้ผู้จอง (POST /:id/early-return-request)
 // ==========================================
-router.post('/:id/early-return-request', authenticateToken, vehicleBookingController.requestEarlyReturn);
+router.post('/:id/early-return-request', authenticateToken, safeHandler(requestEarlyReturn || vehicleBookingController.requestEarlyReturn, 'requestEarlyReturn'));
 
 // ==========================================
 // 🟢 ผู้จองตอบรับหรือปฏิเสธคำขอคืนรถก่อนเวลา (POST /:id/early-return-respond)
 // ==========================================
-router.post('/:id/early-return-respond', authenticateToken, vehicleBookingController.respondEarlyReturn);
+router.post('/:id/early-return-respond', authenticateToken, safeHandler(respondEarlyReturn || vehicleBookingController.respondEarlyReturn, 'respondEarlyReturn'));
 
 module.exports = router;

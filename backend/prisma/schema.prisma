@@ -189,7 +189,7 @@ model VehicleBooking {
   attachments   Attachment[]
   user          User          @relation("BookingUser", fields: [userId], references: [id])
   vehicle       Vehicle       @relation(fields: [vehicleId], references: [id])
-  vehicleLogs   VehicleLog[]
+  vehicleLogs   VehicleLog?
 
   @@index([vehicleId])
   @@index([userId])
@@ -204,7 +204,7 @@ model VehicleLog {
   remark             String?
   returnMileage      Int?           @map("return_mileage")
   updatedAt          DateTime       @updatedAt @map("updated_at")
-  vehicleBookingId   Int            @map("vehicle_booking_id")
+  vehicleBookingId   Int            @unique @map("vehicle_booking_id")
   returnTime         DateTime?      @map("return_time")
   checkoutById       Int            @map("checkout_by")
   checkoutFuelLevel  Int            @map("checkout_fuel_level")

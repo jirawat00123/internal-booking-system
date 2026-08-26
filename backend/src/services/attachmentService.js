@@ -17,18 +17,23 @@ const createAttachmentRecord = async (file, entityType, entityId, userId) => {
 
     if (entityType === 'ROOM_BOOKING') {
       roomBookingId = parsedEntityId;
-    } else if (entityType === 'VEHICLE_BOOKING') {
+    } else if (['VEHICLE_BOOKING', 'VEHICLE_RELEASE_IMAGE', 'VEHICLE_RETURN_IMAGE'].includes(entityType)) {
       vehicleBookingId = parsedEntityId;
     }
 
     // 2. Prisma Transaction
     const attachment = await prisma.$transaction(async (tx) => {
+      const normalizePath = file.path ? file.path.replace(/\\/g, '/') : '';
+      const finalPath = normalizePath.includes('attachments/') 
+          ? '/' + normalizePath.substring(normalizePath.indexOf('attachments/')) 
+          : `/attachments/${file.filename}`;
+
       return await tx.attachment.create({
         data: {
           entityType: entityType,
           entityId: parsedEntityId,
           fileName: file.originalname,  // ชื่อไฟล์ต้นฉบับ สำหรับให้ User ดู
-          filePath: path.join('attachments', file.filename), // Path สัมพัทธ์จาก uploads ไปยังไฟล์จริง
+          filePath: finalPath, // Path สัมพัทธ์จาก uploads ไปยังไฟล์จริง
           fileType: file.mimetype,
           uploadedById: parseInt(userId, 10),
           roomBookingId: roomBookingId,
@@ -92,6 +97,7 @@ const getAttachmentsByEntity = async (entityType, entityId) => {
       entityType: true,
       entityId: true,
       fileName: true,
+      filePath: true,
       fileType: true,
       uploadedById: true,
       createdAt: true
@@ -129,10 +135,12 @@ const deleteAttachmentById = async (attachmentId, userId, roleId) => {
   });
 
   // 4. ลบ Physical File หลังจาก Soft Delete สำเร็จ
-  const baseUploadDir = path.join(__dirname, '../../../attachments');
-  const absolutePath = path.resolve(baseUploadDir, attachment.filePath);
+  const baseUploadDir = process.cwd();
+  const safeRelativePath = attachment.filePath.replace(/^\/+/, '');
+  const absolutePath = path.resolve(baseUploadDir, safeRelativePath);
+  const secureAttachmentDir = path.resolve(baseUploadDir, 'attachments');
 
-  if (!absolutePath.startsWith(path.resolve(baseUploadDir))) {
+  if (!absolutePath.startsWith(secureAttachmentDir)) {
     throw new Error('FORBIDDEN_ACCESS');
   }
 

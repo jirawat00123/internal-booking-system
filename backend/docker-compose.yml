@@ -30,7 +30,7 @@ services:
     volumes:
       # 🟢 ผูกโฟลเดอร์ uploads ออกมาข้างนอก เพื่อให้รูปภาพ/ไฟล์ไม่หายเวลา Restart
       - ./uploads:/app/uploads
-      - ./attachments:/app/attachments
+      - "/volume1/Internal Booking System/Internal Booking System/attachments:/attachments"
     depends_on:
       - db
 

@@ -161,21 +161,21 @@ exports.checkOut = async (req, res, next) => {
           remark: 'เจ้าหน้าที่รักษาความปลอดภัยทำรายการปล่อยรถยนต์ออกจากบริษัทเรียบร้อย'
         }
       });
-    });
 
-// 🟢 บันทึก AuditLog เมื่อทำรายการ Check-Out สำเร็จ
-    if (guardId) {
-      await prisma.auditLog.create({
-        data: {
-          action: "CHECK_OUT_VEHICLE",
-          module: "VEHICLE_SECURITY",
-          entityId: bookingId,
-          entityType: "VEHICLE_BOOKING",
-          userId: guardId,
-          details: `Security Guard ID ${guardId} checked out vehicle for booking ID ${bookingId}`
-        }
-      }).catch(err => console.error("AuditLog Error [CHECK_OUT_VEHICLE]:", err.message));
-    }
+      // 🟢 บันทึก AuditLog เมื่อทำรายการ Check-Out สำเร็จ (ย้ายเข้ามาใน Transaction)
+      if (guardId) {
+        await tx.auditLog.create({
+          data: {
+            action: "CHECK_OUT_VEHICLE",
+            module: "VEHICLE_SECURITY",
+            entityId: bookingId,
+            entityType: "VEHICLE_BOOKING",
+            userId: guardId,
+            details: `Security Guard ID ${guardId} checked out vehicle for booking ID ${bookingId}`
+          }
+        });
+      }
+    });
 
     return res.status(200).json({
       success: true,
@@ -295,21 +295,21 @@ exports.checkIn = async (req, res, next) => {
           remark: 'เจ้าหน้าที่รักษาความปลอดภัยทำการรับรถคืนเข้าคลังและตรวจสอบความเรียบร้อยแล้ว'
         }
       });
-    });
 
-// 🟢 บันทึก AuditLog เมื่อทำรายการ Check-In สำเร็จ
-    if (guardId) {
-      await prisma.auditLog.create({
-        data: {
-          action: "CHECK_IN_VEHICLE",
-          module: "VEHICLE_SECURITY",
-          entityId: bookingId,
-          entityType: "VEHICLE_BOOKING",
-          userId: guardId,
-          details: `Security Guard ID ${guardId} checked in vehicle for booking ID ${bookingId}`
-        }
-      }).catch(err => console.error("AuditLog Error [CHECK_IN_VEHICLE]:", err.message));
-    }
+      // 🟢 บันทึก AuditLog เมื่อทำรายการ Check-In สำเร็จ (ย้ายเข้ามาใน Transaction)
+      if (guardId) {
+        await tx.auditLog.create({
+          data: {
+            action: "CHECK_IN_VEHICLE",
+            module: "VEHICLE_SECURITY",
+            entityId: bookingId,
+            entityType: "VEHICLE_BOOKING",
+            userId: guardId,
+            details: `Security Guard ID ${guardId} checked in vehicle for booking ID ${bookingId}`
+          }
+        });
+      }
+    });
 
     return res.status(200).json({
       success: true,

@@ -29,7 +29,7 @@ const prisma = new PrismaClient();
 // 🛠️ ตั้งค่า Middleware พื้นฐาน (ต้องอยู่ก่อน Routes เสมอ)
 // ==========================================
 app.use(cors({
-  origin: '*',
+  origin: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true
@@ -50,12 +50,10 @@ const swaggerUi = require('swagger-ui-express');
 // ==========================================
 process.on('uncaughtException', (err) => {
   console.error('🔴 [Uncaught Exception] พบข้อผิดพลาดร้ายแรงที่ไม่ถูกจัดการ:', err);
-  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('🔴 [Unhandled Rejection] Promise ไม่ถูกจัดการ:', reason);
-  process.exit(1);
 });
 
 // ==========================================

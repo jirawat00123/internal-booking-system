@@ -1,6 +1,26 @@
 const { PrismaClient, BookingStatus, VehicleStatus } = require('@prisma/client');
 const prisma = new PrismaClient();
-const notificationService = require('../services/notificationService'); // 🟢 1. นำเข้า notificationService
+const notificationService = require('../services/notificationService');
+const fs = require('fs');
+const path = require('path');
+
+// Helper Function สำหรับค้นหาและดึงไฟล์อัปโหลดจาก req.files (รองรับทั้ง Array และ Object)
+const getUploadedFile = (files, fieldNames) => {
+    if (!files) return null;
+    const targets = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
+
+    if (Array.isArray(files)) {
+        return files.find(file => targets.includes(file.fieldname)) || null;
+    }
+
+    for (const name of targets) {
+        if (files[name] && files[name][0]) {
+            return files[name][0];
+        }
+    }
+
+    return null;
+};
 
 // =======================================================
 // 1. สร้างรายการจองรถยนต์ (POST)
@@ -265,7 +285,7 @@ exports.updateBookingStatus = async (req, res) => {
             if ([BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.REJECTED].includes(validStatus)) {
                 await tx.notification.updateMany({
                     where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
-                    data: { isRead: true, status: 'read' }
+                    data: { isRead: true }
                 });
             }
 
@@ -293,11 +313,16 @@ exports.updateBookingStatus = async (req, res) => {
 exports.releaseVehicle = async (req, res) => {
     try {
         const bookingId = parseInt(req.params.id, 10);
+        const currentUserId = parseInt(req.user?.userId || req.user?.id, 10);
+
         if (isNaN(bookingId)) {
             return res.status(400).json({ success: false, error: "รหัสการจองไม่ถูกต้อง" });
         }
+        if (isNaN(currentUserId)) {
+            return res.status(401).json({ success: false, error: "ไม่พบข้อมูลผู้ดำเนินการ (Unauthorized)" });
+        }
 
-        const { status, remark } = req.body;
+        const { status, remark, mileage, checkoutMileage, fuelLevel, checkoutFuelLevel } = req.body;
         const validStatus = status ? BookingStatus[status.toUpperCase()] : BookingStatus.IN_USE;
 
         const bookingExists = await prisma.vehicleBooking.findUnique({
@@ -309,8 +334,19 @@ exports.releaseVehicle = async (req, res) => {
             return res.status(404).json({ success: false, error: `ไม่พบรายการจองรหัส #${bookingId} ในระบบ` });
         }
 
+        if (bookingExists.status === BookingStatus.IN_USE) {
+            return res.status(409).json({ success: false, code: "ALREADY_IN_USE", error: "รายการจองนี้ได้ทำการปล่อยรถไปแล้ว" });
+        }
+
+        if ([BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.REJECTED].includes(bookingExists.status)) {
+            return res.status(409).json({ success: false, code: "INVALID_STATUS", error: "รายการจองนี้อยู่ในสถานะที่ไม่สามารถปล่อยรถได้" });
+        }
+
         const now = new Date();
-        if (now < bookingExists.startDatetime) {
+        const userRole = req.user?.role;
+        const isAuthorizedStaff = ['ADMIN', 'GUARD', 'SECURITY'].includes(userRole);
+
+        if (now < bookingExists.startDatetime && !isAuthorizedStaff) {
             const consentLog = await prisma.auditLog.findFirst({
                 where: {
                     module: 'VEHICLE_BOOKING',
@@ -327,6 +363,11 @@ exports.releaseVehicle = async (req, res) => {
                 });
             }
         }
+
+        const parsedMileage = parseFloat(checkoutMileage || mileage);
+        const finalMileage = !isNaN(parsedMileage) ? parsedMileage : (bookingExists.vehicle.currentMileage || 0);
+        const parsedFuel = parseFloat(checkoutFuelLevel || fuelLevel);
+        const finalFuelLevel = !isNaN(parsedFuel) ? parsedFuel : 100;
 
         const updatedData = await prisma.$transaction(async (tx) => {
             const previousActive = await tx.vehicleBooking.findFirst({
@@ -351,31 +392,93 @@ exports.releaseVehicle = async (req, res) => {
                 data: { status: VehicleStatus.IN_USE }
             });
 
-            const currentUserId = parseInt(req.user?.userId || req.user?.id, 10);
+            const frontFile = getUploadedFile(req.files, ['frontImage', 'front', 'frontPhoto', 'checkoutFrontPhoto', 'checkout_front_photo']);
+            const backFile = getUploadedFile(req.files, ['backImage', 'back', 'backPhoto', 'checkoutBackPhoto', 'checkout_back_photo']);
+            const mileageFile = getUploadedFile(req.files, ['mileageImage', 'mileage', 'mileagePhoto', 'checkoutMileagePhoto', 'checkout_mileage_photo', 'dashboardImage']);
 
-            await tx.vehicleLog.create({
-                data: {
-                    vehicleBookingId: bookingId,
-                    checkoutTime: now,
-                    checkoutMileage: bookingExists.vehicle.currentMileage || 0,
-                    checkoutFuelLevel: 100,
-                    checkoutById: currentUserId
+            // 🟢 1. สร้าง โฟลเดอร์ปลายทาง NAS / Inspections Target และคัดลอกย้ายไฟล์เข้ามาให้เรียบร้อย
+            const releaseDir = path.join(process.cwd(), 'attachments', 'vehicles', 'inspections', String(bookingId), 'release');
+            if (!fs.existsSync(releaseDir)) {
+                fs.mkdirSync(releaseDir, { recursive: true });
+            }
+
+            const moveFileToNAS = (file) => {
+                if (!file || !file.path) return;
+                const destPath = path.join(releaseDir, file.filename);
+                if (file.path !== destPath && fs.existsSync(file.path)) {
+                    fs.copyFileSync(file.path, destPath);
+                    try { fs.unlinkSync(file.path); } catch (e) {}
+                    file.path = destPath;
                 }
+            };
+            [frontFile, backFile, mileageFile].forEach(moveFileToNAS);
+
+            const normalizePath = (filePath) => {
+                if (!filePath) return null;
+                const clean = filePath.replace(/\\/g, '/');
+                const idx = clean.indexOf('attachments/');
+                return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
+            };
+
+            const frontPath = normalizePath(frontFile?.path);
+            const backPath = normalizePath(backFile?.path);
+            const mileagePath = normalizePath(mileageFile?.path);
+
+            if (fs.existsSync(releaseDir)) {
+                const currentUploadedNames = [frontFile, backFile, mileageFile].filter(Boolean).map(f => f.filename);
+                const files = fs.readdirSync(releaseDir);
+                for (const file of files) {
+                    if (!currentUploadedNames.includes(file)) {
+                        try { fs.unlinkSync(path.join(releaseDir, file)); } catch (e) {}
+                    }
+                }
+            }
+
+            // 🟢 2. เช็ก Log ว่ามีอยู่แล้วหรือไม่ แทนการใช้ upsert ที่ต้องพึ่งพา Unique Field
+            const existingLog = await tx.vehicleLog.findFirst({
+                where: { vehicleBookingId: bookingId }
             });
 
-            if (req.files && Object.keys(req.files).length > 0) {
-                const imagesToSave = [];
-                if (req.files['frontImage']) imagesToSave.push(req.files['frontImage'][0]);
-                if (req.files['backImage']) imagesToSave.push(req.files['backImage'][0]);
-                if (req.files['plateImage']) imagesToSave.push(req.files['plateImage'][0]);
+            if (existingLog) {
+                await tx.vehicleLog.update({
+                    where: { id: existingLog.id },
+                    data: {
+                        checkoutTime: now,
+                        checkoutMileage: finalMileage,
+                        checkoutFuelLevel: finalFuelLevel,
+                        checkoutById: currentUserId
+                    }
+                });
+            } else {
+                await tx.vehicleLog.create({
+                    data: {
+                        vehicleBookingId: bookingId,
+                        checkoutTime: now,
+                        checkoutMileage: finalMileage,
+                        checkoutFuelLevel: finalFuelLevel,
+                        checkoutById: currentUserId
+                    }
+                });
+            }
 
-                for (const file of imagesToSave) {
+            if (req.files && (Array.isArray(req.files) ? req.files.length > 0 : Object.keys(req.files).length > 0)) {
+                const imagesToSave = [frontFile, backFile, mileageFile].filter(Boolean);
+                const uniqueFilesMap = new Map();
+
+                imagesToSave.forEach(file => {
+                    const relativePath = normalizePath(file.path);
+                    if (relativePath && !uniqueFilesMap.has(relativePath)) {
+                        uniqueFilesMap.set(relativePath, { ...file, relativePath });
+                    }
+                });
+
+                for (const file of uniqueFilesMap.values()) {
                     await tx.attachment.create({
                         data: {
                             entityType: "VEHICLE_RELEASE_IMAGE",
                             entityId: bookingId,
                             fileName: file.originalname,
-                            filePath: file.path,
+                            filePath: file.relativePath,
                             fileType: file.mimetype,
                             uploadedBy: { connect: { id: currentUserId } },
                             bookingVehicle: { connect: { id: bookingId } }
@@ -404,7 +507,7 @@ exports.releaseVehicle = async (req, res) => {
 
             await tx.notification.updateMany({
                 where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
-                data: { isRead: true, status: 'read' }
+                data: { isRead: true }
             });
 
             return updatedBooking;
@@ -421,7 +524,10 @@ exports.releaseVehicle = async (req, res) => {
         if (error.message === 'PREVIOUS_BOOKING_ACTIVE') {
             return res.status(409).json({ success: false, code: "PREVIOUS_BOOKING_ACTIVE", error: "มีคิวก่อนหน้าที่ยังใช้งานรถอยู่" });
         }
-        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการบันทึกข้อมูลปล่อยรถ" });
+        if (error.code === 'P2002') {
+            return res.status(409).json({ success: false, code: "DUPLICATE_RECORD", error: "รายการ Log การใช้งานรถยนต์นี้ถูกสร้างไปแล้ว" });
+        }
+        return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการบันทึกข้อมูลปล่อยรถ", developerMessage: error.message });
     }
 };
 
@@ -432,7 +538,16 @@ exports.completeVehicleBooking = async (req, res) => {
     try {
         const bookingId = parseInt(req.params.id, 10);
         const reqUserId = parseInt(req.user?.userId || req.user?.id, 10);
+
+        if (isNaN(bookingId)) {
+            return res.status(400).json({ success: false, error: "รหัสการจองไม่ถูกต้อง" });
+        }
+        if (isNaN(reqUserId)) {
+            return res.status(401).json({ success: false, error: "ไม่พบข้อมูลผู้ดำเนินการ (Unauthorized)" });
+        }
+
         const userRole = req.user?.role;
+        const { returnMileage, mileage, returnFuelLevel, fuelLevel } = req.body;
 
         const booking = await prisma.vehicleBooking.findUnique({
             where: { id: bookingId }
@@ -451,7 +566,9 @@ exports.completeVehicleBooking = async (req, res) => {
         }
 
         const now = new Date();
-        if (now < booking.endDatetime) {
+        const isAuthorizedStaff = ['ADMIN', 'GUARD', 'SECURITY'].includes(userRole);
+
+        if (now < booking.endDatetime && !isAuthorizedStaff) {
             const consentLog = await prisma.auditLog.findFirst({
                 where: {
                     module: 'VEHICLE_BOOKING',
@@ -469,6 +586,9 @@ exports.completeVehicleBooking = async (req, res) => {
             }
         }
 
+        const parsedReturnMileage = parseFloat(returnMileage || mileage);
+        const parsedReturnFuel = parseFloat(returnFuelLevel || fuelLevel);
+
         await prisma.$transaction(async (tx) => {
             await tx.vehicleBooking.update({
                 where: { id: bookingId },
@@ -480,34 +600,93 @@ exports.completeVehicleBooking = async (req, res) => {
                 orderBy: { createdAt: 'desc' }
             });
 
+            const returnFrontFile = getUploadedFile(req.files, ['frontImage', 'returnFrontPhoto', 'return_front_photo', 'front', 'frontPhoto']);
+            const returnBackFile = getUploadedFile(req.files, ['backImage', 'returnBackPhoto', 'return_back_photo', 'back', 'backPhoto']);
+            const returnMileageFile = getUploadedFile(req.files, ['mileageImage', 'returnMileagePhoto', 'return_mileage_photo', 'mileage', 'mileagePhoto', 'dashboardImage']);
+
+            // 🟢 1. สร้าง โฟลเดอร์ปลายทาง NAS / Inspections Target และคัดลอกย้ายไฟล์เข้ามาให้เรียบร้อย
+            const returnDir = path.join(process.cwd(), 'attachments', 'vehicles', 'inspections', String(bookingId), 'return');
+            if (!fs.existsSync(returnDir)) {
+                fs.mkdirSync(returnDir, { recursive: true });
+            }
+
+            const moveFileToNAS = (file) => {
+                if (!file || !file.path) return;
+                const destPath = path.join(returnDir, file.filename);
+                if (file.path !== destPath && fs.existsSync(file.path)) {
+                    fs.copyFileSync(file.path, destPath);
+                    try { fs.unlinkSync(file.path); } catch (e) {}
+                    file.path = destPath;
+                }
+            };
+            [returnFrontFile, returnBackFile, returnMileageFile].forEach(moveFileToNAS);
+
+            const normalizePath = (filePath) => {
+                if (!filePath) return null;
+                const clean = filePath.replace(/\\/g, '/');
+                const idx = clean.indexOf('attachments/');
+                return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
+            };
+
+            const returnFrontPath = normalizePath(returnFrontFile?.path);
+            const returnBackPath = normalizePath(returnBackFile?.path);
+            const returnMileagePath = normalizePath(returnMileageFile?.path);
+
+            if (fs.existsSync(returnDir)) {
+                const currentUploadedNames = [returnFrontFile, returnBackFile, returnMileageFile].filter(Boolean).map(f => f.filename);
+                const files = fs.readdirSync(returnDir);
+                for (const file of files) {
+                    if (!currentUploadedNames.includes(file)) {
+                        try { fs.unlinkSync(path.join(returnDir, file)); } catch (e) {}
+                    }
+                }
+            }
+
             if (latestLog) {
+                const logUpdateData = {
+                    returnTime: new Date(),
+                    returnById: reqUserId
+                };
+                if (!isNaN(parsedReturnMileage)) {
+                    logUpdateData.returnMileage = parsedReturnMileage;
+                }
+                if (!isNaN(parsedReturnFuel)) {
+                    logUpdateData.returnFuelLevel = parsedReturnFuel;
+                }
                 await tx.vehicleLog.update({
                     where: { id: latestLog.id },
-                    data: {
-                        returnTime: new Date(),
-                        returnById: reqUserId
-                    }
+                    data: logUpdateData
                 });
+            }
+
+            const vehicleUpdateData = { status: VehicleStatus.AVAILABLE };
+            if (!isNaN(parsedReturnMileage) && parsedReturnMileage > 0) {
+                vehicleUpdateData.currentMileage = parsedReturnMileage;
             }
 
             await tx.vehicle.update({
                 where: { id: booking.vehicleId },
-                data: { status: VehicleStatus.AVAILABLE } 
+                data: vehicleUpdateData
             });
 
-            if (req.files && Object.keys(req.files).length > 0) {
-                const imagesToSave = [];
-                if (req.files['frontImage']) imagesToSave.push(req.files['frontImage'][0]);
-                if (req.files['backImage']) imagesToSave.push(req.files['backImage'][0]);
-                if (req.files['plateImage']) imagesToSave.push(req.files['plateImage'][0]);
+            if (req.files && (Array.isArray(req.files) ? req.files.length > 0 : Object.keys(req.files).length > 0)) {
+                const imagesToSave = [returnFrontFile, returnBackFile, returnMileageFile].filter(Boolean);
+                const uniqueFilesMap = new Map();
 
-                for (const file of imagesToSave) {
+                imagesToSave.forEach(file => {
+                    const relativePath = normalizePath(file.path);
+                    if (relativePath && !uniqueFilesMap.has(relativePath)) {
+                        uniqueFilesMap.set(relativePath, { ...file, relativePath });
+                    }
+                });
+
+                for (const file of uniqueFilesMap.values()) {
                     await tx.attachment.create({
                         data: {
                             entityType: "VEHICLE_RETURN_IMAGE",
                             entityId: bookingId,
                             fileName: file.originalname,
-                            filePath: file.path,
+                            filePath: file.relativePath,
                             fileType: file.mimetype,
                             uploadedBy: { connect: { id: reqUserId } },
                             bookingVehicle: { connect: { id: bookingId } }
@@ -534,7 +713,7 @@ exports.completeVehicleBooking = async (req, res) => {
 
             await tx.notification.updateMany({
                 where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
-                data: { isRead: true, status: 'read' }
+                data: { isRead: true }
             });
         });
 
@@ -545,7 +724,7 @@ exports.completeVehicleBooking = async (req, res) => {
 
     } catch (error) {
         console.error("Complete Booking Error:", error);
-        return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดของระบบ" });
+        return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดของระบบ", developerMessage: error.message });
     }
 };
 
@@ -706,21 +885,23 @@ exports.requestEarlyRelease = async (req, res) => {
 
         if (!booking) return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจอง" });
 
+        if (![BookingStatus.APPROVED, BookingStatus.PENDING].includes(booking.status)) {
+            return res.status(409).json({ success: false, error: "รายการจองนี้ไม่อยู่ในสถานะที่ขอรับรถก่อนเวลาได้" });
+        }
+
         const now = new Date();
         if (now >= booking.startDatetime) {
             return res.status(400).json({ success: false, error: "ถึงเวลารับรถตามปกติแล้ว ไม่จำเป็นต้องขอปลดล็อกก่อนเวลา" });
         }
 
-        // ส่ง Notification หายูสเซอร์ผู้จอง
         await notificationService.createNotification({
-            recipientId: booking.userId, // 🟢 แก้ไข: ใช้ recipientId แทน/เพิ่ม เพื่อให้ Map ID ผู้รับถูกต้อง
-            userId: booking.userId,      // (คงไว้เผื่อ Service เดิมมี validation เช็คค่านี้ด้วย)
+            recipientId: booking.userId,
+            userId: booking.userId,
             title: "⚠️ คำขอรับรถก่อนเวลา",
             message: `เจ้าหน้าที่ขอคำยินยอมปล่อยรถยนต์ทะเบียน ${booking.vehicle.plateNumber} ก่อนเวลาจอง กรุณากดยืนยันหากท่านต้องการรับรถเลย`,
-            type: 'EARLY_RELEASE_REQUEST', // 🟢 แก้ไข: ระบุ Type เฉพาะเจาะจง เพื่อให้ Mobile App ดักไปสร้าง Action ยืนยัน/ปฏิเสธ ได้
+            type: 'APPROVAL',
             entityType: 'VEHICLE_BOOKING',
-            entityId: bookingId,
-            status: 'unread' // 🟢 เพิ่ม status บังคับให้เป็น unread เสมอเมื่อสร้างใหม่
+            entityId: bookingId
         });
 
         // บันทึก AuditLog สถานะการร้องขอ
@@ -783,7 +964,7 @@ exports.respondEarlyRelease = async (req, res) => {
 
         await prisma.notification.updateMany({
             where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
-            data: { isRead: true, status: 'read' }
+            data: { isRead: true }
         });
 
         return res.status(200).json({
@@ -820,16 +1001,14 @@ exports.requestEarlyReturn = async (req, res) => {
             return res.status(400).json({ success: false, error: "ถึงเวลาคืนรถตามปกติแล้ว ไม่จำเป็นต้องขอปลดล็อกก่อนเวลา" });
         }
 
-        // ส่ง Notification หายูสเซอร์ผู้จอง
         await notificationService.createNotification({
             recipientId: booking.userId,
             userId: booking.userId,
             title: "⚠️ คำขอคืนรถก่อนเวลา",
             message: `เจ้าหน้าที่ขอคำยินยอมรับคืนรถยนต์ทะเบียน ${booking.vehicle.plateNumber} ก่อนเวลาจอง กรุณากดยืนยันหากท่านคืนรถแล้ว`,
-            type: 'EARLY_RETURN_REQUEST',
+            type: 'APPROVAL',
             entityType: 'VEHICLE_BOOKING',
-            entityId: bookingId,
-            status: 'unread'
+            entityId: bookingId
         });
 
         // บันทึก AuditLog สถานะการร้องขอ
@@ -892,7 +1071,7 @@ exports.respondEarlyReturn = async (req, res) => {
 
         await prisma.notification.updateMany({
             where: { entityType: 'VEHICLE_BOOKING', entityId: bookingId, isRead: false },
-            data: { isRead: true, status: 'read' }
+            data: { isRead: true }
         });
 
         return res.status(200).json({

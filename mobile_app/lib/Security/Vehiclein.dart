@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 // 💡 อย่าลืมสร้างไฟล์หน้า Success สำหรับรับรถเข้า (หรือจะเด้งกลับหน้าเดิมก็ได้ครับ)
@@ -20,6 +21,8 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
   XFile? frontImage;
   XFile? backImage;
   XFile? plateImage;
+  
+  bool _isSubmitting = false;
 
   final ImagePicker _picker = ImagePicker();
 
@@ -121,6 +124,10 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
+                      if (_isSubmitting) return;
+                      setState(() {
+                        _isSubmitting = true;
+                      });
                       Navigator.pop(context);
                       _submitToDatabase();
                     },
@@ -178,6 +185,7 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
         _showErrorDialog(
           'ไม่พบข้อมูลการเข้าสู่ระบบ (Token สูญหาย) กรุณาเข้าสู่ระบบใหม่',
         );
+        setState(() { _isSubmitting = false; });
         return;
       }
 
@@ -196,11 +204,19 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
       // 🎯 เปลี่ยนสถานะเป็น Completed
       request.fields['status'] = 'COMPLETED';
 
+      // ตรวจสอบชนิดไฟล์จากนามสกุลรูปภาพแบบไดนามิกเพื่อป้องกัน Error จาก MimeType
+      MediaType getMediaType(XFile file) {
+        final ext = file.name.split('.').last.toLowerCase();
+        if (ext == 'png') return MediaType('image', 'png');
+        return MediaType('image', 'jpeg');
+      }
+
       request.files.add(
         http.MultipartFile.fromBytes(
           'frontImage',
           await frontImage!.readAsBytes(),
           filename: frontImage!.name,
+          contentType: getMediaType(frontImage!),
         ),
       );
 
@@ -209,6 +225,7 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
           'backImage',
           await backImage!.readAsBytes(),
           filename: backImage!.name,
+          contentType: getMediaType(backImage!),
         ),
       );
 
@@ -217,6 +234,7 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
           'plateImage',
           await plateImage!.readAsBytes(),
           filename: plateImage!.name,
+          contentType: getMediaType(plateImage!),
         ),
       );
 
@@ -225,6 +243,7 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
 
       if (!mounted) return;
       Navigator.pop(context); // ปิดตัวโหลด
+      setState(() { _isSubmitting = false; });
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         Navigator.pushReplacement(
@@ -261,6 +280,7 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
+      setState(() { _isSubmitting = false; });
       print('Network Error: $e');
       _showErrorDialog('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
     }
