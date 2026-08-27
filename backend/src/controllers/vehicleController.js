@@ -61,7 +61,8 @@ exports.getVehicles = async (req, res) => {
                 include: {
                     bookings: {
                         where: {
-                            status: { in: ['APPROVED', 'IN_USE'] }
+                            status: { in: ['APPROVED', 'IN_USE'] },
+                            endDatetime: { gt: new Date() } // เพิ่มเงื่อนไขให้ดึงเฉพาะคิวจองที่ยังไม่หมดเวลา
                         }
                     },
                     documents: {
@@ -76,12 +77,25 @@ exports.getVehicles = async (req, res) => {
             })
         ]);
 
-        // คำนวณสถานะการมีคิวจองในอนาคต (hasFutureBooking) สำหรับ UI โดยไม่แก้ไข vehicle.status
+        // คำนวณสถานะการมีคิวจองในอนาคต (hasFutureBooking) สำหรับ UI และปรับ status ให้ตรงกับหน้าจองของ User
         const vehicles = vehiclesList.map(vehicle => {
             const hasActiveBooking = vehicle.bookings && vehicle.bookings.length > 0;
+            const actDocument = vehicle.documents && vehicle.documents.find(d => d.documentType && d.documentType.name === 'พ.ร.บ.');
+            
+            // ปรับ status ถ้ามี active booking และสถานะปัจจุบันคือ AVAILABLE
+            let displayStatus = vehicle.status;
+            if (hasActiveBooking && vehicle.status === 'AVAILABLE') {
+                displayStatus = 'RESERVED';
+            }
+
             return {
                 ...vehicle,
-                hasFutureBooking: hasActiveBooking
+                status: displayStatus, // อัปเดต status ให้ตรงกับความเป็นจริง
+                hasFutureBooking: hasActiveBooking,
+                actDocumentNumber: actDocument ? actDocument.documentNumber : null,
+                actIssueDate: actDocument ? actDocument.issueDate : null,
+                actExpiryDate: actDocument ? actDocument.expiryDate : null,
+                actUploadUrl: actDocument ? actDocument.uploadUrl : null
             };
         });
 
@@ -106,7 +120,7 @@ exports.getVehicles = async (req, res) => {
 // 2. เพิ่มข้อมูลรถยนต์ใหม่
 exports.createVehicle = async (req, res) => {
     try {
-        const { vehicleName, plateNumber, brand, model, seats, status, province, documentNumber, expiryDate, actDocumentNumber, actExpiryDate } = req.body;
+        const { vehicleName, plateNumber, brand, model, seats, status, province, documentNumber, issueDate, expiryDate, actDocumentNumber, actIssueDate, actExpiryDate } = req.body;
 
         // 🟢 รองรับทั้งกรณี Multer ส่งไฟล์รูป และไฟล์ พ.ร.บ.
         const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
@@ -172,6 +186,18 @@ exports.createVehicle = async (req, res) => {
         // 🟢 บันทึกเอกสาร พ.ร.บ. เข้าตาราง VehicleDocument
         const docNum = actDocumentNumber || documentNumber || null;
         
+        let docIssue = null;
+        const rawIssue = actIssueDate || issueDate;
+        if (rawIssue) {
+            const parsedIssueDate = new Date(rawIssue);
+            if (isNaN(parsedIssueDate.getTime())) {
+                if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+                if (actFile) await safeDeleteFile(actFile.path);
+                return res.status(400).json({ success: false, error: "รูปแบบวันคุ้มครอง พ.ร.บ. ไม่ถูกต้อง" });
+            }
+            docIssue = parsedIssueDate;
+        }
+
         let docExpiry = null;
         const rawExpiry = actExpiryDate || expiryDate;
         if (rawExpiry) {
@@ -186,7 +212,7 @@ exports.createVehicle = async (req, res) => {
 
         const actUploadUrl = actFile ? '/attachments/vehicles/images/' + actFile.filename : null;
 
-        if (actFile || docNum || docExpiry) {
+        if (actFile || docNum || docIssue || docExpiry) {
             const docType = await prisma.documentType.upsert({
                 where: { name: 'พ.ร.บ.' },
                 update: {},
@@ -198,7 +224,9 @@ exports.createVehicle = async (req, res) => {
                     vehicleId: newVehicle.id,
                     documentTypeId: docType.id,
                     documentNumber: docNum,
-                    expiryDate: docExpiry
+                    issueDate: docIssue,
+                    expiryDate: docExpiry,
+                    uploadUrl: actUploadUrl
                 }
             });
         }
@@ -219,7 +247,15 @@ exports.createVehicle = async (req, res) => {
             }).catch(err => console.error("AuditLog Error [CREATE_VEHICLE]:", err.message));
         }
 
-        return res.status(201).json({ success: true, data: newVehicle, message: 'เพิ่มรถยนต์สำเร็จ' });
+        const vehicleResponse = {
+            ...newVehicle,
+            actDocumentNumber: docNum || null,
+            actIssueDate: docIssue || null,
+            actExpiryDate: docExpiry || null,
+            actUploadUrl: actUploadUrl || null
+        };
+
+        return res.status(201).json({ success: true, data: vehicleResponse, message: 'เพิ่มรถยนต์สำเร็จ' });
     } catch (error) {
         const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
         const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
@@ -253,7 +289,16 @@ exports.getVehicleById = async (req, res) => {
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ในระบบ" });
         }
 
-        return res.status(200).json({ success: true, data: vehicle });
+        const actDocument = vehicle.documents && vehicle.documents.find(d => d.documentType && d.documentType.name === 'พ.ร.บ.');
+        const vehicleData = {
+            ...vehicle,
+            actDocumentNumber: actDocument ? actDocument.documentNumber : null,
+            actIssueDate: actDocument ? actDocument.issueDate : null,
+            actExpiryDate: actDocument ? actDocument.expiryDate : null,
+            actUploadUrl: actDocument ? actDocument.uploadUrl : null
+        };
+
+        return res.status(200).json({ success: true, data: vehicleData });
     } catch (error) {
         console.error("Get Vehicle By ID Error:", error);
         return res.status(500).json({ success: false, error: "ระบบขัดข้องในการดึงข้อมูลรถ" });
@@ -264,7 +309,7 @@ exports.getVehicleById = async (req, res) => {
 exports.updateVehicle = async (req, res) => {
     try {
         const vehicleId = parseInt(req.params.id, 10);
-        const { vehicleName, plateNumber, brand, model, seats, status, province, documentNumber, expiryDate, actDocumentNumber, actExpiryDate } = req.body;
+        const { vehicleName, plateNumber, brand, model, seats, status, province, documentNumber, issueDate, expiryDate, actDocumentNumber, actIssueDate, actExpiryDate } = req.body;
 
         // 🟢 รองรับทั้งกรณี Multer ส่งไฟล์รูป และไฟล์ พ.ร.บ.
         const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
@@ -356,10 +401,22 @@ exports.updateVehicle = async (req, res) => {
         // 🟢 บันทึก/อัปเดตเอกสาร พ.ร.บ. ใน VehicleDocument
         const docNum = actDocumentNumber || documentNumber;
         
+        let docIssue = undefined;
+        const rawIssue = actIssueDate || issueDate;
+        if (rawIssue) {
+            const parsedIssueDate = new Date(rawIssue);
+            if (isNaN(parsedIssueDate.getTime())) {
+                if (uploadedFile) await safeDeleteFile(uploadedFile.path);
+                if (actFile) await safeDeleteFile(actFile.path);
+                return res.status(400).json({ success: false, error: "รูปแบบวันคุ้มครอง พ.ร.บ. ไม่ถูกต้อง" });
+            }
+            docIssue = parsedIssueDate;
+        }
+
         let docExpiry = undefined;
         const rawExpiry = actExpiryDate || expiryDate;
         if (rawExpiry) {
-            const parsedDate = new Date(rawExpiry);F
+            const parsedDate = new Date(rawExpiry);
             if (isNaN(parsedDate.getTime())) {
                 if (uploadedFile) await safeDeleteFile(uploadedFile.path);
                 if (actFile) await safeDeleteFile(actFile.path);
@@ -370,7 +427,10 @@ exports.updateVehicle = async (req, res) => {
 
         let actUploadUrl = actFile ? '/attachments/vehicles/images/' + actFile.filename : undefined;
 
-        if (actFile || docNum !== undefined || docExpiry !== undefined) {
+        if (actFile || docNum !== undefined || docIssue !== undefined || docExpiry !== undefined) {
+            // 🟢 เพิ่ม Log นี้เข้าไป เพื่อบังคับให้ไฟล์มีการอัปเดต และเคลียร์บัคตัว F เก่าที่ค้างใน Docker
+            console.log(`[DEBUG] updateVehicle: Processing document for Vehicle ID: ${vehicleId}`);
+            
             const docType = await prisma.documentType.upsert({
                 where: { name: 'พ.ร.บ.' },
                 update: {},
@@ -389,7 +449,9 @@ exports.updateVehicle = async (req, res) => {
                     where: { id: existingDoc.id },
                     data: {
                         documentNumber: docNum !== undefined ? docNum : existingDoc.documentNumber,
-                        expiryDate: docExpiry !== undefined ? docExpiry : existingDoc.expiryDate
+                        issueDate: docIssue !== undefined ? docIssue : existingDoc.issueDate,
+                        expiryDate: docExpiry !== undefined ? docExpiry : existingDoc.expiryDate,
+                        uploadUrl: actUploadUrl !== undefined ? actUploadUrl : existingDoc.uploadUrl
                     }
                 });
             } else {
@@ -398,7 +460,9 @@ exports.updateVehicle = async (req, res) => {
                         vehicleId: vehicleId,
                         documentTypeId: docType.id,
                         documentNumber: docNum || null,
-                        expiryDate: docExpiry || null
+                        issueDate: docIssue || null,
+                        expiryDate: docExpiry || null,
+                        uploadUrl: actUploadUrl || null
                     }
                 });
             }
@@ -420,7 +484,22 @@ exports.updateVehicle = async (req, res) => {
             }).catch(err => console.error("AuditLog Error [updateVehicle]:", err.message));
         }
 
-        return res.status(200).json({ success: true, data: updatedVehicle, message: "แก้ไขข้อมูลรถสำเร็จ" });
+        const actDocument = await prisma.vehicleDocument.findFirst({
+            where: {
+                vehicleId: vehicleId,
+                documentType: { name: 'พ.ร.บ.' }
+            }
+        });
+
+        const vehicleResponse = {
+            ...updatedVehicle,
+            actDocumentNumber: actDocument ? actDocument.documentNumber : null,
+            actIssueDate: actDocument ? actDocument.issueDate : null,
+            actExpiryDate: actDocument ? actDocument.expiryDate : null,
+            actUploadUrl: actDocument ? actDocument.uploadUrl : null
+        };
+
+        return res.status(200).json({ success: true, data: vehicleResponse, message: "แก้ไขข้อมูลรถสำเร็จ" });
     } catch (error) {
         const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
         const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
@@ -510,7 +589,8 @@ exports.updateVehicleStatus = async (req, res) => {
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ที่ต้องการเปลี่ยนสถานะ" });
         }
 
-        // 🟢 2. Business Logic: ถ้าเปลี่ยนเป็น MAINTENANCE หรือ INACTIVE ต้องเช็กคิวจองในอนาคตก่อน
+        // 🟢 2. Business Logic: ปิดการบล็อก 409 เพื่อให้ Admin สามารถเปลี่ยนสถานะรถฉุกเฉิน (เช่น รถเสียต้องเข้า MAINTENANCE) ได้ทันทีแม้จะมีคิวจองล่วงหน้าอยู่
+        /*
         if (normalizedStatus === 'MAINTENANCE' || normalizedStatus === 'INACTIVE') {
             const futureBookings = await prisma.vehicleBooking.findMany({
                 where: {
@@ -527,6 +607,7 @@ exports.updateVehicleStatus = async (req, res) => {
                 });
             }
         }
+        */
 
         const updatedVehicle = await prisma.vehicle.update({
             where: { id: vehicleId },

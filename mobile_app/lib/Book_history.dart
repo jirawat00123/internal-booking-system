@@ -128,17 +128,42 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
   Future<void> _openPororbor(String? urlPath) async {
     if (urlPath == null || urlPath.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('ไม่พบไฟล์เอกสาร')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ไม่พบไฟล์เอกสาร')));
+      }
       return;
     }
 
-    final baseUrl = 'https://192.168.88.25:3002';
-    final fullUrl = '$baseUrl$urlPath';
-    final Uri url = Uri.parse(fullUrl);
+    try {
+      final baseUrl = 'https://192.168.88.25:3002';
+      final cleanPath = urlPath.replaceAll('\\', '/');
+      String formattedPath = cleanPath.startsWith('/')
+          ? cleanPath
+          : '/$cleanPath';
 
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      // 🟢 แก้ไข: ป้องกันการเติม /api ซ้ำซ้อน หากเป็น path ของ /attachments หรือ /uploads
+      if (!cleanPath.startsWith('http') &&
+          !formattedPath.startsWith('/api') &&
+          !formattedPath.startsWith('/attachments') &&
+          !formattedPath.startsWith('/uploads')) {
+        formattedPath = '/api$formattedPath';
+      }
+
+      final fullUrl = cleanPath.startsWith('http')
+          ? cleanPath
+          : '$baseUrl$formattedPath';
+      final Uri url = Uri.parse(fullUrl);
+
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('ไม่สามารถเปิดเอกสารได้')),
+          );
+        }
+      }
+    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -267,6 +292,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         final data = jsonDecode(responses[1].body);
         List<dynamic> vBookings = data['data'] ?? data['bookings'] ?? [];
         for (var item in vBookings) {
+          // 🟢 เพิ่มบรรทัดนี้เพื่อแอบดูข้อมูล JSON ของรถ moo1234 ที่ Backend ส่งมา
+          if (item['vehicle']?['plateNumber'] == 'moo1234') {
+            debugPrint('🔍 DEBUG JSON moo1234: ${jsonEncode(item['vehicle'])}');
+          }
+
           DateTime start = DateTime.parse(
             item['startDatetime'] ??
                 item['startDate'] ??
@@ -334,7 +364,119 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               plateNumber: item['vehicle']?['plateNumber'] ?? '-',
               destination: item['destination'] ?? '-',
               driverType: item['driverType'] ?? 'ขับขี่เอง',
-              pororborUrl: item['vehicle']?['uploadPororborUrl'],
+              pororborUrl: () {
+                final v = item['vehicle'];
+                if (v != null) {
+                  // 🟢 เพิ่มการดักจับ Key แบบ snake_case ที่อาจดึงตรงมาจากฐานข้อมูล
+                  final directKeys = [
+                    'actUploadUrl',
+                    'act_upload_url',
+                    'uploadPororborUrl',
+                    'pororborUrl',
+                    'pororbor_url',
+                    'actFile',
+                    'act_file',
+                    'actFilePath',
+                    'act_file_path',
+                    'pororbor',
+                  ];
+                  for (var key in directKeys) {
+                    if (v[key] != null &&
+                        v[key].toString().isNotEmpty &&
+                        v[key] is! Map) {
+                      return v[key].toString();
+                    }
+                  }
+
+                  if (v['documents'] != null &&
+                      v['documents'] is List &&
+                      (v['documents'] as List).isNotEmpty) {
+                    for (var doc in v['documents']) {
+                      final docTypeName =
+                          doc['documentType']?['name']?.toString() ?? '';
+                      if (docTypeName.contains('พ.ร.บ.') ||
+                          docTypeName.toUpperCase().contains('ACT')) {
+                        if (doc['fileUrl'] != null &&
+                            doc['fileUrl'].toString().isNotEmpty) {
+                          return doc['fileUrl'].toString();
+                        }
+                        if (doc['uploadUrl'] != null &&
+                            doc['uploadUrl'].toString().isNotEmpty) {
+                          return doc['uploadUrl'].toString();
+                        }
+                        if (doc['filePath'] != null &&
+                            doc['filePath'].toString().isNotEmpty) {
+                          return doc['filePath'].toString();
+                        }
+                        if (doc['url'] != null &&
+                            doc['url'].toString().isNotEmpty) {
+                          return doc['url'].toString();
+                        }
+                        if (doc['path'] != null &&
+                            doc['path'].toString().isNotEmpty) {
+                          return doc['path'].toString();
+                        }
+                      }
+                    }
+                  }
+                  if (v['attachments'] != null &&
+                      v['attachments'] is List &&
+                      (v['attachments'] as List).isNotEmpty) {
+                    for (var att in v['attachments']) {
+                      final type =
+                          att['entityType']?.toString().toUpperCase() ?? '';
+                      if (type == 'VEHICLE_ACT' ||
+                          type == 'PORORBOR' ||
+                          type == 'ACT') {
+                        return att['filePath'] ??
+                            att['fileName'] ??
+                            att['fileUrl'] ??
+                            att['url'] ??
+                            att['path'];
+                      }
+                    }
+                    return v['attachments'][0]['filePath'] ??
+                        v['attachments'][0]['fileName'] ??
+                        v['attachments'][0]['fileUrl'] ??
+                        v['attachments'][0]['url'] ??
+                        v['attachments'][0]['path'];
+                  }
+                }
+
+                // 🟢 เพิ่มการตรวจสอบในระดับ item (Booking) ด้วย เผื่อ Backend ส่งออกมาด้านนอก
+                final bookingKeys = [
+                  'actFilePath',
+                  'act_file_path',
+                  'pororborUrl',
+                  'pororbor_url',
+                ];
+                for (var key in bookingKeys) {
+                  if (item[key] != null &&
+                      item[key].toString().isNotEmpty &&
+                      item[key] is! Map) {
+                    return item[key].toString();
+                  }
+                }
+
+                if (item['attachments'] != null &&
+                    item['attachments'] is List &&
+                    (item['attachments'] as List).isNotEmpty) {
+                  for (var att in item['attachments']) {
+                    final type =
+                        att['entityType']?.toString().toUpperCase() ?? '';
+                    if (type == 'VEHICLE_ACT' ||
+                        type == 'PORORBOR' ||
+                        type == 'ACT') {
+                      return att['filePath'] ??
+                          att['fileName'] ??
+                          att['fileUrl'] ??
+                          att['url'] ??
+                          att['path'];
+                    }
+                  }
+                }
+                return null;
+              }(),
               isEarlyReleaseRequested:
                   item['isEarlyReleaseRequested'] == true ||
                   item['is_early_release_requested'] == true,

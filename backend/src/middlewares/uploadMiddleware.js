@@ -56,7 +56,14 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const url = `${req.originalUrl || ''} ${req.baseUrl || ''} ${req.url || ''}`.toLowerCase();
-    const extension = path.extname(file.originalname).toLowerCase();
+    let extension = path.extname(file.originalname).toLowerCase();
+
+    // 🟢 ดักจับกรณีอัปโหลดจากกล้อง/มือถือ (Blob) แล้วไม่มีนามสกุลไฟล์แนบมาด้วย
+    if (!extension) {
+      if (file.mimetype === 'image/png') extension = '.png';
+      else if (file.mimetype === 'application/pdf') extension = '.pdf';
+      else extension = '.jpg'; // Default กลับไปเป็น .jpg สำหรับรูปภาพทั่วไป
+    }
 
     if (url.includes('/vehicle-bookings') || url.includes('/inspections') || url.includes('/security')) {
       let standardName = file.fieldname;
@@ -93,17 +100,21 @@ const fileFilter = (req, file, cb) => {
   console.log('[UploadMiddleware Debug] File received:', file.originalname);
   console.log('[UploadMiddleware Debug] MIME Type:', file.mimetype);
 // Allowed extensions & mime types (Production Standard)
-  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf', 'application/octet-stream'];
-  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];
+  // 🟢 เพิ่ม webp และ heic (สำหรับรูปภาพจากมือถือรุ่นใหม่ๆ)
+  const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp', 'image/heic', 'application/pdf', 'application/octet-stream'];
+  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.pdf'];
   
   const ext = path.extname(file.originalname).toLowerCase();
   
   const isMimeValid = allowedMimeTypes.includes(file.mimetype);
-  const isExtValid = allowedExtensions.includes(ext);
+  // 🟢 อนุญาตให้ผ่านหากไม่มีนามสกุลไฟล์ แต่ Mime Type ถูกต้อง (กรณีอัปโหลดจาก Blob/Canvas)
+  const isExtValid = allowedExtensions.includes(ext) || ext === '';
 
   if (isMimeValid && isExtValid) {
     cb(null, true);
   } else {
+    // 🟢 แสดง Error Log ชัดเจนว่าไฟล์ถูกปัดตกเพราะอะไร (เพื่อเอาไปเช็กต่อว่า Frontend ส่งอะไรมา)
+    console.error(`🔴 [UploadMiddleware Error] Rejected file: ${file.originalname} | Mime: ${file.mimetype} | Ext: ${ext}`);
     // ปฏิเสธไฟล์ทันทีหากไม่ผ่าน Validation
     cb(new Error('INVALID_FILE_TYPE'), false);
   }

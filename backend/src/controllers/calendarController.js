@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 // =========================================================================
 exports.getRoomCalendar = async (req, res, next) => {
   try {
-    const { startDate, endDate, roomId, departmentId, status, location } = req.query;
+    const { startDate, endDate, roomId, departmentId, status } = req.query;
 
     // ต้องระบุช่วงเวลาเสมอ เพื่อไม่ให้ดึงข้อมูลทั้ง Database (Performance Optimization)
     if (!startDate || !endDate) {
@@ -16,29 +16,19 @@ exports.getRoomCalendar = async (req, res, next) => {
       });
     }
 
-    const now = new Date();
-    const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
-
+    // สร้างเงื่อนไขการค้นหา (Filter)
     let whereClause = {
+      // ดึงการจองที่คาบเกี่ยวอยู่ในช่วงเวลาที่ขอดู และเวลายังไม่สิ้นสุด (ไม่แสดงประวัติในอดีต)
       startDatetime: { lte: new Date(endDate) },
-      endDatetime: { 
-        gte: effectiveStartDate
-      }
+      endDatetime: { gte: new Date() }
     };
 
     if (roomId) whereClause.roomId = parseInt(roomId);
     
-    // Filter ตามฝั่ง (Location)
-    if (location) {
-      whereClause.room = {
-        location: location
-      };
-    }
-    
     if (status) {
       whereClause.status = status;
     } else {
-      whereClause.status = { notIn: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'REJECTED'] };
+      whereClause.status = { in: ['PENDING', 'APPROVED', 'IN_USE'] };
     }
     
     // Filter ตามแผนก (Department)
@@ -89,14 +79,10 @@ exports.getVehicleCalendar = async (req, res, next) => {
       });
     }
 
-    const now = new Date();
-    const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
-
     let whereClause = {
+      // ดึงการจองที่คาบเกี่ยวอยู่ในช่วงเวลาที่ขอดู และเวลายังไม่สิ้นสุด (ไม่แสดงประวัติในอดีต)
       startDatetime: { lte: new Date(endDate) },
-      endDatetime: { 
-        gte: effectiveStartDate
-      }
+      endDatetime: { gte: new Date() }
     };
 
     if (vehicleId) whereClause.vehicleId = parseInt(vehicleId);
@@ -104,8 +90,9 @@ exports.getVehicleCalendar = async (req, res, next) => {
     if (status) {
       whereClause.status = status;
     } else {
-      whereClause.status = { notIn: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'REJECTED'] };
+      whereClause.status = { in: ['PENDING', 'APPROVED', 'IN_USE'] };
     }
+    
     if (departmentId) {
       whereClause.user = {
         employee: {
@@ -153,29 +140,24 @@ exports.getUnifiedCalendar = async (req, res, next) => {
       });
     }
 
-    const now = new Date();
-    const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
-
     let roomWhereClause = {
       startDatetime: { lte: new Date(endDate) },
-      endDatetime: { 
-        gte: effectiveStartDate
-      }
+      endDatetime: { gte: new Date() } // กรองรายการในอดีตออก
     };
 
     let vehicleWhereClause = {
       startDatetime: { lte: new Date(endDate) },
-      endDatetime: { 
-        gte: effectiveStartDate
-      }
+      endDatetime: { gte: new Date() } // กรองรายการในอดีตออก
     };
 
+    // กรองประวัติที่เสร็จสิ้นหรือยกเลิกแล้วออก เพื่อแสดงเฉพาะรายการที่ยังต้องดำเนินการบนปฏิทิน
     if (status) {
       roomWhereClause.status = status;
       vehicleWhereClause.status = status;
     } else {
-      roomWhereClause.status = { notIn: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'REJECTED'] };
-      vehicleWhereClause.status = { notIn: ['COMPLETED', 'CANCELLED', 'EXPIRED', 'REJECTED'] };
+      const activeStatus = { in: ['PENDING', 'APPROVED', 'IN_USE'] };
+      roomWhereClause.status = activeStatus;
+      vehicleWhereClause.status = activeStatus;
     }
 
     // 1. ดึงข้อมูลการจองห้อง
@@ -207,8 +189,7 @@ exports.getUnifiedCalendar = async (req, res, next) => {
         start: b.startDatetime,
         end: b.endDatetime,
         color: '#42BCA4', // สามารถระบุสีแยกประเภทให้ Frontend ได้เลย
-        status: b.status,
-        roomInfo: b.room // ส่งข้อมูลห้องไปแสดงใน Modal ฝั่งแอป
+        status: b.status
       })),
       ...vehicleBookings.map(b => ({
         eventId: `VEHICLE-${b.id}`,
@@ -219,8 +200,7 @@ exports.getUnifiedCalendar = async (req, res, next) => {
         start: b.startDatetime,
         end: b.endDatetime,
         color: '#FF9800',
-        status: b.status,
-        vehicleInfo: b.vehicle // ส่งข้อมูลรถไปแสดงใน Modal ฝั่งแอป
+        status: b.status
       }))
     ];
 

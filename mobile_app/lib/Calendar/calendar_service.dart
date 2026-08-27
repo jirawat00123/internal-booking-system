@@ -50,39 +50,37 @@ class CalendarService {
           final List<CalendarEvent> events = [];
 
           for (var item in data) {
-            final rawStatus = item['status']?.toString().toUpperCase() ?? '';
-            // กรองสถานะยกเลิก/ปฏิเสธ ออกจากปฏิทิน
-            if (rawStatus == 'CANCELLED' || rawStatus == 'REJECTED') {
+            String rawStatus = item['status']?.toString().toUpperCase() ?? '';
+            // กรองให้แสดงเฉพาะสถานะ PENDING, APPROVED และ IN_USE
+            if (rawStatus != 'PENDING' &&
+                rawStatus != 'APPROVED' &&
+                rawStatus != 'IN_USE') {
               continue;
             }
 
             final start = DateTime.parse(item['startDatetime']);
             final end = DateTime.parse(item['endDatetime']);
+            final now = DateTime.now();
 
-            // เอาเงื่อนไข "ซ่อนจากปฏิทิน" ออก เพื่อให้แสดงประวัติย้อนหลังด้วย
-            // และปรับสีตามสถานะที่รับมาจาก Backend
-
-            String displayStatus = rawStatus;
-            String colorHex = '#F59E0B'; // 🟡 ค่าเริ่มต้น PENDING/RESERVED
-
-            // กำหนดสีพื้นฐานตามสถานะ (คล้ายๆ ใน Model)
-            if (rawStatus == 'APPROVED') {
-              colorHex = '#2EC4B6'; // 🟢 APPROVED
-            } else if (rawStatus == 'IN_USE') {
-              colorHex = '#004381'; // 🔵 IN_USE
-            } else if (rawStatus == 'COMPLETED') {
-              colorHex = '#9E9E9E'; // ⚪ COMPLETED (จบแล้ว)
+            // เช็คเวลาปัจจุบัน ถ้าถึงเวลาเริ่มใช้งานแล้ว ให้ปรับสถานะเป็น IN_USE อัตโนมัติ
+            if ((rawStatus == 'APPROVED' || rawStatus == 'PENDING') &&
+                (now.isAfter(start) || now.isAtSameMomentAs(start))) {
+              rawStatus = 'IN_USE';
             }
 
-            // คำนวณสถานะ Realtime เพิ่มเติมกรณีสถานะยังเป็น APPROVED หรือ PENDING
-            if (rawStatus != 'COMPLETED' && rawStatus != 'IN_USE') {
-              if (now.isAfter(end) || now.isAtSameMomentAs(end)) {
-                displayStatus = 'EXPIRED'; // หมดเวลาแต่ไม่ได้คืนห้อง
-                colorHex = '#E11D48'; // 🔴 EXPIRED
-              } else if (now.isAfter(start) || now.isAtSameMomentAs(start)) {
-                displayStatus = 'IN_USE';
-                colorHex = '#004381'; // 🔵 IN_USE (ถึงเวลาเริ่มแล้ว)
-              }
+            // บังคับให้ PENDING และ APPROVED แสดงผลเป็น RESERVED
+            String displayStatus =
+                (rawStatus == 'PENDING' || rawStatus == 'APPROVED')
+                ? 'RESERVED'
+                : rawStatus;
+            String colorHex = '#F59E0B'; // 🟡 ค่าเริ่มต้น RESERVED
+
+            if (displayStatus == 'IN_USE') {
+              colorHex = '#004381'; // 🔵 เปลี่ยนสีเป็นน้ำเงินเมื่อกำลังใช้งาน
+            }
+
+            if (displayStatus == 'IN_USE') {
+              colorHex = '#004381'; // 🔵 IN_USE
             }
 
             events.add(
@@ -164,33 +162,37 @@ class CalendarService {
           final List<CalendarEvent> events = [];
 
           for (var item in data) {
-            final rawStatus = item['status']?.toString().toUpperCase() ?? '';
-            if (rawStatus == 'CANCELLED' || rawStatus == 'REJECTED') {
+            String rawStatus = item['status']?.toString().toUpperCase() ?? '';
+            // กรองให้แสดงเฉพาะสถานะ PENDING, APPROVED และ IN_USE
+            if (rawStatus != 'PENDING' &&
+                rawStatus != 'APPROVED' &&
+                rawStatus != 'IN_USE') {
               continue;
             }
 
             final start = DateTime.parse(item['startDatetime']);
             final end = DateTime.parse(item['endDatetime']);
+            final now = DateTime.now();
 
-            String displayStatus = rawStatus;
-            String colorHex = '#F59E0B';
-
-            if (rawStatus == 'APPROVED') {
-              colorHex = '#2EC4B6';
-            } else if (rawStatus == 'IN_USE') {
-              colorHex = '#004381';
-            } else if (rawStatus == 'COMPLETED') {
-              colorHex = '#9E9E9E';
+            // เช็คเวลาปัจจุบัน ถ้าถึงเวลาเริ่มใช้งานแล้ว ให้ปรับสถานะเป็น IN_USE อัตโนมัติ
+            if ((rawStatus == 'APPROVED' || rawStatus == 'PENDING') &&
+                (now.isAfter(start) || now.isAtSameMomentAs(start))) {
+              rawStatus = 'IN_USE';
             }
 
-            if (rawStatus != 'COMPLETED' && rawStatus != 'IN_USE') {
-              if (now.isAfter(end) || now.isAtSameMomentAs(end)) {
-                displayStatus = 'EXPIRED';
-                colorHex = '#E11D48';
-              } else if (now.isAfter(start) || now.isAtSameMomentAs(start)) {
-                displayStatus = 'IN_USE';
-                colorHex = '#004381';
-              }
+            // บังคับให้ PENDING และ APPROVED แสดงผลเป็น RESERVED
+            String displayStatus =
+                (rawStatus == 'PENDING' || rawStatus == 'APPROVED')
+                ? 'RESERVED'
+                : rawStatus;
+            String colorHex = '#F59E0B'; // 🟡 RESERVED
+
+            if (displayStatus == 'IN_USE') {
+              colorHex = '#004381'; // 🔵 เปลี่ยนสีเป็นน้ำเงินเมื่อกำลังใช้งาน
+            }
+
+            if (displayStatus == 'IN_USE') {
+              colorHex = '#004381';
             }
 
             events.add(
@@ -271,35 +273,39 @@ class CalendarService {
           final List<CalendarEvent> events = [];
 
           for (var item in data) {
-            final rawStatus = item['status']?.toString().toUpperCase() ?? '';
+            String rawStatus = item['status']?.toString().toUpperCase() ?? '';
 
-            // กรองสถานะยกเลิก/ปฏิเสธ ออกจากปฏิทิน
-            if (rawStatus == 'CANCELLED' || rawStatus == 'REJECTED') {
+            // กรองให้แสดงเฉพาะสถานะ PENDING, APPROVED และ IN_USE
+            if (rawStatus != 'PENDING' &&
+                rawStatus != 'APPROVED' &&
+                rawStatus != 'IN_USE') {
               continue;
             }
 
             final start = DateTime.parse(item['start']);
             final end = DateTime.parse(item['end']);
+            final now = DateTime.now();
 
-            // เอาเงื่อนไข "ซ่อนจากปฏิทิน" ออก เพื่อให้แสดงประวัติย้อนหลังด้วย
+            // เช็คเวลาปัจจุบัน ถ้าถึงเวลาเริ่มใช้งานแล้ว ให้ปรับสถานะเป็น IN_USE อัตโนมัติ
+            if ((rawStatus == 'APPROVED' || rawStatus == 'PENDING') &&
+                (now.isAfter(start) || now.isAtSameMomentAs(start))) {
+              rawStatus = 'IN_USE';
+            }
 
-            String displayStatus = rawStatus;
-            String colorHex =
-                item['color'] ??
-                '#F59E0B'; // ใช้สีที่ Backend ส่งมาเป็นค่าเริ่มต้น
+            // บังคับให้ PENDING และ APPROVED แสดงผลเป็น RESERVED
+            String displayStatus =
+                (rawStatus == 'PENDING' || rawStatus == 'APPROVED')
+                ? 'RESERVED'
+                : rawStatus;
+            String colorHex = '#F59E0B'; // 🟡 ค่าเริ่มต้น RESERVED
 
-            if (rawStatus == 'COMPLETED') {
-              colorHex = '#9E9E9E'; // ⚪ COMPLETED
-            } else if (rawStatus != 'IN_USE' && rawStatus != 'RELEASED') {
-              if (now.isAfter(end) || now.isAtSameMomentAs(end)) {
-                displayStatus = 'EXPIRED';
-                colorHex = '#E11D48'; // 🔴 EXPIRED
-              } else if (now.isAfter(start) || now.isAtSameMomentAs(start)) {
-                displayStatus = 'IN_USE';
-                colorHex = '#004381'; // 🔵 IN_USE
-              } else if (rawStatus == 'APPROVED') {
-                colorHex = '#2EC4B6'; // 🟢 APPROVED
-              }
+            if (displayStatus == 'IN_USE') {
+              colorHex = '#004381';
+            } else if (item['color'] != null &&
+                rawStatus != 'PENDING' &&
+                rawStatus != 'APPROVED') {
+              colorHex =
+                  item['color']; // คงสีเดิมจาก Backend ถ้ามีและไม่ใช่สถานะข้างต้น
             }
 
             Map<String, dynamic> updatedItem = Map<String, dynamic>.from(item);

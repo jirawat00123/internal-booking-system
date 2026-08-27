@@ -67,11 +67,20 @@ const upload = multer({
 });
 
 // Helper Function: สำหรับลบไฟล์ขยะ (Garbage Collection)
-const deleteGarbageFile = (filePath) => {
-  if (filePath && fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-    console.log(`🗑️ Deleted garbage file: ${filePath}`);
-  }
+const deleteGarbageFile = (fileOrFiles) => {
+  if (!fileOrFiles) return;
+  const files = Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles];
+  files.forEach(file => {
+    const filePath = typeof file === 'string' ? file : file.path;
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+        console.log(`🗑️ Deleted garbage file: ${filePath}`);
+      } catch (e) {
+        console.error(`⚠️ Failed to delete garbage file: ${filePath}`, e);
+      }
+    }
+  });
 };
 
 // ==========================================
@@ -94,7 +103,7 @@ router.post('/', authenticateToken, (req, res, next) => {
 
 // 🛑 1. ตรวจสอบข้อมูลเบื้องต้น
     if (!vehicleId || !startDatetime || !finalReturnDate) {
-      deleteGarbageFile(req.file?.path);
+      deleteGarbageFile(req.file);
       return res.status(400).json({
         success: false,
         error: "กรุณากรอกข้อมูลให้ครบถ้วน (รหัสรถ, วันเวลาเริ่มและวันที่สิ้นสุด)"
@@ -103,7 +112,7 @@ router.post('/', authenticateToken, (req, res, next) => {
 
     const parsedVehicleId = parseInt(vehicleId, 10);
     if (isNaN(parsedVehicleId)) {
-      deleteGarbageFile(req.file?.path);
+      deleteGarbageFile(req.file);
       return res.status(400).json({ success: false, error: "รหัสรถยนต์ไม่ถูกต้อง" });
     }
 
@@ -111,7 +120,7 @@ router.post('/', authenticateToken, (req, res, next) => {
     const returnInput = new Date(finalReturnDate);
 
     if (isNaN(startInput.getTime()) || isNaN(returnInput.getTime())) {
-      deleteGarbageFile(req.file?.path);
+      deleteGarbageFile(req.file);
       return res.status(400).json({ success: false, error: "รูปแบบวันที่และเวลาไม่ถูกต้อง" });
     }
 
@@ -122,7 +131,7 @@ router.post('/', authenticateToken, (req, res, next) => {
 
     // 🛑 1.1 ตรวจสอบความถูกต้องของวันเวลา
     if (expectedReturnDate <= startInput) {
-      deleteGarbageFile(req.file?.path);
+      deleteGarbageFile(req.file);
       return res.status(400).json({
         success: false,
         error: "วันที่คืนรถต้องมากกว่าหรือเป็นวันเดียวกับวันที่เริ่มใช้งาน กรุณาตรวจสอบอีกครั้ง"
@@ -136,7 +145,7 @@ router.post('/', authenticateToken, (req, res, next) => {
     const finalUserId = parseInt(req.user.userId || req.user.id, 10); // 💡 รองรับทั้ง userId และ id ป้องกัน Token ผิดรูปแบบ
 
     if (!finalUserId || isNaN(finalUserId)) {
-      deleteGarbageFile(req.file?.path);
+      deleteGarbageFile(req.file);
       return res.status(401).json({ success: false, error: "ไม่พบสิทธิ์ผู้ใช้งาน กรุณาล็อกอินใหม่" });
     }
 
@@ -202,7 +211,7 @@ router.post('/', authenticateToken, (req, res, next) => {
     });
 
   } catch (error) {
-    deleteGarbageFile(req.file?.path);
+    deleteGarbageFile(req.file);
     console.error("🔴 Create Vehicle Booking Error:", error);
     
     if (error.message === 'OVERLAP') return res.status(409).json({ success: false, error: "รถคันนี้มีการจองในช่วงเวลาดังกล่าวแล้ว กรุณาเลือกช่วงเวลาอื่น" });
@@ -227,7 +236,15 @@ router.get('/history', async (req, res) => {
     const historyBookings = await prisma.vehicleBooking.findMany({
       where: { userId: userId },
       include: {
-        vehicle: true,
+        vehicle: {
+          include: {
+            documents: {
+              include: {
+                documentType: true
+              }
+            }
+          }
+        },
         attachments: true
       },
       orderBy: { createdAt: 'desc' }
@@ -264,7 +281,15 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const booking = await prisma.vehicleBooking.findUnique({
       where: { id: bookingId },
       include: {
-        vehicle: true,
+        vehicle: {
+          include: {
+            documents: {
+              include: {
+                documentType: true
+              }
+            }
+          }
+        },
         user: { include: { employee: true } },
         attachments: true
       }
@@ -322,7 +347,15 @@ router.get('/', authenticateToken, async (req, res) => {
   try {
     const bookings = await prisma.vehicleBooking.findMany({
       include: {
-        vehicle: true,
+        vehicle: {
+          include: {
+            documents: {
+              include: {
+                documentType: true
+              }
+            }
+          }
+        },
         user: { include: { employee: true } }
       },
       orderBy: { createdAt: 'desc' },

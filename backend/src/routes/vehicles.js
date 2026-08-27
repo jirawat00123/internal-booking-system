@@ -66,11 +66,13 @@ router.post('/',
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(isAdmin, 'isAdmin'), 
     uploadMiddleware.fields([
-        { name: 'image', maxCount: 1 },
-        { name: 'document', maxCount: 1 },
-        { name: 'actDocument', maxCount: 1 },
-        { name: 'actFile', maxCount: 1 },
-        { name: 'act_file', maxCount: 1 }
+        { name: 'image', maxCount: 5 },
+        { name: 'actFile', maxCount: 5 },
+        { name: 'file', maxCount: 5 },
+        { name: 'uploadUrl', maxCount: 5 },
+        { name: 'upload_url', maxCount: 5 },
+        { name: 'vehicle_image', maxCount: 5 },
+        { name: 'act_file', maxCount: 5 }
     ]), 
     checkHandler(vehicleController.createVehicle, 'vehicleController.createVehicle')
 );
@@ -86,11 +88,13 @@ router.put('/:id',
     checkHandler(verifyToken, 'verifyToken'), 
     checkHandler(isAdmin, 'isAdmin'), 
     uploadMiddleware.fields([
-        { name: 'image', maxCount: 1 },
-        { name: 'document', maxCount: 1 },
-        { name: 'actDocument', maxCount: 1 },
-        { name: 'actFile', maxCount: 1 },
-        { name: 'act_file', maxCount: 1 }
+        { name: 'image', maxCount: 5 },
+        { name: 'actFile', maxCount: 5 },
+        { name: 'file', maxCount: 5 },
+        { name: 'uploadUrl', maxCount: 5 },
+        { name: 'upload_url', maxCount: 5 },
+        { name: 'vehicle_image', maxCount: 5 },
+        { name: 'act_file', maxCount: 5 }
     ]), 
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
 );

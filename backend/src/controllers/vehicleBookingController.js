@@ -76,7 +76,17 @@ exports.createBooking = async (req, res) => {
                     purpose: purpose || "ใช้งานบริษัท",
                     status: BookingStatus.PENDING
                 },
-                include: { vehicle: true }
+                include: {
+                    vehicle: {
+                        include: {
+                            documents: {
+                                include: {
+                                    documentType: true
+                                }
+                            }
+                        }
+                    }
+                }
             });
 
             const actionUserId = parseInt(req.user?.userId || req.user?.id, 10) || finalUserId;
@@ -128,11 +138,9 @@ exports.getBookings = async (req, res) => {
         let whereClause = {};
 
         if (startDate && endDate) {
-            const now = new Date();
-            const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
-
+            // 🟢 ยกเลิกการบังคับใช้ new Date() เป็นจุดเริ่มต้น เพื่อให้ประวัติการจองเก่าไม่ถูกซ่อน
             whereClause.startDatetime = { lte: new Date(endDate) };
-            whereClause.endDatetime = { gte: effectiveStartDate };
+            whereClause.endDatetime = { gte: new Date(startDate) };
 
             if (status) {
                 whereClause.status = status;
@@ -153,8 +161,17 @@ exports.getBookings = async (req, res) => {
             where: whereClause,
             orderBy: { createdAt: 'desc' },
             include: {
-                vehicle: true,
-                user: { include: { employee: true } }
+                vehicle: {
+                    include: {
+                        documents: {
+                            include: {
+                                documentType: true // ดึงข้อมูลเอกสาร พ.ร.บ. จากตาราง VehicleDocument
+                            }
+                        }
+                    }
+                },
+                user: { include: { employee: true } },
+                attachments: true // ดึงข้อมูลตาราง attachments ของการจอง (เช่น รูปรถตอนปล่อย/คืน)
             }
         });
 
@@ -392,23 +409,41 @@ exports.releaseVehicle = async (req, res) => {
                 data: { status: VehicleStatus.IN_USE }
             });
 
-            const frontFile = getUploadedFile(req.files, ['frontImage', 'front', 'frontPhoto', 'checkoutFrontPhoto', 'checkout_front_photo']);
-            const backFile = getUploadedFile(req.files, ['backImage', 'back', 'backPhoto', 'checkoutBackPhoto', 'checkout_back_photo']);
-            const mileageFile = getUploadedFile(req.files, ['mileageImage', 'mileage', 'mileagePhoto', 'checkoutMileagePhoto', 'checkout_mileage_photo', 'dashboardImage']);
+            const requestFiles = req.files || (req.file ? [req.file] : null);
+            const allUploadedFiles = requestFiles ? (Array.isArray(requestFiles) ? requestFiles : Object.values(requestFiles).flat()) : [];
+            let frontFile = getUploadedFile(requestFiles, ['frontImage', 'front', 'frontPhoto', 'checkoutFrontPhoto', 'checkout_front_photo']) || allUploadedFiles[0];
+            let backFile = getUploadedFile(requestFiles, ['backImage', 'back', 'backPhoto', 'checkoutBackPhoto', 'checkout_back_photo']) || allUploadedFiles[1];
+            let mileageFile = getUploadedFile(requestFiles, ['mileageImage', 'mileage', 'mileagePhoto', 'checkoutMileagePhoto', 'checkout_mileage_photo', 'dashboardImage']) || allUploadedFiles[2];
+
+            const assignedFiles = [frontFile, backFile, mileageFile].filter(Boolean);
+            const unassignedFiles = allUploadedFiles.filter(f => !assignedFiles.includes(f));
+
+            if (!frontFile && unassignedFiles.length > 0) frontFile = unassignedFiles.shift();
+            if (!backFile && unassignedFiles.length > 0) backFile = unassignedFiles.shift();
+            if (!mileageFile && unassignedFiles.length > 0) mileageFile = unassignedFiles.shift();
 
             // 🟢 1. สร้าง โฟลเดอร์ปลายทาง NAS / Inspections Target และคัดลอกย้ายไฟล์เข้ามาให้เรียบร้อย
-            const releaseDir = path.join(process.cwd(), 'attachments', 'vehicles', 'inspections', String(bookingId), 'release');
+            const releaseDir = path.join(__dirname, '../../../attachments', 'vehicles', 'inspections', String(bookingId), 'release');
             if (!fs.existsSync(releaseDir)) {
                 fs.mkdirSync(releaseDir, { recursive: true });
             }
 
             const moveFileToNAS = (file) => {
-                if (!file || !file.path) return;
-                const destPath = path.join(releaseDir, file.filename);
-                if (file.path !== destPath && fs.existsSync(file.path)) {
-                    fs.copyFileSync(file.path, destPath);
-                    try { fs.unlinkSync(file.path); } catch (e) {}
+                if (!file) return;
+                const filename = file.filename || (file.path ? path.basename(file.path) : null) || file.originalname || `${Date.now()}-${Math.round(Math.random() * 1e9)}.jpg`;
+                const destPath = path.join(releaseDir, filename);
+
+                if (file.buffer) {
+                    fs.writeFileSync(destPath, file.buffer);
                     file.path = destPath;
+                    file.filename = filename;
+                } else if (file.path) {
+                    if (file.path !== destPath && fs.existsSync(file.path)) {
+                        fs.copyFileSync(file.path, destPath);
+                        try { fs.unlinkSync(file.path); } catch (e) {}
+                    }
+                    file.path = destPath;
+                    file.filename = filename;
                 }
             };
             [frontFile, backFile, mileageFile].forEach(moveFileToNAS);
@@ -461,14 +496,19 @@ exports.releaseVehicle = async (req, res) => {
                 });
             }
 
-            if (req.files && (Array.isArray(req.files) ? req.files.length > 0 : Object.keys(req.files).length > 0)) {
-                const imagesToSave = [frontFile, backFile, mileageFile].filter(Boolean);
+            let imagesToSave = [frontFile, backFile, mileageFile].filter(Boolean);
+            if (imagesToSave.length === 0 && allUploadedFiles.length > 0) {
+                imagesToSave = allUploadedFiles;
+            }
+            if (imagesToSave.length > 0) {
                 const uniqueFilesMap = new Map();
 
-                imagesToSave.forEach(file => {
-                    const relativePath = normalizePath(file.path);
-                    if (relativePath && !uniqueFilesMap.has(relativePath)) {
-                        uniqueFilesMap.set(relativePath, { ...file, relativePath });
+                imagesToSave.forEach((file, index) => {
+                    if (file) {
+                        const relativePath = normalizePath(file.path) || file.filename || file.originalname || `file_${index}`;
+                        if (!uniqueFilesMap.has(relativePath)) {
+                            uniqueFilesMap.set(relativePath, { ...file, relativePath });
+                        }
                     }
                 });
 
@@ -477,9 +517,9 @@ exports.releaseVehicle = async (req, res) => {
                         data: {
                             entityType: "VEHICLE_RELEASE_IMAGE",
                             entityId: bookingId,
-                            fileName: file.originalname,
+                            fileName: file.originalname || file.filename || `release_${Date.now()}.jpg`,
                             filePath: file.relativePath,
-                            fileType: file.mimetype,
+                            fileType: file.mimetype || 'image/jpeg',
                             uploadedBy: { connect: { id: currentUserId } },
                             bookingVehicle: { connect: { id: bookingId } }
                         }
@@ -498,7 +538,7 @@ exports.releaseVehicle = async (req, res) => {
                         details: JSON.stringify({
                             oldStatus: bookingExists.status,
                             newStatus: validStatus,
-                            hasAttachments: req.files ? true : false,
+                            hasAttachments: (req.files || req.file) ? true : false,
                             remark: remark || "ทำการปล่อยรถออกและบันทึกภาพถ่าย"
                         })
                     }
@@ -521,6 +561,17 @@ exports.releaseVehicle = async (req, res) => {
 
     } catch (error) {
         console.error("Release Vehicle Error:", error);
+        
+        const requestFiles = req.files || (req.file ? [req.file] : null);
+        if (requestFiles) {
+            const tempFiles = Array.isArray(requestFiles) ? requestFiles : Object.values(requestFiles).flat();
+            tempFiles.forEach(file => {
+                if (file.path && fs.existsSync(file.path)) {
+                    try { fs.unlinkSync(file.path); } catch (e) {}
+                }
+            });
+        }
+
         if (error.message === 'PREVIOUS_BOOKING_ACTIVE') {
             return res.status(409).json({ success: false, code: "PREVIOUS_BOOKING_ACTIVE", error: "มีคิวก่อนหน้าที่ยังใช้งานรถอยู่" });
         }
@@ -600,23 +651,41 @@ exports.completeVehicleBooking = async (req, res) => {
                 orderBy: { createdAt: 'desc' }
             });
 
-            const returnFrontFile = getUploadedFile(req.files, ['frontImage', 'returnFrontPhoto', 'return_front_photo', 'front', 'frontPhoto']);
-            const returnBackFile = getUploadedFile(req.files, ['backImage', 'returnBackPhoto', 'return_back_photo', 'back', 'backPhoto']);
-            const returnMileageFile = getUploadedFile(req.files, ['mileageImage', 'returnMileagePhoto', 'return_mileage_photo', 'mileage', 'mileagePhoto', 'dashboardImage']);
+            const requestFiles = req.files || (req.file ? [req.file] : null);
+            const allUploadedFiles = requestFiles ? (Array.isArray(requestFiles) ? requestFiles : Object.values(requestFiles).flat()) : [];
+            let returnFrontFile = getUploadedFile(requestFiles, ['frontImage', 'returnFrontPhoto', 'return_front_photo', 'front', 'frontPhoto']) || allUploadedFiles[0];
+            let returnBackFile = getUploadedFile(requestFiles, ['backImage', 'returnBackPhoto', 'return_back_photo', 'back', 'backPhoto']) || allUploadedFiles[1];
+            let returnMileageFile = getUploadedFile(requestFiles, ['mileageImage', 'returnMileagePhoto', 'return_mileage_photo', 'mileage', 'mileagePhoto', 'dashboardImage']) || allUploadedFiles[2];
+
+            const assignedFiles = [returnFrontFile, returnBackFile, returnMileageFile].filter(Boolean);
+            const unassignedFiles = allUploadedFiles.filter(f => !assignedFiles.includes(f));
+
+            if (!returnFrontFile && unassignedFiles.length > 0) returnFrontFile = unassignedFiles.shift();
+            if (!returnBackFile && unassignedFiles.length > 0) returnBackFile = unassignedFiles.shift();
+            if (!returnMileageFile && unassignedFiles.length > 0) returnMileageFile = unassignedFiles.shift();
 
             // 🟢 1. สร้าง โฟลเดอร์ปลายทาง NAS / Inspections Target และคัดลอกย้ายไฟล์เข้ามาให้เรียบร้อย
-            const returnDir = path.join(process.cwd(), 'attachments', 'vehicles', 'inspections', String(bookingId), 'return');
+            const returnDir = path.join(__dirname, '../../../attachments', 'vehicles', 'inspections', String(bookingId), 'return');
             if (!fs.existsSync(returnDir)) {
                 fs.mkdirSync(returnDir, { recursive: true });
             }
 
             const moveFileToNAS = (file) => {
-                if (!file || !file.path) return;
-                const destPath = path.join(returnDir, file.filename);
-                if (file.path !== destPath && fs.existsSync(file.path)) {
-                    fs.copyFileSync(file.path, destPath);
-                    try { fs.unlinkSync(file.path); } catch (e) {}
+                if (!file) return;
+                const filename = file.filename || (file.path ? path.basename(file.path) : null) || file.originalname || `${Date.now()}-${Math.round(Math.random() * 1e9)}.jpg`;
+                const destPath = path.join(returnDir, filename);
+
+                if (file.buffer) {
+                    fs.writeFileSync(destPath, file.buffer);
                     file.path = destPath;
+                    file.filename = filename;
+                } else if (file.path) {
+                    if (file.path !== destPath && fs.existsSync(file.path)) {
+                        fs.copyFileSync(file.path, destPath);
+                        try { fs.unlinkSync(file.path); } catch (e) {}
+                    }
+                    file.path = destPath;
+                    file.filename = filename;
                 }
             };
             [returnFrontFile, returnBackFile, returnMileageFile].forEach(moveFileToNAS);
@@ -669,14 +738,19 @@ exports.completeVehicleBooking = async (req, res) => {
                 data: vehicleUpdateData
             });
 
-            if (req.files && (Array.isArray(req.files) ? req.files.length > 0 : Object.keys(req.files).length > 0)) {
-                const imagesToSave = [returnFrontFile, returnBackFile, returnMileageFile].filter(Boolean);
+            let imagesToSave = [returnFrontFile, returnBackFile, returnMileageFile].filter(Boolean);
+            if (imagesToSave.length === 0 && allUploadedFiles.length > 0) {
+                imagesToSave = allUploadedFiles;
+            }
+            if (imagesToSave.length > 0) {
                 const uniqueFilesMap = new Map();
 
-                imagesToSave.forEach(file => {
-                    const relativePath = normalizePath(file.path);
-                    if (relativePath && !uniqueFilesMap.has(relativePath)) {
-                        uniqueFilesMap.set(relativePath, { ...file, relativePath });
+                imagesToSave.forEach((file, index) => {
+                    if (file) {
+                        const relativePath = normalizePath(file.path) || file.filename || file.originalname || `file_${index}`;
+                        if (!uniqueFilesMap.has(relativePath)) {
+                            uniqueFilesMap.set(relativePath, { ...file, relativePath });
+                        }
                     }
                 });
 
@@ -685,9 +759,9 @@ exports.completeVehicleBooking = async (req, res) => {
                         data: {
                             entityType: "VEHICLE_RETURN_IMAGE",
                             entityId: bookingId,
-                            fileName: file.originalname,
+                            fileName: file.originalname || file.filename || `return_${Date.now()}.jpg`,
                             filePath: file.relativePath,
-                            fileType: file.mimetype,
+                            fileType: file.mimetype || 'image/jpeg',
                             uploadedBy: { connect: { id: reqUserId } },
                             bookingVehicle: { connect: { id: bookingId } }
                         }
@@ -705,7 +779,7 @@ exports.completeVehicleBooking = async (req, res) => {
                     details: JSON.stringify({
                         oldStatus: booking.status,
                         newStatus: BookingStatus.COMPLETED,
-                        hasAttachments: req.files ? true : false,
+                        hasAttachments: (req.files || req.file) ? true : false,
                         remark: "เสร็จสิ้นการใช้งานและคืนสถานะรถว่าง (รับรถเข้า)"
                     })
                 }
@@ -724,6 +798,17 @@ exports.completeVehicleBooking = async (req, res) => {
 
     } catch (error) {
         console.error("Complete Booking Error:", error);
+
+        const requestFiles = req.files || (req.file ? [req.file] : null);
+        if (requestFiles) {
+            const tempFiles = Array.isArray(requestFiles) ? requestFiles : Object.values(requestFiles).flat();
+            tempFiles.forEach(file => {
+                if (file.path && fs.existsSync(file.path)) {
+                    try { fs.unlinkSync(file.path); } catch (e) {}
+                }
+            });
+        }
+
         return res.status(500).json({ success: false, message: "เกิดข้อผิดพลาดของระบบ", developerMessage: error.message });
     }
 };
@@ -1098,12 +1183,10 @@ exports.getVehicleCalendar = async (req, res) => {
             });
         }
 
-        const now = new Date();
-        const effectiveStartDate = new Date(startDate) > now ? new Date(startDate) : now;
-
+        // 🟢 ยกเลิกการบังคับใช้ new Date() เป็นจุดเริ่มต้น เพื่อให้ปฏิทินแสดงรายการที่ผ่านมาแล้วได้ครบถ้วน
         let whereClause = {
             startDatetime: { lte: new Date(endDate) },
-            endDatetime: { gte: effectiveStartDate }
+            endDatetime: { gte: new Date(startDate) }
         };
 
         if (vehicleId) {
@@ -1121,7 +1204,15 @@ exports.getVehicleCalendar = async (req, res) => {
         const bookings = await prisma.vehicleBooking.findMany({
             where: whereClause,
             include: {
-                vehicle: true,
+                vehicle: {
+                    include: {
+                        documents: {
+                            include: {
+                                documentType: true
+                            }
+                        }
+                    }
+                },
                 user: {
                     include: {
                         employee: {
@@ -1133,9 +1224,16 @@ exports.getVehicleCalendar = async (req, res) => {
             orderBy: { startDatetime: 'asc' }
         });
 
+        // 🟢 Map สถานะ APPROVED เป็น RESERVED ก่อนส่งไปหน้า Calendar
+        // เพื่อป้องกันหน้า Calendar นำสถานะที่ยังไม่ถูกปล่อยรถ ไปตีความและแสดงเป็น IN_USE เอง
+        const formattedBookings = bookings.map(booking => ({
+            ...booking,
+            status: booking.status === 'APPROVED' ? 'RESERVED' : booking.status
+        }));
+
         return res.status(200).json({
             success: true,
-            data: bookings
+            data: formattedBookings
         });
 
     } catch (error) {

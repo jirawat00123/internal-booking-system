@@ -294,6 +294,8 @@ model VehicleDocument {
   vehicleId      Int          @map("vehicle_id")
   documentTypeId Int          @map("document_type_id")
   documentNumber String?      @map("document_number")
+  provider       String?      @map("provider")
+  cost           Float?       @map("cost")
   issueDate      DateTime?    @map("issue_date")
   expiryDate     DateTime?    @map("expiry_date")
   uploadUrl      String?      @map("upload_url")

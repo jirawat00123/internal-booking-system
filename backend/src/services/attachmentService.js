@@ -22,13 +22,15 @@ const createAttachmentRecord = async (file, entityType, entityId, userId) => {
     }
 
     // 2. Prisma Transaction
-    const attachment = await prisma.$transaction(async (tx) => {
-      const normalizePath = file.path ? file.path.replace(/\\/g, '/') : '';
-      const finalPath = normalizePath.includes('attachments/') 
-          ? '/' + normalizePath.substring(normalizePath.indexOf('attachments/')) 
-          : `/attachments/${file.filename}`;
+    // 2. Prisma Transaction
+            const attachment = await prisma.$transaction(async (tx) => {
+              const normalizePath = file.path ? file.path.replace(/\\/g, '/') : '';
+              const fileName = file.filename || (normalizePath ? path.basename(normalizePath) : '') || file.originalname;
+              const finalPath = normalizePath.includes('attachments/') 
+                  ? '/' + normalizePath.substring(normalizePath.indexOf('attachments/')) 
+                  : `/attachments/${fileName}`;
 
-      return await tx.attachment.create({
+              return await tx.attachment.create({
         data: {
           entityType: entityType,
           entityId: parsedEntityId,

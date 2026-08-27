@@ -63,6 +63,7 @@ process.on('unhandledRejection', (reason, promise) => {
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // 🟢 ผูก Path ให้ชี้ตรงไปที่ attachments ของ Container (/app/attachments)
 app.use('/attachments', express.static(path.join(__dirname, '../attachments')));
+app.use('/documents', express.static(path.join(__dirname, '../documents')));
 // ==========================================
 // 📑 ตั้งค่าหน้าปกคู่มือ API (Swagger)
 // ==========================================
@@ -354,6 +355,13 @@ app.get('/api/vehicles/available', authenticateToken, async (req, res) => {
       where: { 
         status: 'AVAILABLE',
         isDeleted: false 
+      },
+      include: {
+        documents: {
+          include: {
+            documentType: true
+          }
+        }
       },
       orderBy: { id: 'desc' }
     });

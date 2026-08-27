@@ -25,6 +25,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
   final TextEditingController provinceController =
       TextEditingController(); // 🟢 เพิ่ม Controller สำหรับจังหวัด
   final TextEditingController actDocNumberController = TextEditingController();
+  final TextEditingController actIssueDateController = TextEditingController();
   final TextEditingController actExpiryDateController = TextEditingController();
 
   final String currentStatus =
@@ -46,6 +47,7 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
     plateController.dispose();
     provinceController.dispose(); // 🟢 คืนหน่วยความจำ
     actDocNumberController.dispose();
+    actIssueDateController.dispose();
     actExpiryDateController.dispose();
     super.dispose();
   }
@@ -148,6 +150,10 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
             .trim();
         request.fields['documentNumber'] = actDocNumberController.text.trim();
       }
+      if (actIssueDateController.text.trim().isNotEmpty) {
+        request.fields['actIssueDate'] = actIssueDateController.text.trim();
+        request.fields['issueDate'] = actIssueDateController.text.trim();
+      }
       if (actExpiryDateController.text.trim().isNotEmpty) {
         request.fields['actExpiryDate'] = actExpiryDateController.text.trim();
         request.fields['expiryDate'] = actExpiryDateController.text.trim();
@@ -192,14 +198,14 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
         if (kIsWeb && _pickedDocFile?.bytes != null) {
           request.files.add(
             http.MultipartFile.fromBytes(
-              'actDocument',
+              'actFile',
               _pickedDocFile!.bytes!,
               filename: _docFileName ?? 'act_document.pdf',
             ),
           );
         } else if (_docFilePath != null) {
           request.files.add(
-            await http.MultipartFile.fromPath('actDocument', _docFilePath!),
+            await http.MultipartFile.fromPath('actFile', _docFilePath!),
           );
         }
       }
@@ -683,6 +689,28 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
                         label: 'เลขที่ พ.ร.บ.',
                         controller: actDocNumberController,
                         hint: 'ระบุเลขที่ พ.ร.บ.',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        label: 'วันคุ้มครอง พ.ร.บ. (YYYY-MM-DD)',
+                        controller: actIssueDateController,
+                        hint: 'YYYY-MM-DD',
+                        readOnly: true,
+                        onTap: () async {
+                          DateTime? pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (pickedDate != null) {
+                            String formattedDate =
+                                "${pickedDate.year}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.day.toString().padLeft(2, '0')}";
+                            setState(() {
+                              actIssueDateController.text = formattedDate;
+                            });
+                          }
+                        },
                       ),
                       const SizedBox(height: 12),
                       _buildTextField(

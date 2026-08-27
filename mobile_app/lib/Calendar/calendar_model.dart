@@ -28,19 +28,23 @@ class CalendarEvent {
   });
 
   factory CalendarEvent.fromJson(Map<String, dynamic> json) {
+    String rawStatus = json['status'] ?? 'UNKNOWN';
+    if (rawStatus.toUpperCase() == 'APPROVED') {
+      rawStatus = 'RESERVED';
+    }
+
     return CalendarEvent(
       eventId: json['eventId'] ?? '',
       originalId: json['originalId'] ?? 0,
       type: json['type'] ?? '',
       title: json['title'] ?? 'ไม่มีชื่อ',
       bookerName: json['bookerName'] ?? 'ไม่ระบุชื่อผู้จอง',
-      // แปลง ISO 8601 string จาก Backend ให้เป็น DateTime ของ Local Timezone เครื่อง
-      start: DateTime.parse(json['start']).toLocal(),
+      start: DateTime.parse(json['start'] ?? json['startDatetime']).toLocal(),
       end: DateTime.parse(
         json['end'] ?? json['endDatetime'] ?? json['returnDate'],
       ).toLocal(),
       colorHex: json['color'] ?? '#42BCA4',
-      status: json['status'] ?? 'UNKNOWN',
+      status: rawStatus,
       roomInfo: json['roomInfo'],
       vehicleInfo: json['vehicleInfo'],
     );

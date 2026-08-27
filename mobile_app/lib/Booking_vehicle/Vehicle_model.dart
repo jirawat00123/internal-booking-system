@@ -40,6 +40,7 @@ class VehicleModel {
   final DateTime? updatedAt;
   final bool hasFutureBooking;
   final String? actDocumentNumber;
+  final DateTime? actIssueDate;
   final DateTime? actExpiryDate;
   final String? actUploadUrl;
 
@@ -59,6 +60,7 @@ class VehicleModel {
     this.updatedAt,
     this.hasFutureBooking = false,
     this.actDocumentNumber,
+    this.actIssueDate,
     this.actExpiryDate,
     this.actUploadUrl,
   });
@@ -79,6 +81,7 @@ class VehicleModel {
     DateTime? updatedAt,
     bool? hasFutureBooking,
     String? actDocumentNumber,
+    DateTime? actIssueDate,
     DateTime? actExpiryDate,
     String? actUploadUrl,
   }) {
@@ -98,6 +101,7 @@ class VehicleModel {
       updatedAt: updatedAt ?? this.updatedAt,
       hasFutureBooking: hasFutureBooking ?? this.hasFutureBooking,
       actDocumentNumber: actDocumentNumber ?? this.actDocumentNumber,
+      actIssueDate: actIssueDate ?? this.actIssueDate,
       actExpiryDate: actExpiryDate ?? this.actExpiryDate,
       actUploadUrl: actUploadUrl ?? this.actUploadUrl,
     );
@@ -106,6 +110,7 @@ class VehicleModel {
   factory VehicleModel.fromJson(Map<String, dynamic> json) {
     // 🟢 ดึงข้อมูลเอกสาร พ.ร.บ. จาก Array documents
     String? actDocNum;
+    DateTime? actIssueDate;
     DateTime? actExpDate;
     String? actUrl;
 
@@ -122,6 +127,10 @@ class VehicleModel {
 
       if (actDoc != null) {
         actDocNum = actDoc['documentNumber'] ?? actDoc['document_number'];
+        actIssueDate = 
+            actDoc['issueDate'] != null || actDoc['issue_date'] != null
+            ? DateTime.tryParse(actDoc['issueDate'] ?? actDoc['issue_date'])
+            : null;
         actExpDate =
             actDoc['expiryDate'] != null || actDoc['expiry_date'] != null
             ? DateTime.tryParse(actDoc['expiryDate'] ?? actDoc['expiry_date'])
@@ -153,6 +162,11 @@ class VehicleModel {
           : null,
       actDocumentNumber:
           actDocNum ?? json['actDocumentNumber'] ?? json['documentNumber'],
+      actIssueDate:
+          actIssueDate ??
+          (json['actIssueDate'] != null || json['issueDate'] != null
+              ? DateTime.tryParse(json['actIssueDate'] ?? json['issueDate'])
+              : null),
       actExpiryDate:
           actExpDate ??
           (json['actExpiryDate'] != null || json['expiryDate'] != null

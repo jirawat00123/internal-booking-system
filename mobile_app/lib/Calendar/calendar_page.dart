@@ -60,16 +60,10 @@ class _CalendarPageState extends State<CalendarPage> {
         );
       }
 
-      // กรองเฉพาะรายการปัจจุบันและอนาคต ไม่รวมรายการที่เสร็จสิ้น สิ้นสุดเวลา หรืออยู่ในอดีต
-      final now = DateTime.now();
+      // กรองให้แสดงเฉพาะสถานะ RESERVED (APPROVED) และ IN_USE เท่านั้น
       events = events.where((event) {
         final status = event.status.toUpperCase();
-        final isCompletedOrExpired =
-            status == 'COMPLETED' || status == 'EXPIRED';
-        final hasEnded =
-            event.end.isBefore(now) || event.end.isAtSameMomentAs(now);
-
-        return !isCompletedOrExpired && !hasEnded;
+        return status == 'RESERVED' || status == 'APPROVED' || status == 'IN_USE';
       }).toList();
 
       _groupEvents(events);

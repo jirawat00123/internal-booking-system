@@ -24,6 +24,10 @@ class Vehicle {
   final bool isDeleted;
   final String type;
   final bool hasFutureBooking;
+  final String? actDocumentNumber;
+  final String? actIssueDate;
+  final String? actExpiryDate;
+  final String? actUploadUrl;
 
   String get name => vehicleName;
   String? get imagePath => uploadUrl;
@@ -42,6 +46,10 @@ class Vehicle {
     this.isDeleted = false,
     this.type = 'รถยนต์',
     this.hasFutureBooking = false,
+    this.actDocumentNumber,
+    this.actIssueDate,
+    this.actExpiryDate,
+    this.actUploadUrl,
   });
 
   factory Vehicle.fromJson(Map<String, dynamic> json) {
@@ -65,6 +73,11 @@ class Vehicle {
       isDeleted: json['isDeleted'] ?? json['is_deleted'] ?? false,
       type: json['type'] ?? 'รถยนต์',
       hasFutureBooking: json['hasFutureBooking'] ?? false,
+      actDocumentNumber:
+          json['actDocumentNumber'] ?? json['act_document_number'],
+      actIssueDate: json['actIssueDate'] ?? json['act_issue_date'],
+      actExpiryDate: json['actExpiryDate'] ?? json['act_expiry_date'],
+      actUploadUrl: json['actUploadUrl'] ?? json['act_upload_url'],
     );
   }
 
@@ -81,6 +94,10 @@ class Vehicle {
     bool? isDeleted,
     String? type,
     bool? hasFutureBooking,
+    String? actDocumentNumber,
+    String? actIssueDate,
+    String? actExpiryDate,
+    String? actUploadUrl,
   }) {
     return Vehicle(
       id: id ?? this.id,
@@ -95,6 +112,10 @@ class Vehicle {
       isDeleted: isDeleted ?? this.isDeleted,
       type: type ?? this.type,
       hasFutureBooking: hasFutureBooking ?? this.hasFutureBooking,
+      actDocumentNumber: actDocumentNumber ?? this.actDocumentNumber,
+      actIssueDate: actIssueDate ?? this.actIssueDate,
+      actExpiryDate: actExpiryDate ?? this.actExpiryDate,
+      actUploadUrl: actUploadUrl ?? this.actUploadUrl,
     );
   }
 }
@@ -302,6 +323,29 @@ class _VehiclePageState extends State<VehiclePage> {
               backgroundColor: Colors.green,
             ),
           );
+          _fetchVehiclesFromApi();
+        }
+      } else if (response.statusCode == 409) {
+        if (mounted) {
+          Navigator.pop(dialogContext);
+
+          // ดึงข้อความแจ้งเตือนจาก Backend
+          final errorData = jsonDecode(response.body);
+          final errorMessage =
+              errorData['error'] ??
+              'ไม่สามารถเปลี่ยนสถานะได้ เนื่องจากมีรายการจองค้างอยู่';
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                errorMessage,
+                style: const TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.orange,
+            ),
+          );
+
+          // สั่งดึงข้อมูลรถใหม่ เพื่ออัปเดต UI ให้ตรงกับ Database ล่าสุด
           _fetchVehiclesFromApi();
         }
       } else {
@@ -973,12 +1017,17 @@ class _VehiclePageState extends State<VehiclePage> {
         rawStatus == 'IN-USE' ||
         rawStatus == 'กำลังใช้งาน') {
       displayStatus = 'In Use';
-      statusColor = const Color(0xFF0056A0); // 🟢 แก้เป็น statusColor และใช้สีน้ำเงินให้เหมือนหน้าจองรถ
-      statusBgColor = const Color(0xFFE6EDF5); // 🟢 ปรับพื้นหลังให้เข้าคู่กับสีน้ำเงิน
+      statusColor = const Color(
+        0xFF0056A0,
+      ); // 🟢 แก้เป็น statusColor และใช้สีน้ำเงินให้เหมือนหน้าจองรถ
+      statusBgColor = const Color(
+        0xFFE6EDF5,
+      ); // 🟢 ปรับพื้นหลังให้เข้าคู่กับสีน้ำเงิน
     } else if (vehicle.hasFutureBooking ||
+        rawStatus == 'RESERVED' ||
         rawStatus == 'PENDING' ||
         rawStatus == 'จองแล้ว') {
-      // 🟢 นำ rawStatus == 'RESERVED' ออก และใช้ vehicle.hasFutureBooking แสดงผล UI แทน
+      // 🟢 เพิ่มเช็ก rawStatus == 'RESERVED' เข้ามาเพื่อให้สอดคล้องกับค่าที่ Backend ประมวลผลส่งมา
       displayStatus = 'Reserved';
       statusColor = const Color(0xFFF59E0B);
       statusBgColor = const Color(0xFFFEF3C7);

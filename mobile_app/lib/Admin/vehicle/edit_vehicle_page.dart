@@ -31,6 +31,7 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
   late TextEditingController
   provinceController; // 🟢 เพิ่ม Controller สำหรับจังหวัด (Week 14)
   late TextEditingController actDocNumberController;
+  late TextEditingController actIssueDateController;
   late TextEditingController actExpiryDateController;
 
   late String currentStatus;
@@ -48,16 +49,31 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
   @override
   void initState() {
     super.initState();
-    // 🟢 ดึงข้อมูลเดิมจากหน้าต่างที่แล้วมาใส่ใน Controller
     nameController = TextEditingController(text: widget.vehicle.vehicleName);
     plateController = TextEditingController(text: widget.vehicle.plate);
     provinceController = TextEditingController(
       text: widget.vehicle.province ?? '',
-    ); // 🟢 ดึงข้อมูลจังหวัดเดิมมาแสดงแทนค่าว่าง
-    actDocNumberController = TextEditingController();
-    actExpiryDateController = TextEditingController();
+    );
+    actDocNumberController = TextEditingController(
+      text: widget.vehicle.actDocumentNumber ?? '',
+    );
+    actIssueDateController = TextEditingController(
+      text: widget.vehicle.actIssueDate != null
+          ? widget.vehicle.actIssueDate!.split('T')[0]
+          : '',
+    );
+    actExpiryDateController = TextEditingController(
+      text: widget.vehicle.actExpiryDate != null
+          ? widget.vehicle.actExpiryDate!.split('T')[0]
+          : '',
+    );
     currentStatus = widget.vehicle.status;
     passengerCount = widget.vehicle.seats;
+
+    if (widget.vehicle.actUploadUrl != null &&
+        widget.vehicle.actUploadUrl!.isNotEmpty) {
+      _docFileName = widget.vehicle.actUploadUrl!.split('/').last;
+    }
   }
 
   @override
@@ -66,6 +82,7 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     plateController.dispose();
     provinceController.dispose(); // 🟢 คืนหน่วยความจำ
     actDocNumberController.dispose();
+    actIssueDateController.dispose();
     actExpiryDateController.dispose();
     super.dispose();
   }
@@ -166,6 +183,10 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
             .trim();
         request.fields['documentNumber'] = actDocNumberController.text.trim();
       }
+      if (actIssueDateController.text.trim().isNotEmpty) {
+        request.fields['actIssueDate'] = actIssueDateController.text.trim();
+        request.fields['issueDate'] = actIssueDateController.text.trim();
+      }
       if (actExpiryDateController.text.trim().isNotEmpty) {
         request.fields['actExpiryDate'] = actExpiryDateController.text.trim();
         request.fields['expiryDate'] = actExpiryDateController.text.trim();
@@ -204,14 +225,14 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
         if (kIsWeb && _pickedDocFile?.bytes != null) {
           request.files.add(
             http.MultipartFile.fromBytes(
-              'actDocument',
+              'actFile',
               _pickedDocFile!.bytes!,
               filename: _docFileName ?? 'act_document.pdf',
             ),
           );
         } else if (_docFilePath != null) {
           request.files.add(
-            await http.MultipartFile.fromPath('actDocument', _docFilePath!),
+            await http.MultipartFile.fromPath('actFile', _docFilePath!),
           );
         }
       }
@@ -712,6 +733,28 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
                         label: 'เลขที่ พ.ร.บ.',
                         controller: actDocNumberController,
                         hint: 'ระบุเลขที่ พ.ร.บ.',
+                      ),
+                      const SizedBox(height: 12),
+                      _buildTextField(
+                        label: 'วันคุ้มครอง พ.ร.บ. (YYYY-MM-DD)',
+                        controller: actIssueDateController,
+                        hint: 'YYYY-MM-DD',
+                        readOnly: true,
+                        onTap: () async {
+                          DateTime? pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (pickedDate != null) {
+                            String formattedDate =
+                                "${pickedDate.year}-${pickedDate.month.toString().padLeft(2, '0')}-${pickedDate.day.toString().padLeft(2, '0')}";
+                            setState(() {
+                              actIssueDateController.text = formattedDate;
+                            });
+                          }
+                        },
                       ),
                       const SizedBox(height: 12),
                       _buildTextField(
