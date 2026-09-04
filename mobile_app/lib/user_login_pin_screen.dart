@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'auth_service.dart';
 import 'digitel.dart';
 import 'AdminGroupPage.dart';
 import '../Security/SecurityGroupPage.dart';
@@ -27,6 +28,9 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
     if (pin.length < 6 && !isLoading) {
       setState(() {
         pin += number;
+        if (pin.length == 6) {
+          isLoading = true; // 🟢 ล็อกสถานะ isLoading ทันที ป้องกันการกดเบิ้ล (Double Tap Guard) ก่อนที่ฟังก์ชัน _verifyPin จะทำงาน
+        }
       });
       if (pin.length == 6) {
         _verifyPin();
@@ -130,9 +134,8 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
   // 🔄 ยิง API ตรวจสอบ PIN จริงกับ Backend
   // 🔄 ยิง API ตรวจสอบ PIN จริงกับ Backend (อัปเดตใหม่รองรับทุก Role)
   Future<void> _verifyPin() async {
-    setState(() {
-      isLoading = true;
-    });
+    // ลบการเช็ก isLoading ตรงนี้ออกไป เพราะเราทำ Double Tap Guard ที่ _addPin แล้ว 
+    // และเพื่อป้องกันไม่ให้หน้าจอค้างหาก State หลุด
 
     try {
       String? employeeCode;
@@ -140,13 +143,20 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
         employeeCode = widget.userData!['employeeCode'];
       }
 
-      if (employeeCode == null) {
+      if (employeeCode == null || employeeCode.trim().isEmpty) {
         setState(() {
           isLoading = false;
+          pin =
+              ""; // 🟢 เคลียร์ PIN ทิ้งหากรหัสพนักงานไม่ถูกต้อง ป้องกัน State ค้าง
         });
+        debugPrint('Error: Employee Code is null or empty');
         _showErrorDialog("ไม่พบรหัสพนักงาน กรุณาเลือกชื่อใหม่อีกครั้ง");
         return;
       }
+
+      debugPrint(
+        'BEFORE LOGIN -> employeeCode: $employeeCode | PIN length: ${pin.length}',
+      );
 
       // 🟢 เปลี่ยน Endpoint เป็น /api/login ตาม Flow ใหม่
       final url = 'https://192.168.88.25:3002/api/login';
@@ -222,6 +232,9 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
           await prefs.setString('permissions', json.encode(permissions));
         }
 
+        // 🟢 สั่งเปิดใช้งาน Silent Refresh Timer หลังเข้าสู่ระบบสำเร็จ
+        AuthService.instance.startSilentRefresh();
+
         Widget nextPage;
         if (role == 'SECURITY' || role == 'GUARD') {
           nextPage = const SecurityGroupPage();
@@ -230,24 +243,29 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
           nextPage = const UserMenuPage();
         }
 
-        Navigator.pushReplacement(
+        // 🟢 เปลี่ยนจาก pushReplacement เป็น pushAndRemoveUntil เพื่อทำลายหน้า Login ออกจาก Memory 100% ป้องกัน Event ค้าง
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(builder: (context) => nextPage),
+          (route) => false,
         );
       }
       // 🔒 กรณีต้องตั้งค่า PIN ใหม่ (Backend ส่ง requireSetupPin มา)
       else if (response.statusCode == 403 && data['requireSetupPin'] == true) {
-        Navigator.pushReplacement(
+        Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
             builder: (context) => const UserSetupPinScreen(),
-          ), // พาไปหน้าตั้งรหัสผ่าน
+          ),
+          (route) => false, // 🟢 เปลี่ยนมาใช้ pushAndRemoveUntil เพื่อล้าง Navigation Stack 100% ป้องกันการกดย้อนกลับ
         );
       }
       // ❌ กรณี Error อื่นๆ เช่น PIN ผิด, บัญชีถูกระงับ
       else {
         setState(() {
           isLoading = false;
+          pin =
+              ""; // 🟢 สั่งเคลียร์ตัวแปร pin ทันทีเมื่อเกิด Error ป้องกัน PIN ผิดค้างไปใช้รอบถัดไป
         });
         _showErrorDialog(
           data['message'] ?? data['error'] ?? 'รหัส PIN ไม่ถูกต้อง',
@@ -259,6 +277,7 @@ class _UserLoginPinScreenState extends State<UserLoginPinScreen> {
       if (!mounted) return;
       setState(() {
         isLoading = false;
+        pin = ""; // 🟢 สั่งเคลียร์ตัวแปร pin ทันทีเมื่อเกิด Exception
       });
       _showErrorDialog('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
     }

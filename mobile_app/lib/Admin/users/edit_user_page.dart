@@ -21,40 +21,83 @@ class _EditUserPageState extends State<EditUserPage> {
   // 🟢 1. เพิ่ม Controller สำหรับช่องกรอกรหัสพนักงาน
   late TextEditingController empCodeController;
 
-  String? selectedDepartment;
-  String? selectedRole;
+  int? selectedDepartmentId;
+  int? selectedRoleId;
   late String selectedStatus;
 
-  List<String> deptOptions = [
-    'ผู้บริหาร',
-    'ไอที (IT)',
-    'บุคคล (HR)',
-    'แมคคาทรอนิกส์',
-  ];
+  List<dynamic> departments = [];
+  List<dynamic> roles = [];
+  bool isLoadingData = true;
 
-  final List<String> roleOptions = ['Admin', 'User', 'Security'];
   final List<String> statusOptions = ['Active', 'Inactive'];
 
   @override
   void initState() {
     super.initState();
     nameController = TextEditingController(text: widget.employee.fullName);
-    // 🟢 2. ดึงรหัสพนักงานเดิมมาแสดง (สมมติว่าตัวแปรชื่อ employeeCode หากพี่ตั้งชื่อใน Model เป็นอย่างอื่น ให้แก้ให้ตรงนะครับ)
     empCodeController = TextEditingController(
-      text: widget.employee.employeeCode ?? '',
+      text: widget.employee.employeeCode,
     );
 
-    selectedDepartment = widget.employee.departmentName;
+    selectedStatus = widget.employee.active ? 'Active' : 'Inactive';
+    _fetchInitialData();
+  }
 
-    selectedRole = 'User';
-    selectedStatus = 'Active';
+  Future<void> _fetchInitialData() async {
+    setState(() => isLoadingData = true);
+    try {
+      final responses = await Future.wait([
+        http.get(Uri.parse('https://192.168.88.25:3002/api/departments')),
+        http.get(Uri.parse('https://192.168.88.25:3002/api/roles')),
+      ]);
 
-    deptOptions = deptOptions.toSet().toList();
-
-    if (selectedDepartment != null && selectedDepartment!.isNotEmpty) {
-      if (!deptOptions.contains(selectedDepartment)) {
-        deptOptions.add(selectedDepartment!);
+      if (responses[0].statusCode == 200) {
+        final data = jsonDecode(responses[0].body);
+        final deptList = data is List
+            ? data
+            : (data['data'] is List ? data['data'] : []);
+        departments = deptList;
+        for (var d in departments) {
+          final dId = d['id']?.toString();
+          final dName =
+              d['departmentName']?.toString().trim() ??
+              d['name']?.toString().trim() ??
+              '';
+          if ((widget.employee.departmentId.isNotEmpty &&
+                  dId == widget.employee.departmentId) ||
+              dName == widget.employee.departmentName.trim()) {
+            selectedDepartmentId = d['id'] is int
+                ? d['id'] as int
+                : int.tryParse(d['id'].toString());
+            break;
+          }
+        }
       }
+
+      if (responses[1].statusCode == 200) {
+        final data = jsonDecode(responses[1].body);
+        final roleList = data is List
+            ? data
+            : (data['data'] is List ? data['data'] : []);
+        roles = roleList;
+        for (var r in roles) {
+          final rName =
+              r['name']?.toString().trim() ??
+              r['roleName']?.toString().trim() ??
+              '';
+          if (rName.toUpperCase() ==
+              widget.employee.role.trim().toUpperCase()) {
+            selectedRoleId = r['id'] is int
+                ? r['id'] as int
+                : int.tryParse(r['id'].toString());
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching initial data: $e");
+    } finally {
+      setState(() => isLoadingData = false);
     }
   }
 
@@ -66,11 +109,9 @@ class _EditUserPageState extends State<EditUserPage> {
   }
 
   void _showConfirmDialog(BuildContext context) {
-    if (selectedDepartment == null ||
-        selectedRole == null ||
-        empCodeController.text
-            .trim()
-            .isEmpty || // 🟢 ตรวจสอบว่ากรอกรหัสพนักงานหรือยัง
+    if (selectedDepartmentId == null ||
+        selectedRoleId == null ||
+        empCodeController.text.trim().isEmpty ||
         nameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -138,18 +179,15 @@ class _EditUserPageState extends State<EditUserPage> {
                       child: ElevatedButton(
                         onPressed: () async {
                           try {
-                            int roleId = 2; // Default User
-                            if (selectedRole == 'Admin') roleId = 1;
-                            if (selectedRole == 'Security') roleId = 3;
-
                             final bodyData = jsonEncode({
-                              'employeeCode': empCodeController.text
-                                  .trim(), // 🟢 ส่งรหัสพนักงานใหม่ (หากแก้ไข) ไปที่ Backend
+                              'employeeCode': empCodeController.text.trim(),
                               'fullName': nameController.text.trim(),
-                              'departmentId': selectedDepartment == 'ไอที (IT)'
-                                  ? 1
-                                  : 2,
-                              'roleId': roleId,
+                              'departmentId': selectedDepartmentId != null
+                                  ? int.parse(selectedDepartmentId.toString())
+                                  : null,
+                              'roleId': selectedRoleId != null
+                                  ? int.parse(selectedRoleId.toString())
+                                  : null,
                               'active': selectedStatus == 'Active',
                             });
 
@@ -239,6 +277,15 @@ class _EditUserPageState extends State<EditUserPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (isLoadingData) {
+      return const Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF009CB4)),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
@@ -335,8 +382,8 @@ class _EditUserPageState extends State<EditUserPage> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            value: selectedDepartment,
+                          DropdownButtonFormField<int>(
+                            value: selectedDepartmentId,
                             decoration: InputDecoration(
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -355,23 +402,37 @@ class _EditUserPageState extends State<EditUserPage> {
                                 ),
                               ),
                             ),
+                            hint: const Text(
+                              'เลือกแผนก',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
+                              ),
+                            ),
                             icon: const Icon(
                               Icons.keyboard_arrow_down,
                               color: Color(0xFF009CB4),
                             ),
-                            items: deptOptions
-                                .map(
-                                  (String value) => DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(
-                                      value,
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
+                            items: departments.map<DropdownMenuItem<int>>((
+                              dept,
+                            ) {
+                              final intId = dept['id'] is int
+                                  ? dept['id'] as int
+                                  : int.tryParse(dept['id'].toString());
+                              final deptName =
+                                  dept['departmentName']?.toString() ??
+                                  dept['name']?.toString() ??
+                                  '';
+                              return DropdownMenuItem<int>(
+                                value: intId,
+                                child: Text(
+                                  deptName,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
                             onChanged: (newValue) =>
-                                setState(() => selectedDepartment = newValue),
+                                setState(() => selectedDepartmentId = newValue),
                           ),
 
                           const SizedBox(height: 16),
@@ -385,8 +446,8 @@ class _EditUserPageState extends State<EditUserPage> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          DropdownButtonFormField<String>(
-                            value: selectedRole,
+                          DropdownButtonFormField<int>(
+                            value: selectedRoleId,
                             decoration: InputDecoration(
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -416,19 +477,24 @@ class _EditUserPageState extends State<EditUserPage> {
                               Icons.keyboard_arrow_down,
                               color: Color(0xFF009CB4),
                             ),
-                            items: roleOptions
-                                .map(
-                                  (String value) => DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(
-                                      value,
-                                      style: const TextStyle(fontSize: 14),
-                                    ),
-                                  ),
-                                )
-                                .toList(),
+                            items: roles.map<DropdownMenuItem<int>>((role) {
+                              final intId = role['id'] is int
+                                  ? role['id'] as int
+                                  : int.tryParse(role['id'].toString());
+                              final roleName =
+                                  role['name']?.toString() ??
+                                  role['roleName']?.toString() ??
+                                  '';
+                              return DropdownMenuItem<int>(
+                                value: intId,
+                                child: Text(
+                                  roleName,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              );
+                            }).toList(),
                             onChanged: (newValue) =>
-                                setState(() => selectedRole = newValue),
+                                setState(() => selectedRoleId = newValue),
                           ),
                         ],
                       ),

@@ -17,12 +17,14 @@ class BookingHistoryModel {
   final String date;
   final String endDate;
   final DateTime? rawDate;
+  final DateTime? createdAt; // 🟢 เพิ่มตัวแปรเก็บเวลาที่ทำรายการจอง
   final TimeOfDay startTime;
   final TimeOfDay endTime;
   final String bookedBy;
   final String bookerName;
   final int userId;
   final int participantCount;
+  final List<String> passengerNames; // 🟢 เพิ่มตัวแปรเก็บรายชื่อผู้โดยสาร
   String currentStatus;
 
   final String imageUrl;
@@ -30,6 +32,8 @@ class BookingHistoryModel {
   final String destination;
   final String driverType;
   final String? pororborUrl;
+  final String? driverLicenseUrl;
+  final String purpose;
   final bool isEarlyReleaseRequested; // 🟢 เพิ่มตัวแปรสำหรับรออนุมัติรับรถ
   final bool isEarlyReturnRequested; // 🟢 เพิ่มตัวแปรสำหรับรออนุมัติคืนรถ
 
@@ -41,18 +45,22 @@ class BookingHistoryModel {
     required this.date,
     required this.endDate,
     this.rawDate,
+    this.createdAt, // 🟢 รับค่าเวลาที่ทำรายการจอง
     required this.startTime,
     required this.endTime,
     required this.bookedBy,
     required this.bookerName,
     required this.userId,
     required this.participantCount,
+    this.passengerNames = const [], // 🟢 รับค่ารายชื่อผู้โดยสาร
     required this.currentStatus,
     this.imageUrl = '',
     this.plateNumber = '-',
     this.destination = '-',
     this.driverType = '-',
     this.pororborUrl,
+    this.driverLicenseUrl,
+    this.purpose = '-',
     this.isEarlyReleaseRequested = false,
     this.isEarlyReturnRequested = false,
   });
@@ -126,6 +134,16 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
+  String _buildFullUrl(String? path) {
+    if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
+    const baseUrl = 'https://192.168.88.25:3002';
+    final formattedPath = path.startsWith('/') ? path : '/$path';
+    return '$baseUrl$formattedPath';
+  }
+
   Future<void> _openPororbor(String? urlPath) async {
     if (urlPath == null || urlPath.isEmpty) {
       if (mounted) {
@@ -137,31 +155,21 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     }
 
     try {
-      final baseUrl = 'https://192.168.88.25:3002';
-      final cleanPath = urlPath.replaceAll('\\', '/');
-      String formattedPath = cleanPath.startsWith('/')
-          ? cleanPath
-          : '/$cleanPath';
+      final fullUrl = _buildFullUrl(urlPath);
+      final Uri url = Uri.parse(Uri.encodeFull(fullUrl));
 
-      // 🟢 แก้ไข: ป้องกันการเติม /api ซ้ำซ้อน หากเป็น path ของ /attachments หรือ /uploads
-      if (!cleanPath.startsWith('http') &&
-          !formattedPath.startsWith('/api') &&
-          !formattedPath.startsWith('/attachments') &&
-          !formattedPath.startsWith('/uploads')) {
-        formattedPath = '/api$formattedPath';
+      bool launched = await launchUrl(
+        url,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched) {
+        launched = await launchUrl(url, mode: LaunchMode.platformDefault);
       }
 
-      final fullUrl = cleanPath.startsWith('http')
-          ? cleanPath
-          : '$baseUrl$formattedPath';
-      final Uri url = Uri.parse(fullUrl);
-
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ไม่สามารถเปิดเอกสารได้')),
-          );
-        }
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('ไม่สามารถเปิดเอกสารได้')));
       }
     } catch (e) {
       if (mounted) {
@@ -243,7 +251,14 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           }
 
           int pCount =
-              int.tryParse(item['participants']?.toString() ?? '0') ?? 0;
+              int.tryParse(
+                item['attendeeCount']?.toString() ??
+                    item['attendee_count']?.toString() ??
+                    item['participantCount']?.toString() ??
+                    item['participants']?.toString() ??
+                    '0',
+              ) ??
+              0;
           if (pCount == 0 && item['room'] != null) {
             pCount =
                 int.tryParse(item['room']['capacity']?.toString() ?? '0') ?? 0;
@@ -268,6 +283,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               date: _formatThaiDate(start),
               endDate: _formatThaiDate(end),
               rawDate: start,
+              createdAt: item['createdAt'] != null
+                  ? DateTime.parse(item['createdAt']).toLocal()
+                  : start,
               startTime: TimeOfDay(hour: start.hour, minute: start.minute),
               endTime: TimeOfDay(hour: end.hour, minute: end.minute),
               bookedBy: userName,
@@ -328,11 +346,126 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             userName = item['user']['employee']?['fullName'] ?? 'ไม่ระบุชื่อ';
           }
 
+          List<String> parsedPassengerNames = [];
+
+          String extractName(dynamic p) {
+            if (p == null) return '';
+            if (p is Map) {
+              final keys = [
+                'fullName',
+                'full_name',
+                'passengerName',
+                'passenger_name',
+                'name',
+                'employeeName',
+                'employee_name',
+                'userName',
+                'user_name',
+              ];
+              for (var k in keys) {
+                if (p[k] != null && p[k].toString().trim().isNotEmpty) {
+                  return p[k].toString().trim();
+                }
+              }
+              if (p['user'] is Map) {
+                final u = p['user'];
+                if (u['employee'] is Map && u['employee']['fullName'] != null) {
+                  return u['employee']['fullName'].toString().trim();
+                }
+                if (u['firstName'] != null)
+                  return u['firstName'].toString().trim();
+                if (u['name'] != null) return u['name'].toString().trim();
+              }
+              if (p['employee'] is Map && p['employee']['fullName'] != null) {
+                return p['employee']['fullName'].toString().trim();
+              }
+              return '';
+            }
+            final str = p.toString().trim();
+            if (int.tryParse(str) != null) return '';
+            return str;
+          }
+
+          List<String> parseStringNames(String str) {
+            final trimmed = str.trim();
+            if (trimmed.isEmpty || int.tryParse(trimmed) != null) return [];
+            try {
+              final decoded = jsonDecode(trimmed);
+              if (decoded is List) {
+                return decoded
+                    .map((e) => extractName(e))
+                    .where((n) => n.trim().isNotEmpty)
+                    .toList();
+              }
+            } catch (_) {}
+            String cleaned = trimmed;
+            if (cleaned.startsWith('[') && cleaned.endsWith(']')) {
+              cleaned = cleaned.substring(1, cleaned.length - 1);
+            }
+            return cleaned
+                .split(',')
+                .map((e) {
+                  String s = e.trim();
+                  if ((s.startsWith('"') && s.endsWith('"')) ||
+                      (s.startsWith("'") && s.endsWith("'"))) {
+                    s = s.substring(1, s.length - 1).trim();
+                  }
+                  return extractName(s);
+                })
+                .where((n) => n.trim().isNotEmpty)
+                .toList();
+          }
+
+          final candidateSources = [
+            item['vehicleBookingPassengers'],
+            item['vehicle_booking_passengers'],
+            item['vehicleBookingPassenger'],
+            item['vehicle_booking_passenger'],
+            item['VehicleBookingPassenger'],
+            item['VehicleBookingPassengers'],
+            item['passengerDetails'],
+            item['passenger_details'],
+            item['passengerList'],
+            item['passenger_list'],
+            item['passengerNames'],
+            item['passenger_names'],
+            item['passengersList'],
+            item['passengers_list'],
+            item['bookingPassengers'],
+            item['booking_passengers'],
+            item['passengers'],
+            item['members'],
+            item['participants'],
+          ];
+
+          for (var src in candidateSources) {
+            if (src == null) continue;
+            if (src is List && src.isNotEmpty) {
+              final list = src
+                  .map((p) => extractName(p))
+                  .where((n) => n.trim().isNotEmpty)
+                  .toList();
+              if (list.isNotEmpty) {
+                parsedPassengerNames = list;
+                break;
+              }
+            } else if (src is String && src.trim().isNotEmpty) {
+              final list = parseStringNames(src);
+              if (list.isNotEmpty) {
+                parsedPassengerNames = list;
+                break;
+              }
+            }
+          }
+
           int pCount = 0;
-          if (item['passengers'] != null) {
+          if (item['passengers'] != null && item['passengers'] is! List) {
             pCount = int.tryParse(item['passengers'].toString()) ?? 0;
           } else if (item['passengerCount'] != null) {
             pCount = int.tryParse(item['passengerCount'].toString()) ?? 0;
+          }
+          if (pCount == 0 && parsedPassengerNames.isNotEmpty) {
+            pCount = parsedPassengerNames.length;
           }
 
           // 🟢 Filter: ข้ามคิวที่เป็น Cancelled ไปเลย ไม่ต้องเอาใส่ลิสต์
@@ -347,6 +480,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               date: _formatThaiDate(start),
               endDate: _formatThaiDate(end),
               rawDate: start,
+              createdAt: item['createdAt'] != null
+                  ? DateTime.parse(item['createdAt']).toLocal()
+                  : (item['created_at'] != null
+                        ? DateTime.parse(item['created_at']).toLocal()
+                        : start),
               startTime: TimeOfDay(hour: start.hour, minute: start.minute),
               endTime: TimeOfDay(hour: end.hour, minute: end.minute),
               bookedBy: userName,
@@ -359,122 +497,128 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   ) ??
                   0,
               participantCount: pCount,
+              passengerNames: parsedPassengerNames,
               currentStatus: rawStatus,
               imageUrl: item['vehicle']?['uploadUrl'] ?? '',
               plateNumber: item['vehicle']?['plateNumber'] ?? '-',
               destination: item['destination'] ?? '-',
               driverType: item['driverType'] ?? 'ขับขี่เอง',
+              purpose: item['purpose'] ?? '-',
+              driverLicenseUrl:
+                  item['driverLicenseUrl'] ??
+                  item['driver_license_url'] ??
+                  item['driverLicensePath'] ??
+                  item['driver_license_path'],
               pororborUrl: () {
-                final v = item['vehicle'];
-                if (v != null) {
-                  // 🟢 เพิ่มการดักจับ Key แบบ snake_case ที่อาจดึงตรงมาจากฐานข้อมูล
-                  final directKeys = [
-                    'actUploadUrl',
-                    'act_upload_url',
-                    'uploadPororborUrl',
-                    'pororborUrl',
-                    'pororbor_url',
-                    'actFile',
-                    'act_file',
-                    'actFilePath',
-                    'act_file_path',
-                    'pororbor',
-                  ];
-                  for (var key in directKeys) {
-                    if (v[key] != null &&
-                        v[key].toString().isNotEmpty &&
-                        v[key] is! Map) {
-                      return v[key].toString();
-                    }
-                  }
-
-                  if (v['documents'] != null &&
-                      v['documents'] is List &&
-                      (v['documents'] as List).isNotEmpty) {
-                    for (var doc in v['documents']) {
-                      final docTypeName =
-                          doc['documentType']?['name']?.toString() ?? '';
-                      if (docTypeName.contains('พ.ร.บ.') ||
-                          docTypeName.toUpperCase().contains('ACT')) {
-                        if (doc['fileUrl'] != null &&
-                            doc['fileUrl'].toString().isNotEmpty) {
-                          return doc['fileUrl'].toString();
-                        }
-                        if (doc['uploadUrl'] != null &&
-                            doc['uploadUrl'].toString().isNotEmpty) {
-                          return doc['uploadUrl'].toString();
-                        }
-                        if (doc['filePath'] != null &&
-                            doc['filePath'].toString().isNotEmpty) {
-                          return doc['filePath'].toString();
-                        }
-                        if (doc['url'] != null &&
-                            doc['url'].toString().isNotEmpty) {
-                          return doc['url'].toString();
-                        }
-                        if (doc['path'] != null &&
-                            doc['path'].toString().isNotEmpty) {
-                          return doc['path'].toString();
-                        }
-                      }
-                    }
-                  }
-                  if (v['attachments'] != null &&
-                      v['attachments'] is List &&
-                      (v['attachments'] as List).isNotEmpty) {
-                    for (var att in v['attachments']) {
-                      final type =
-                          att['entityType']?.toString().toUpperCase() ?? '';
-                      if (type == 'VEHICLE_ACT' ||
-                          type == 'PORORBOR' ||
-                          type == 'ACT') {
-                        return att['filePath'] ??
-                            att['fileName'] ??
-                            att['fileUrl'] ??
-                            att['url'] ??
-                            att['path'];
-                      }
-                    }
-                    return v['attachments'][0]['filePath'] ??
-                        v['attachments'][0]['fileName'] ??
-                        v['attachments'][0]['fileUrl'] ??
-                        v['attachments'][0]['url'] ??
-                        v['attachments'][0]['path'];
-                  }
-                }
-
-                // 🟢 เพิ่มการตรวจสอบในระดับ item (Booking) ด้วย เผื่อ Backend ส่งออกมาด้านนอก
-                final bookingKeys = [
+                // 🟢 1. ตรวจสอบจาก Root level ของ item ก่อน
+                final rootKeys = [
                   'actFilePath',
                   'act_file_path',
+                  'actUrl',
+                  'act_url',
+                  'actUploadUrl',
+                  'act_upload_url',
                   'pororborUrl',
-                  'pororbor_url',
+                  'actFile',
+                  'act_file',
+                  'documentUrl',
+                  'document_url',
                 ];
-                for (var key in bookingKeys) {
-                  if (item[key] != null &&
-                      item[key].toString().isNotEmpty &&
-                      item[key] is! Map) {
+                for (String key in rootKeys) {
+                  if (item[key] != null && item[key].toString().isNotEmpty) {
                     return item[key].toString();
                   }
                 }
 
-                if (item['attachments'] != null &&
-                    item['attachments'] is List &&
-                    (item['attachments'] as List).isNotEmpty) {
-                  for (var att in item['attachments']) {
-                    final type =
-                        att['entityType']?.toString().toUpperCase() ?? '';
-                    if (type == 'VEHICLE_ACT' ||
-                        type == 'PORORBOR' ||
-                        type == 'ACT') {
-                      return att['filePath'] ??
-                          att['fileName'] ??
-                          att['fileUrl'] ??
-                          att['url'] ??
-                          att['path'];
+                // 🟢 2. ตรวจสอบจาก Object vehicle
+                final v = item['vehicle'];
+                if (v != null && v is Map) {
+                  final vehicleKeys = [
+                    'actFilePath',
+                    'act_file_path',
+                    'actUrl',
+                    'act_url',
+                    'actUploadUrl',
+                    'act_upload_url',
+                    'pororborUrl',
+                    'actFile',
+                    'act_file',
+                    'documentUrl',
+                    'document_url',
+                  ];
+                  for (String key in vehicleKeys) {
+                    if (v[key] != null && v[key].toString().isNotEmpty) {
+                      return v[key].toString();
+                    }
+                  }
+
+                  // 🟢 3. Fallback: ค้นหาจาก Array documents ใน vehicle
+                  if (v['documents'] is List) {
+                    for (var doc in v['documents']) {
+                      if (doc is Map) {
+                        final docType = doc['documentType'];
+                        final typeName = docType is Map
+                            ? docType['name']?.toString()
+                            : (doc['name']?.toString() ??
+                                  doc['title']?.toString());
+                        final typeKey = docType is Map
+                            ? docType['key']?.toString()
+                            : doc['type']?.toString();
+
+                        if ((typeName != null &&
+                                (typeName.contains('พ.ร.บ') ||
+                                    typeName.contains('พรบ') ||
+                                    typeName.toUpperCase().contains('ACT'))) ||
+                            (typeKey != null &&
+                                typeKey.toUpperCase().contains('ACT'))) {
+                          final url =
+                              doc['uploadUrl'] ??
+                              doc['upload_url'] ??
+                              doc['filePath'] ??
+                              doc['file_path'] ??
+                              doc['url'];
+                          if (url != null && url.toString().isNotEmpty) {
+                            return url.toString();
+                          }
+                        }
+                      }
                     }
                   }
                 }
+
+                // 🟢 4. Fallback: ค้นหาจาก Array documents ที่ Root level
+                if (item['documents'] is List) {
+                  for (var doc in item['documents']) {
+                    if (doc is Map) {
+                      final docType = doc['documentType'];
+                      final typeName = docType is Map
+                          ? docType['name']?.toString()
+                          : (doc['name']?.toString() ??
+                                doc['title']?.toString());
+                      final typeKey = docType is Map
+                          ? docType['key']?.toString()
+                          : doc['type']?.toString();
+
+                      if ((typeName != null &&
+                              (typeName.contains('พ.ร.บ') ||
+                                  typeName.contains('พรบ') ||
+                                  typeName.toUpperCase().contains('ACT'))) ||
+                          (typeKey != null &&
+                              typeKey.toUpperCase().contains('ACT'))) {
+                        final url =
+                            doc['uploadUrl'] ??
+                            doc['upload_url'] ??
+                            doc['filePath'] ??
+                            doc['file_path'] ??
+                            doc['url'];
+                        if (url != null && url.toString().isNotEmpty) {
+                          return url.toString();
+                        }
+                      }
+                    }
+                  }
+                }
+
                 return null;
               }(),
               isEarlyReleaseRequested:
@@ -488,11 +632,13 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
         }
       }
 
-      fetchedList.sort(
-        (a, b) => (b.rawDate ?? DateTime.now()).compareTo(
-          a.rawDate ?? DateTime.now(),
-        ),
-      );
+      fetchedList.sort((a, b) {
+        // 🟢 เรียงจากวันที่ "ทำรายการจอง" ล่าสุดขึ้นก่อน
+        // (ช่วยแก้ปัญหาเวลาดูแท็บ "ทั้งหมด" แล้ว ID ของรถและห้องประชุมไม่สัมพันธ์กัน)
+        DateTime createA = a.createdAt ?? a.rawDate ?? DateTime.now();
+        DateTime createB = b.createdAt ?? b.rawDate ?? DateTime.now();
+        return createB.compareTo(createA);
+      });
 
       if (mounted) {
         setState(() {
@@ -668,25 +814,40 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
     }).toList();
 
     if (filteredList.isEmpty) {
-      return Center(
-        key: key,
-        child: const Text(
-          'ไม่มีประวัติการจอง',
-          style: TextStyle(fontFamily: 'Kanit', color: Colors.grey),
+      return RefreshIndicator(
+        onRefresh: fetchHistory,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: const Center(
+                child: Text(
+                  'ไม่มีประวัติการจอง',
+                  style: TextStyle(fontFamily: 'Kanit', color: Colors.grey),
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
 
-    return ListView.builder(
-      key: key,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: filteredList.length,
-      itemBuilder: (context, index) {
-        return ShowUp(
-          delay: index * 80,
-          child: _buildHistoryCard(filteredList[index]),
-        );
-      },
+    return RefreshIndicator(
+      onRefresh: fetchHistory,
+      color: const Color(0xFF003E75),
+      child: ListView.builder(
+        key: key,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        itemCount: filteredList.length,
+        itemBuilder: (context, index) {
+          return ShowUp(
+            delay: index * 80,
+            child: _buildHistoryCard(filteredList[index]),
+          );
+        },
+      ),
     );
   }
 
@@ -799,9 +960,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                     color: Colors.grey[200],
                     child: booking.imageUrl.isNotEmpty
                         ? Image.network(
-                            booking.imageUrl.startsWith('/uploads')
-                                ? 'https://192.168.88.25:3002${booking.imageUrl}'
-                                : booking.imageUrl,
+                            _buildFullUrl(booking.imageUrl),
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => Icon(
                               booking.type == 'ห้องประชุม'
@@ -905,6 +1064,47 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                           ),
                         ],
                       ),
+                      if (booking.participantCount > 0 ||
+                          booking.passengerNames.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.people_outline,
+                              size: 14,
+                              color: Colors.grey,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'จำนวน: ${booking.participantCount > 0 ? booking.participantCount : booking.passengerNames.length} คน',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey,
+                                      fontFamily: 'Kanit',
+                                    ),
+                                  ),
+                                  if (booking.passengerNames.isNotEmpty)
+                                    Text(
+                                      'ผู้โดยสาร: ${booking.passengerNames.join(', ')}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                        fontFamily: 'Kanit',
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1148,6 +1348,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   // 🔍 หน้าต่าง Popup รายละเอียด
   // =========================================================
   void _showDetailsPopup(BuildContext context, BookingHistoryModel booking) {
+    final actUrl = booking.pororborUrl;
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -1188,9 +1389,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                 width: 44,
                                 height: 44,
                                 child: Image.network(
-                                  booking.imageUrl.startsWith('/uploads')
-                                      ? 'https://192.168.88.25:3002${booking.imageUrl}'
-                                      : booking.imageUrl,
+                                  _buildFullUrl(booking.imageUrl),
                                   fit: BoxFit.cover,
                                   errorBuilder: (c, e, s) => Container(
                                     padding: const EdgeInsets.all(10),
@@ -1287,11 +1486,63 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         const SizedBox(height: 12),
                         _buildPopupDetailRow('ผู้ทำรายการ', booking.bookerName),
 
-                        if (booking.participantCount > 0) ...[
+                        if (booking.participantCount > 0 ||
+                            booking.passengerNames.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           _buildPopupDetailRow(
                             'จำนวนคน',
-                            '${booking.participantCount} คน',
+                            '${booking.participantCount > 0 ? booking.participantCount : booking.passengerNames.length} คน',
+                          ),
+                        ],
+                        if (booking.passengerNames.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'รายชื่อผู้โดยสาร :',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                                fontFamily: 'Kanit',
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: booking.passengerNames
+                                  .asMap()
+                                  .entries
+                                  .map(
+                                    (e) => Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom:
+                                            e.key ==
+                                                booking.passengerNames.length -
+                                                    1
+                                            ? 0
+                                            : 6,
+                                      ),
+                                      child: Text(
+                                        '${e.key + 1}. ${e.value}',
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontFamily: 'Kanit',
+                                          color: Color(0xFF1E2841),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
                           ),
                         ],
                       ],
@@ -1331,12 +1582,48 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                             _buildPopupDetailRow('ปลายทาง', booking.title),
                             const SizedBox(height: 12),
                           ],
-                          _buildPopupDetailRow('วัตถุประสงค์', '-'),
+                          _buildPopupDetailRow('วัตถุประสงค์', booking.purpose),
                           if (booking.driverType != '-') ...[
                             const SizedBox(height: 12),
                             _buildPopupDetailRow(
                               'รูปแบบคนขับ',
                               booking.driverType,
+                            ),
+                          ],
+                          if (booking.driverLicenseUrl != null &&
+                              booking.driverLicenseUrl!.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            const Text(
+                              'รูปใบขับขี่ :',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                                fontFamily: 'Kanit',
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.network(
+                                _buildFullUrl(booking.driverLicenseUrl!),
+                                width: double.infinity,
+                                height: 160,
+                                fit: BoxFit.cover,
+                                errorBuilder: (c, e, s) => Container(
+                                  height: 100,
+                                  color: Colors.grey.shade200,
+                                  child: const Center(
+                                    child: Text(
+                                      'ไม่สามารถโหลดรูปใบขับขี่ได้',
+                                      style: TextStyle(
+                                        fontFamily: 'Kanit',
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ],
                         ],
@@ -1381,13 +1668,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          booking.pororborUrl != null &&
-                                  booking.pororborUrl!.isNotEmpty
+                          actUrl != null && actUrl.isNotEmpty
                               ? SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton.icon(
-                                    onPressed: () =>
-                                        _openPororbor(booking.pororborUrl),
+                                    onPressed: () => _openPororbor(actUrl),
                                     icon: const Icon(
                                       Icons.picture_as_pdf,
                                       size: 18,

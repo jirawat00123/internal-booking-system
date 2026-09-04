@@ -69,7 +69,7 @@ const authenticateToken = async (req, res, next) => {
 
     const user = await prisma.user.findUnique({
       where: { id: parseInt(decoded.userId, 10) },
-      include: { role: true } // 💡 สั่งให้ Prisma JOIN ข้อมูลตาราง roles มาด้วย
+      include: { role: true, employee: true } // 💡 สั่งให้ Prisma JOIN ข้อมูลตาราง roles และ employee มาด้วย
     });
 
     if (!user) {
@@ -79,8 +79,8 @@ const authenticateToken = async (req, res, next) => {
     }
 
     // แก้ไขเพิ่มเติม: ตรวจสอบสถานะการเปิดใช้งานบัญชี และการถูกลบ (Soft Delete)
-    // อ้างอิงจาก Source of Truth ตาราง user ฟิลด์ "active" และ "isDeleted"
-    if (!user.active || user.isDeleted) {
+    // อ้างอิงจาก Source of Truth ตาราง user ฟิลด์ "active" และ "isDeleted" รวมถึงสถานะพนักงาน
+    if (!user.active || user.isDeleted || (user.employee && (user.employee.isActive === false || user.employee.active === false))) {
       console.log(`[EVIDENCE] 7. 403 Failure Cause: [USER_INACTIVE_OR_DELETED] User ID "${decoded.userId}" account is deactivated or deleted.`);
       return res.status(403).json({ success: false, error: "บัญชีผู้ใช้งานของคุณถูกระงับสิทธิ์หรือถูกลบออกจากระบบ" });
     }
@@ -124,7 +124,13 @@ const authenticateToken = async (req, res, next) => {
       // 🚨 [Requirement 7] LOG สาเหตุ 401: Session ไม่ตรงกัน (เกิด Mismatch)
       console.log('[EVIDENCE] 7. 401 Failure Cause: [SESSION_MISMATCH] Session IDs do not match (Current session may be stale or cleared).');
       console.log(`[AUTH] Session Mismatch | Token Session: ${decoded.sessionId} | DB Session: ${user.currentSessionId}`);
-      return res.status(401).json({ success: false, error: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" });
+      
+      // ส่ง 401 พร้อม HTTP code และ error message ชัดเจน เพื่อให้ Client ทำการ Logout และเปลี่ยนหน้าไปหน้า Login ได้อย่างถูกต้อง
+      return res.status(401).json({ 
+        success: false, 
+        error: "SESSION_EXPIRED",
+        message: "เซสชันหมดอายุ หรือมีการเข้าสู่ระบบจากอุปกรณ์อื่น กรุณาเข้าสู่ระบบใหม่" 
+      });
     }
 
     // ✅ ปรับการอ่านค่า Role ให้ปลอดภัย และล็อกไม่ให้ SECURITY แอบเนียนเป็น USER
@@ -141,6 +147,16 @@ const authenticateToken = async (req, res, next) => {
     next();
 
   } catch (error) {
+    // 🟢 ตรวจสอบกรณี Token หมดอายุ (TokenExpiredError)
+    if (error.name === 'TokenExpiredError') {
+      console.log(`[EVIDENCE] 7. 401 Failure Cause: [TOKEN_EXPIRED] Token has expired.`);
+      return res.status(401).json({ 
+        success: false, 
+        error: "TOKEN_EXPIRED", 
+        message: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" 
+      });
+    }
+
     // 🚨 [Requirement 7] LOG สาเหตุ 401: การตรวจสอบด้วย jwt.verify ล้มเหลว
     console.log(`[EVIDENCE] 7. 401 Failure Cause: [JWT_VERIFICATION_FAILED] Error message: "${error.message}"`);
     console.log('[AUTH] JWT Verify Failed');

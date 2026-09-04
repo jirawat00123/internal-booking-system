@@ -60,10 +60,14 @@ class _CalendarPageState extends State<CalendarPage> {
         );
       }
 
-      // กรองให้แสดงเฉพาะสถานะ RESERVED (APPROVED) และ IN_USE เท่านั้น
+      final now = DateTime.now();
+      // กรองเฉพาะสถานะ RESERVED (APPROVED), IN_USE และแสดงเฉพาะเวลา ณ ปัจจุบัน/อนาคตเท่านั้น (คิวที่หมดเวลาแล้วจะถูกคัดออก)
       events = events.where((event) {
         final status = event.status.toUpperCase();
-        return status == 'RESERVED' || status == 'APPROVED' || status == 'IN_USE';
+        final isValidStatus =
+            status == 'RESERVED' || status == 'APPROVED' || status == 'IN_USE';
+        final isCurrentOrFuture = event.end.isAfter(now);
+        return isValidStatus && isCurrentOrFuture;
       }).toList();
 
       _groupEvents(events);
@@ -116,7 +120,10 @@ class _CalendarPageState extends State<CalendarPage> {
   List<CalendarEvent> _getEventsForDay(DateTime day) {
     // ล้างเวลาออกเพื่อให้ตรงกับ Key ใน Map
     DateTime normalizedDay = DateTime(day.year, day.month, day.day);
-    return _groupedEvents[normalizedDay] ?? [];
+    final events = _groupedEvents[normalizedDay] ?? [];
+    final now = DateTime.now();
+    // กรองซ้ำระดับการดึงข้อมูลรายวัน เพื่อให้ Marker และรายการคิวหายไปทันทีเมื่อหมดเวลา
+    return events.where((event) => event.end.isAfter(now)).toList();
   }
 
   @override

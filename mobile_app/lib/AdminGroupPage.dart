@@ -8,6 +8,7 @@ import 'Select.dart';
 import 'Book_history.dart'; // นำเข้าหน้า BookingHistoryScreen
 import 'digitel.dart'; // นำเข้าหน้า UserMenuPage สำหรับการสลับโหมด
 import 'Security/SecurityVehiclelist.dart'; // 🟢 เพิ่มการ Import หน้าต่างจัดการรถเข้า-ออก
+import 'auth_service.dart'; // 🟢 เพิ่มการนำเข้า AuthService สำหรับการ Logout
 // ดึงเข้ามารองรับปุ่มออกจากระบบ เพื่อกลับไปหน้าเลือกสิทธิ
 
 class AdminGroupPage extends StatefulWidget {
@@ -125,13 +126,69 @@ class _AdminGroupPageState extends State<AdminGroupPage> {
                         const SizedBox(width: 8),
                         // ปุ่มออกจากระบบ (เดิม)
                         OutlinedButton.icon(
-                          onPressed: () {
-                            Navigator.pushReplacement(
+                          onPressed: () async {
+                            // 🟢 1. แสดง Dialog ยืนยันการออกจากระบบ ป้องกันการกดผิดพลาด
+                            final shouldLogout = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                title: const Text(
+                                  'ยืนยันการออกจากระบบ',
+                                  style: TextStyle(
+                                    fontFamily: 'Kanit',
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF00529B),
+                                  ),
+                                ),
+                                content: const Text(
+                                  'คุณต้องการออกจากระบบใช่หรือไม่?',
+                                  style: TextStyle(fontFamily: 'Kanit'),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text(
+                                      'ยกเลิก',
+                                      style: TextStyle(
+                                        fontFamily: 'Kanit',
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: const Text(
+                                      'ออกจากระบบ',
+                                      style: TextStyle(
+                                        fontFamily: 'Kanit',
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (shouldLogout != true) return;
+
+                            // 🟢 2. เคลียร์ข้อมูลเซสชันทั้งหมดแบบ 100% (ล้างทั้ง Memory และ Storage)
+                            await AuthService.instance.logout();
+
+                            if (!context.mounted) return;
+
+                            // 🟢 3. กลับไปหน้าแรกและเคลียร์ Stack ทิ้งป้องกัน State ค้าง
+                            Navigator.pushAndRemoveUntil(
                               context,
                               MaterialPageRoute(
                                 builder: (context) =>
                                     const LoginSelectionPage(),
                               ),
+                              (route) => false,
                             );
                           },
                           icon: const Icon(
@@ -148,9 +205,7 @@ class _AdminGroupPageState extends State<AdminGroupPage> {
                             ),
                           ),
                           style: OutlinedButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(
-                              alpha: 0.2,
-                            ),
+                            backgroundColor: Colors.red.withValues(alpha: 0.8),
                             side: BorderSide(
                               color: Colors.white.withValues(alpha: 0.5),
                             ),
@@ -271,13 +326,13 @@ class _AdminGroupPageState extends State<AdminGroupPage> {
                         ),
                         const SizedBox(height: 16),
 
-                        AdminMenuCard(
+                        /*AdminMenuCard(
                           icon: Icons.dashboard_outlined,
                           title: 'แดชบอร์ดและรายงาน',
                           onTap: () {
                             Navigator.pushNamed(context, '/dashboard');
                           },
-                        ),
+                        ),*/
 
                         // นำไปวางต่อจากปุ่มสุดท้าย (ก่อนถึงข้อความลิขสิทธิ์ด้านล่าง)
                         Center(

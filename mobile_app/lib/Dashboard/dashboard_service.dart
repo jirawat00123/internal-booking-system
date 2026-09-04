@@ -78,6 +78,11 @@ class DashboardService {
     return _get('/reports/dashboard/security');
   }
 
+  /// เรียก API Summary & Overview Stats สำหรับ Dashboard
+  Future<Map<String, dynamic>> fetchDashboardStats() async {
+    return _get('/reports/dashboard-stats');
+  }
+
   Future<Map<String, dynamic>> _get(String path) async {
     final headers = await _getHeaders();
     final url = Uri.parse('$baseUrl$path');

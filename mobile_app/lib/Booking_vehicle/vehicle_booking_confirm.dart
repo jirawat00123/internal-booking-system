@@ -1,11 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../../Booking_vehicle/Vehicle_model.dart';
 import 'vehicle_booking_success.dart';
 import 'dart:convert';
+import '../auth_service.dart';
 
 class VehicleBookingConfirmPage extends StatelessWidget {
   final VehicleModel vehicle;
@@ -14,9 +16,12 @@ class VehicleBookingConfirmPage extends StatelessWidget {
   final String endDate;
   final String timeRange;
   final int passengerCount;
+  final List<String> passengerNames;
   final String driverType;
   final String bookerName;
   final int userId; // 💡 1. เพิ่มตัวแปร userId ตรงนี้ครับ!
+  final String? purpose;
+  final XFile? licenseImage;
 
   const VehicleBookingConfirmPage({
     super.key,
@@ -26,9 +31,12 @@ class VehicleBookingConfirmPage extends StatelessWidget {
     required this.endDate,
     required this.timeRange,
     required this.passengerCount,
+    this.passengerNames = const [],
     required this.driverType,
     required this.bookerName,
     required this.userId, // 💡 2. บังคับรับค่า userId
+    this.purpose,
+    this.licenseImage,
   });
 
   @override
@@ -111,23 +119,7 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                             ClipRRect(
                               borderRadius: BorderRadius.circular(10),
                               child: imagePath.isNotEmpty
-                                  ? (imagePath.startsWith('/uploads')
-                                        ? Image.network(
-                                            'https://192.168.88.25:3002$imagePath',
-                                            width: 100,
-                                            height: 70,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (c, e, s) =>
-                                                Container(
-                                                  width: 100,
-                                                  height: 70,
-                                                  color: Colors.grey.shade200,
-                                                  child: const Icon(
-                                                    Icons.directions_car,
-                                                  ),
-                                                ),
-                                          )
-                                        : imagePath.startsWith('assets/')
+                                  ? (imagePath.startsWith('assets/')
                                         ? Image.asset(
                                             imagePath,
                                             width: 100,
@@ -143,41 +135,43 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                                                   ),
                                                 ),
                                           )
-                                        : (kIsWeb
-                                              ? Image.network(
-                                                  imagePath,
+                                        : (kIsWeb ||
+                                              imagePath.startsWith('http') ||
+                                              imagePath.startsWith('/') ||
+                                              imagePath.startsWith(
+                                                'attachments',
+                                              ) ||
+                                              imagePath.startsWith('uploads'))
+                                        ? Image.network(
+                                            AuthService.getImageUrl(imagePath),
+                                            width: 100,
+                                            height: 70,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, e, s) =>
+                                                Container(
                                                   width: 100,
                                                   height: 70,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (c, e, s) =>
-                                                      Container(
-                                                        width: 100,
-                                                        height: 70,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade200,
-                                                        child: const Icon(
-                                                          Icons.directions_car,
-                                                        ),
-                                                      ),
-                                                )
-                                              : Image.file(
-                                                  File(imagePath),
+                                                  color: Colors.grey.shade200,
+                                                  child: const Icon(
+                                                    Icons.directions_car,
+                                                  ),
+                                                ),
+                                          )
+                                        : Image.file(
+                                            File(imagePath),
+                                            width: 100,
+                                            height: 70,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (c, e, s) =>
+                                                Container(
                                                   width: 100,
                                                   height: 70,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (c, e, s) =>
-                                                      Container(
-                                                        width: 100,
-                                                        height: 70,
-                                                        color: Colors
-                                                            .grey
-                                                            .shade200,
-                                                        child: const Icon(
-                                                          Icons.directions_car,
-                                                        ),
-                                                      ),
-                                                )))
+                                                  color: Colors.grey.shade200,
+                                                  child: const Icon(
+                                                    Icons.directions_car,
+                                                  ),
+                                                ),
+                                          ))
                                   : Container(
                                       width: 100,
                                       height: 70,
@@ -229,9 +223,77 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                           '$startDate ถึง $endDate',
                         ),
                         _buildInfoRow('เวลา :', displayTime),
-                        _buildInfoRow('ผู้โดยสาร :', '$passengerCount คน'),
-                        _buildInfoRow('ผู้ทำรายการ :', bookerName),
+                        _buildInfoRow(
+                          'ผู้โดยสาร :',
+                          passengerNames.isNotEmpty
+                              ? '$passengerCount คน\n\n' +
+                                    passengerNames
+                                        .asMap()
+                                        .entries
+                                        .map((e) => '${e.key + 1}. ${e.value}')
+                                        .join('\n')
+                              : '$passengerCount คน',
+                        ),
+                        FutureBuilder<SharedPreferences>(
+                          future: SharedPreferences.getInstance(),
+                          builder: (context, snapshot) {
+                            String realName = bookerName;
+                            if (snapshot.hasData) {
+                              final prefs = snapshot.data!;
+                              final fullName = prefs.getString('fullName');
+                              final name = prefs.getString('name');
+                              final employeeName = prefs.getString(
+                                'employeeName',
+                              );
+                              final displayName = prefs.getString(
+                                'displayName',
+                              );
+                              final firstName = prefs.getString('firstName');
+                              final lastName = prefs.getString('lastName');
+                              final userName = prefs.getString('userName');
+
+                              String? validName;
+                              for (final item in [
+                                fullName,
+                                name,
+                                employeeName,
+                                displayName,
+                              ]) {
+                                if (item != null &&
+                                    item.trim().isNotEmpty &&
+                                    item.trim() != 'MMK') {
+                                  validName = item.trim();
+                                  break;
+                                }
+                              }
+
+                              if (validName != null) {
+                                realName = validName;
+                              } else if (firstName != null &&
+                                  firstName.trim().isNotEmpty &&
+                                  firstName.trim() != 'MMK') {
+                                realName = '$firstName ${lastName ?? ''}'
+                                    .trim();
+                              } else if (userName != null &&
+                                  userName.trim().isNotEmpty &&
+                                  userName.trim() != 'MMK') {
+                                realName = userName.trim();
+                              }
+                            }
+                            return _buildInfoRow('ผู้ทำรายการ :', realName);
+                          },
+                        ),
                         _buildInfoRow('ปลายทาง :', destination),
+                        _buildInfoRow('วัตถุประสงค์ :', () {
+                          if (purpose == null) return '-';
+                          final cleaned = purpose!.replaceAll('-', '').trim();
+                          final words = cleaned
+                              .split(RegExp(r'\s+'))
+                              .where((w) => w.isNotEmpty)
+                              .toSet()
+                              .toList();
+                          return words.isNotEmpty ? words.join(' ') : '-';
+                        }()),
                         _buildInfoRow('การขับขี่ :', driverType),
                       ],
                     ),
@@ -250,6 +312,42 @@ class VehicleBookingConfirmPage extends StatelessWidget {
           height: 50,
           child: ElevatedButton(
             onPressed: () async {
+              if (passengerNames.length != passengerCount) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'จำนวนผู้โดยสาร ($passengerCount คน) ไม่ตรงกับรายชื่อที่ระบุ (${passengerNames.length} คน)',
+                    ),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
+              final hasEmptyName = passengerNames.any(
+                (name) => name.trim().isEmpty,
+              );
+              if (hasEmptyName) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('กรุณากรอกรายชื่อผู้โดยสารให้ครบถ้วน'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
+              final uniqueNames = passengerNames.map((e) => e.trim()).toSet();
+              if (uniqueNames.length != passengerNames.length) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('ห้ามมีรายชื่อผู้โดยสารซ้ำกัน'),
+                    backgroundColor: Colors.redAccent,
+                  ),
+                );
+                return;
+              }
+
               showDialog(
                 context: context,
                 barrierDismissible: false,
@@ -310,35 +408,64 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                       .toIso8601String();
                 }
 
-                // 📦 3. จุดสำคัญ: ยัด userId ลงไปในก้อนข้อมูลด้วย!
-                final Map<String, dynamic> bodyData = {
-                  "vehicleId": vehicle.id,
-                  "userId":
-                      userId, // 💡 คราวนี้ส่ง ID ตัวจริงไปแล้วครับ ไม่พลาดแน่!
-                  "destination": destination,
-                  "startDatetime": isoStart,
-                  "endDatetime": isoEnd,
-                  "passengerCount": passengerCount,
-                  "passengers": passengerCount,
-                  "driverType": driverType,
-                };
+                // 📦 3. เปลี่ยนเป็น MultipartRequest เพื่อรองรับการอัปโหลดไฟล์รูปภาพใบขับขี่
+                final uri = Uri.parse(
+                  'https://192.168.88.25:3002/api/vehicle-bookings',
+                );
+                final request = http.MultipartRequest('POST', uri);
 
-                // 💡 1. แทรก Print ตรวจสอบข้อมูลที่กำลังจะส่ง
-                print('--- DEBUG POST REQUEST ---');
-                print('URL: https://192.168.88.25:3002/api/vehicle-bookings');
-                print('Body: ${jsonEncode(bodyData)}');
+                request.headers['Authorization'] = 'Bearer $token';
 
-                final response = await http.post(
-                  Uri.parse('https://192.168.88.25:3002/api/vehicle-bookings'),
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer $token',
-                  },
-                  body: jsonEncode(bodyData),
+                request.fields['vehicleId'] = vehicle.id.toString();
+                request.fields['userId'] = userId.toString();
+                request.fields['destination'] = destination;
+                request.fields['startDatetime'] = isoStart;
+                request.fields['endDatetime'] = isoEnd;
+                request.fields['passengers'] = passengerCount.toString();
+                // 🟢 แปลง List<String> เป็น JSON String เพื่อให้ Backend Node.js ใช้ JSON.parse() หรือรับเป็น Array ได้ง่ายขึ้น
+                if (passengerNames.isNotEmpty) {
+                  request.fields['passengerNames'] = jsonEncode(passengerNames);
+                }
+                request.fields['driverType'] = driverType;
+                if (purpose != null && purpose!.isNotEmpty) {
+                  request.fields['purpose'] = purpose!;
+                }
+
+                if (licenseImage != null) {
+                  if (kIsWeb) {
+                    final bytes = await licenseImage!.readAsBytes();
+                    request.files.add(
+                      http.MultipartFile.fromBytes(
+                        'licenseDriver',
+                        bytes,
+                        filename: licenseImage!.name,
+                      ),
+                    );
+                  } else {
+                    request.files.add(
+                      await http.MultipartFile.fromPath(
+                        'licenseDriver',
+                        licenseImage!.path,
+                      ),
+                    );
+                  }
+                }
+
+                // 💡 แทรก Print ตรวจสอบข้อมูลที่กำลังจะส่ง
+                print('--- DEBUG MULTIPART REQUEST ---');
+                print('URL: $uri');
+                print('Fields: ${request.fields}');
+                print(
+                  'Files: ${request.files.map((f) => f.filename).toList()}',
                 );
 
-                // 💡 2. แทรก Print ตรวจสอบข้อความที่ Backend ฟ้องกลับมา
-                print('--- DEBUG POST RESPONSE ---');
+                final streamedResponse = await request.send();
+                final response = await http.Response.fromStream(
+                  streamedResponse,
+                );
+
+                // 💡 แทรก Print ตรวจสอบข้อความที่ Backend ฟ้องกลับมา
+                print('--- DEBUG MULTIPART RESPONSE ---');
                 print('Status Code: ${response.statusCode}');
                 print('Response Body: ${response.body}');
 

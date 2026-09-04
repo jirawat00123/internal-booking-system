@@ -16,20 +16,74 @@ exports.getAvailableVehicles = async (req, res, next) => {
           where: {
             status: { in: ['Approved', 'APPROVED', 'RESERVED'] }
           },
+          orderBy: {
+            startDatetime: 'asc'
+          },
           include: {
             user: {
               include: {
                 employee: true
               }
-            }
+            },
+            attachments: true,
+            vehicleLogs: {
+              include: {
+                checkoutBy: { include: { employee: true } },
+                returnBy: { include: { employee: true } }
+              }
+            } // 🎯 เพิ่มการดึงข้อมูลประวัติการปล่อยรถ
           }
         }
       }
     });
 
+    const formattedVehicles = vehicles.map(vehicle => ({
+      ...vehicle,
+      bookings: vehicle.bookings.map(booking => {
+        const log = booking.vehicleLogs;
+        const logReleaseImages = log ? [log.checkoutFrontPhoto, log.checkoutBackPhoto, log.checkoutMileagePhoto].filter(Boolean).map(a => a.replace(/\\/g, '/')) : [];
+        const logReturnImages = log ? [log.returnFrontPhoto, log.returnBackPhoto, log.returnMileagePhoto].filter(Boolean).map(a => a.replace(/\\/g, '/')) : [];
+
+        const releaseImages = [
+          ...(booking.attachments || [])
+            .filter(a => a.entityType === 'VEHICLE_RELEASE_IMAGE' && !a.isDeleted)
+            .map(a => a.filePath ? a.filePath.replace(/\\/g, '/') : ''),
+          ...logReleaseImages
+        ];
+
+        const returnImages = [
+          ...(booking.attachments || [])
+            .filter(a => a.entityType === 'VEHICLE_RETURN_IMAGE' && !a.isDeleted)
+            .map(a => a.filePath ? a.filePath.replace(/\\/g, '/') : ''),
+          ...logReturnImages
+        ];
+
+        return {
+          ...booking,
+          checkoutTime: log?.checkoutTime || null,
+          returnTime: log?.returnTime || null,
+          actualCheckoutTime: log?.checkoutTime || null,
+          actualReturnTime: log?.returnTime || null,
+          checkoutBy: log?.checkoutBy || null,
+          returnBy: log?.returnBy || null,
+          checkoutByName: log?.checkoutBy?.employee?.fullName || null,
+          returnByName: log?.returnBy?.employee?.fullName || null,
+          releaseImages,
+          returnImages,
+          releasePhotos: releaseImages,
+          returnPhotos: returnImages,
+          attachments: (booking.attachments || []).map(a => ({
+            ...a,
+            url: a.filePath ? a.filePath.replace(/\\/g, '/') : '',
+            filePath: a.filePath ? a.filePath.replace(/\\/g, '/') : ''
+          }))
+        };
+      })
+    }));
+
     return res.status(200).json({
       success: true,
-      data: vehicles
+      data: formattedVehicles
     });
   } catch (error) {
     next(error);
@@ -49,7 +103,10 @@ exports.getInUseVehicles = async (req, res, next) => {
       include: {
         bookings: {
           where: {
-            status: 'IN_USE' // 💡 เปลี่ยนจาก 'In Progress' เป็น 'IN_USE'
+            status: 'IN_USE'
+          },
+          orderBy: {
+            startDatetime: 'asc'
           },
           include: {
             user: {
@@ -57,18 +114,65 @@ exports.getInUseVehicles = async (req, res, next) => {
                 employee: true
               }
             },
+            attachments: true,
             vehicleLogs: {
-              orderBy: { createdAt: 'desc' },
-              take: 1
-            }
+              include: {
+                checkoutBy: { include: { employee: true } },
+                returnBy: { include: { employee: true } }
+              }
+            } // 🎯 แก้ไขเป็น true เนื่องจากใน Prisma Schema (VehicleLog?) เป็นแบบ 1-to-1 ไม่สามารถใช้ orderBy/take ได้
           }
         }
       }
     });
 
+    const formattedVehicles = vehicles.map(vehicle => ({
+      ...vehicle,
+      bookings: vehicle.bookings.map(booking => {
+        const log = booking.vehicleLogs;
+        const logReleaseImages = log ? [log.checkoutFrontPhoto, log.checkoutBackPhoto, log.checkoutMileagePhoto].filter(Boolean).map(a => a.replace(/\\/g, '/')) : [];
+        const logReturnImages = log ? [log.returnFrontPhoto, log.returnBackPhoto, log.returnMileagePhoto].filter(Boolean).map(a => a.replace(/\\/g, '/')) : [];
+
+        const releaseImages = [
+          ...(booking.attachments || [])
+            .filter(a => a.entityType === 'VEHICLE_RELEASE_IMAGE' && !a.isDeleted)
+            .map(a => a.filePath ? a.filePath.replace(/\\/g, '/') : ''),
+          ...logReleaseImages
+        ];
+
+        const returnImages = [
+          ...(booking.attachments || [])
+            .filter(a => a.entityType === 'VEHICLE_RETURN_IMAGE' && !a.isDeleted)
+            .map(a => a.filePath ? a.filePath.replace(/\\/g, '/') : ''),
+          ...logReturnImages
+        ];
+
+        return {
+          ...booking,
+          checkoutTime: log?.checkoutTime || null,
+          returnTime: log?.returnTime || null,
+          actualCheckoutTime: log?.checkoutTime || null,
+          actualReturnTime: log?.returnTime || null,
+          checkoutBy: log?.checkoutBy || null,
+          returnBy: log?.returnBy || null,
+          checkoutByName: log?.checkoutBy?.employee?.fullName || null,
+          returnByName: log?.returnBy?.employee?.fullName || null,
+          releaseImages,
+          returnImages,
+          releasePhotos: releaseImages,
+          returnPhotos: returnImages,
+          attachments: (booking.attachments || []).map(a => ({
+            ...a,
+            url: a.filePath ? a.filePath.replace(/\\/g, '/') : '',
+            filePath: a.filePath ? a.filePath.replace(/\\/g, '/') : ''
+          }))
+        };
+      })
+    }));
+
     return res.status(200).json({
       success: true,
-      data: vehicles
+      data: formattedVehicles
     });
   } catch (error) {
     next(error);
@@ -80,7 +184,14 @@ exports.getInUseVehicles = async (req, res, next) => {
 // =========================================================================
 exports.checkOut = async (req, res, next) => {
   try {
-    const { vehicleBookingId, checkoutMileage, checkoutFuelLevel } = req.body;
+    const {
+      vehicleBookingId,
+      checkoutMileage,
+      checkoutFuelLevel,
+      checkoutFrontPhoto,
+      checkoutBackPhoto,
+      checkoutMileagePhoto
+    } = req.body;
     const guardId = (req.user?.userId || req.user?.id) ? parseInt(req.user.userId || req.user.id, 10) : null;
 
     if (!vehicleBookingId || checkoutMileage === undefined || checkoutFuelLevel === undefined) {
@@ -142,13 +253,25 @@ exports.checkOut = async (req, res, next) => {
         }
       });
 
+      const serverCheckoutTime = new Date(); // 🎯 ดึงเวลาจาก Server ปัจจุบัน
+
+      const getCheckoutFilePath = (field) => {
+        if (req.files && req.files[field] && req.files[field][0]) {
+          return req.files[field][0].path.replace(/\\/g, '/');
+        }
+        return req.body[field] || null;
+      };
+
       const log = await tx.vehicleLog.create({
         data: {
           vehicleBookingId: bookingId,
           checkoutById: guardId,
-          checkoutTime: new Date(),
+          checkoutTime: serverCheckoutTime,
           checkoutMileage: mileage,
-          checkoutFuelLevel: fuelLevel
+          checkoutFuelLevel: fuelLevel,
+          checkoutFrontPhoto: getCheckoutFilePath('checkoutFrontPhoto'),
+          checkoutBackPhoto: getCheckoutFilePath('checkoutBackPhoto'),
+          checkoutMileagePhoto: getCheckoutFilePath('checkoutMileagePhoto')
         }
       });
 
@@ -205,7 +328,14 @@ exports.checkOut = async (req, res, next) => {
 // =========================================================================
 exports.checkIn = async (req, res, next) => {
   try {
-    const { vehicleBookingId, returnMileage, returnFuelLevel } = req.body;
+    const {
+      vehicleBookingId,
+      returnMileage,
+      returnFuelLevel,
+      returnFrontPhoto,
+      returnBackPhoto,
+      returnMileagePhoto
+    } = req.body;
     const guardId = (req.user?.userId || req.user?.id) ? parseInt(req.user.userId || req.user.id, 10) : null;
 
     if (!vehicleBookingId || returnMileage === undefined || returnFuelLevel === undefined) {
@@ -269,13 +399,25 @@ exports.checkIn = async (req, res, next) => {
         data: { status: 'AVAILABLE' }
       });
 
+      const serverReturnTime = new Date(); // 🎯 ดึงเวลาจาก Server ปัจจุบัน
+
+      const getReturnFilePath = (field) => {
+        if (req.files && req.files[field] && req.files[field][0]) {
+          return req.files[field][0].path.replace(/\\/g, '/');
+        }
+        return req.body[field] || null;
+      };
+
       await tx.vehicleLog.update({
         where: { id: existingLog.id },
         data: {
           returnById: guardId,
-          returnTime: new Date(),
+          returnTime: serverReturnTime,
           returnMileage: mileage,
-          returnFuelLevel: fuelLevel
+          returnFuelLevel: fuelLevel,
+          returnFrontPhoto: getReturnFilePath('returnFrontPhoto') || existingLog.returnFrontPhoto,
+          returnBackPhoto: getReturnFilePath('returnBackPhoto') || existingLog.returnBackPhoto,
+          returnMileagePhoto: getReturnFilePath('returnMileagePhoto') || existingLog.returnMileagePhoto
         }
       });
 
@@ -382,9 +524,134 @@ exports.getVehicleLogById = async (req, res, next) => {
       });
     }
 
+    const booking = log.vehicleBooking;
+    let formattedBooking = booking;
+    
+    if (booking) {
+      const logData = log;
+      const logReleaseImages = logData ? [logData.checkoutFrontPhoto, logData.checkoutBackPhoto, logData.checkoutMileagePhoto].filter(Boolean).map(a => a.replace(/\\/g, '/')) : [];
+      const logReturnImages = logData ? [logData.returnFrontPhoto, logData.returnBackPhoto, logData.returnMileagePhoto].filter(Boolean).map(a => a.replace(/\\/g, '/')) : [];
+
+      const releaseImages = [
+        ...(booking.attachments || [])
+          .filter(a => a.entityType === 'VEHICLE_RELEASE_IMAGE' && !a.isDeleted)
+          .map(a => a.filePath ? a.filePath.replace(/\\/g, '/') : ''),
+        ...logReleaseImages
+      ];
+
+      const returnImages = [
+        ...(booking.attachments || [])
+          .filter(a => a.entityType === 'VEHICLE_RETURN_IMAGE' && !a.isDeleted)
+          .map(a => a.filePath ? a.filePath.replace(/\\/g, '/') : ''),
+        ...logReturnImages
+      ];
+
+      formattedBooking = {
+        ...booking,
+        checkoutTime: logData?.checkoutTime || null,
+        returnTime: logData?.returnTime || null,
+        actualCheckoutTime: logData?.checkoutTime || null,
+        actualReturnTime: logData?.returnTime || null,
+        checkoutBy: logData?.checkoutBy || null,
+        returnBy: logData?.returnBy || null,
+        checkoutByName: logData?.checkoutBy?.employee?.fullName || null,
+        returnByName: logData?.returnBy?.employee?.fullName || null,
+        releaseImages,
+        returnImages,
+        releasePhotos: releaseImages,
+        returnPhotos: returnImages,
+        attachments: (booking.attachments || []).map(a => ({
+          ...a,
+          url: a.filePath ? a.filePath.replace(/\\/g, '/') : '',
+          filePath: a.filePath ? a.filePath.replace(/\\/g, '/') : ''
+        }))
+      };
+    }
+
     return res.status(200).json({
       success: true,
-      data: log
+      data: {
+        ...log,
+        vehicleBooking: formattedBooking
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getHistory = async (req, res, next) => {
+  try {
+    const bookings = await prisma.vehicleBooking.findMany({
+      where: {
+        status: { in: ['COMPLETED', 'IN_USE', 'CANCELLED', 'EXPIRED'] }
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      },
+      include: {
+        vehicle: true,
+        user: {
+          include: {
+            employee: true
+          }
+        },
+        attachments: {
+          where: { isDeleted: false }
+        },
+        vehicleLogs: {
+          include: {
+            checkoutBy: { include: { employee: true } },
+            returnBy: { include: { employee: true } }
+          }
+        }
+      }
+    });
+
+    const formattedBookings = bookings.map(booking => {
+      const log = booking.vehicleLogs;
+      const logReleaseImages = log ? [log.checkoutFrontPhoto, log.checkoutBackPhoto, log.checkoutMileagePhoto].filter(Boolean).map(a => a.replace(/\\/g, '/')) : [];
+      const logReturnImages = log ? [log.returnFrontPhoto, log.returnBackPhoto, log.returnMileagePhoto].filter(Boolean).map(a => a.replace(/\\/g, '/')) : [];
+
+      const releaseImages = [
+        ...(booking.attachments || [])
+          .filter(a => a.entityType === 'VEHICLE_RELEASE_IMAGE' && !a.isDeleted)
+          .map(a => a.filePath ? a.filePath.replace(/\\/g, '/') : ''),
+        ...logReleaseImages
+      ];
+
+      const returnImages = [
+        ...(booking.attachments || [])
+          .filter(a => a.entityType === 'VEHICLE_RETURN_IMAGE' && !a.isDeleted)
+          .map(a => a.filePath ? a.filePath.replace(/\\/g, '/') : ''),
+        ...logReturnImages
+      ];
+
+      return {
+        ...booking,
+        checkoutTime: log?.checkoutTime || null,
+        returnTime: log?.returnTime || null,
+        actualCheckoutTime: log?.checkoutTime || null,
+        actualReturnTime: log?.returnTime || null,
+        checkoutBy: log?.checkoutBy || null,
+        returnBy: log?.returnBy || null,
+        checkoutByName: log?.checkoutBy?.employee?.fullName || null,
+        returnByName: log?.returnBy?.employee?.fullName || null,
+        releaseImages,
+        returnImages,
+        releasePhotos: releaseImages,
+        returnPhotos: returnImages,
+        attachments: (booking.attachments || []).map(a => ({
+          ...a,
+          url: a.filePath ? a.filePath.replace(/\\/g, '/') : '',
+          filePath: a.filePath ? a.filePath.replace(/\\/g, '/') : ''
+        }))
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: formattedBookings
     });
   } catch (error) {
     next(error);

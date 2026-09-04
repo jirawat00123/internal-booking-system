@@ -411,11 +411,163 @@ const getAggregatedBookings = async (req, res, next) => {
   }
 };
 
+/**
+ * 5. Dashboard Summary & Overview Stats API
+ * GET /api/reports/dashboard-stats
+ */
+const getDashboardStats = async (req, res) => {
+  try {
+    const totalEmployees = await prisma.employee.count({ 
+      where: { isActive: true } 
+    });
+    
+    const totalVehicles = await prisma.vehicle.count({ 
+      where: { isDeleted: false } 
+    });
+    
+    const totalRooms = await prisma.room.count({ 
+      where: { isDeleted: false } 
+    });
+
+    const vehicleStatusGroup = await prisma.vehicle.groupBy({
+      by: ['status'],
+      _count: { status: true },
+      where: { isDeleted: false }
+    });
+
+    const vehicleOverview = {
+      AVAILABLE: 0,
+      IN_USE: 0,
+      MAINTENANCE: 0,
+      INACTIVE: 0,
+      RESERVED: 0
+    };
+
+    vehicleStatusGroup.forEach(item => {
+      const key = item.status === 'IN USE' ? 'IN_USE' : item.status;
+      if (vehicleOverview.hasOwnProperty(key)) {
+        vehicleOverview[key] = item._count.status;
+      }
+    });
+
+    const roomBookingGroup = await prisma.roomBooking.groupBy({
+      by: ['status'],
+      _count: { status: true }
+    });
+
+    const vehicleBookingGroup = await prisma.vehicleBooking.groupBy({
+      by: ['status'],
+      _count: { status: true }
+    });
+
+    const defaultBookingStatus = {
+      PENDING: 0,
+      APPROVED: 0,
+      IN_USE: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+      REJECTED: 0
+    };
+
+    const roomBookingOverview = { ...defaultBookingStatus };
+    roomBookingGroup.forEach(item => {
+      const key = item.status === 'IN USE' ? 'IN_USE' : item.status;
+      if (roomBookingOverview.hasOwnProperty(key)) {
+        roomBookingOverview[key] = item._count.status;
+      }
+    });
+
+    const vehicleBookingOverview = { ...defaultBookingStatus };
+    vehicleBookingGroup.forEach(item => {
+      const key = item.status === 'IN USE' ? 'IN_USE' : item.status;
+      if (vehicleBookingOverview.hasOwnProperty(key)) {
+        vehicleBookingOverview[key] = item._count.status;
+      }
+    });
+
+    const totalRoomBookings = Object.values(roomBookingOverview).reduce((a, b) => a + b, 0);
+    const totalVehicleBookings = Object.values(vehicleBookingOverview).reduce((a, b) => a + b, 0);
+    const totalBookings = totalRoomBookings + totalVehicleBookings;
+    
+    const totalPending = roomBookingOverview.PENDING + vehicleBookingOverview.PENDING;
+    const totalApproved = roomBookingOverview.APPROVED + vehicleBookingOverview.APPROVED;
+    const totalInUse = roomBookingOverview.IN_USE + vehicleBookingOverview.IN_USE;
+
+    const recentRoomBookings = await prisma.roomBooking.findMany({
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { include: { employee: true } },
+        room: true
+      }
+    });
+
+    const recentVehicleBookings = await prisma.vehicleBooking.findMany({
+      take: 5,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { include: { employee: true } },
+        vehicle: true
+      }
+    });
+
+    const formattedRecent = [
+      ...recentRoomBookings.map(b => ({
+        id: `ROOM_${b.id}`,
+        bookerName: b.user?.employee?.fullName || 'ไม่ระบุชื่อ',
+        type: 'ห้องประชุม',
+        itemName: b.room?.roomName || 'ห้องประชุม',
+        date: b.startDatetime,
+        status: b.status === 'IN USE' ? 'IN_USE' : b.status,
+        createdAt: b.createdAt
+      })),
+      ...recentVehicleBookings.map(b => ({
+        id: `VEHICLE_${b.id}`,
+        bookerName: b.user?.employee?.fullName || 'ไม่ระบุชื่อ',
+        type: 'ยานพาหนะ',
+        itemName: b.vehicle?.plateNumber 
+          ? `${b.vehicle.vehicleName || b.vehicle.brand} (${b.vehicle.plateNumber})` 
+          : (b.vehicle?.vehicleName || 'รถยนต์'),
+        date: b.startDatetime,
+        status: b.status === 'IN USE' ? 'IN_USE' : b.status,
+        createdAt: b.createdAt
+      }))
+    ]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 5);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        summary: {
+          totalEmployees,
+          totalVehicles,
+          totalRooms,
+          totalBookings,
+          totalPending,
+          totalApproved,
+          totalInUse
+        },
+        vehicleOverview,
+        bookingOverview: {
+          room: roomBookingOverview,
+          vehicle: vehicleBookingOverview
+        },
+        recentBookings: formattedRecent
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    return res.status(500).json({ success: false, error: 'ไม่สามารถดึงข้อมูล Dashboard ได้' });
+  }
+};
+
 module.exports = {
   // ... (export เดิมที่มีอยู่) ...
   getAdminDashboard,
   getUserDashboard,
   getSecurityDashboard,
   exportReport,
-  getAggregatedBookings
+  getAggregatedBookings,
+  getDashboardStats
 };

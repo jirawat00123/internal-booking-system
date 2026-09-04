@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,6 +7,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'editvehicle_successpage.dart';
 import 'vehicle_page.dart'; // ดึง Model ของ Vehicle มาใช้
@@ -70,9 +74,9 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
     currentStatus = widget.vehicle.status;
     passengerCount = widget.vehicle.seats;
 
-    if (widget.vehicle.actUploadUrl != null &&
-        widget.vehicle.actUploadUrl!.isNotEmpty) {
-      _docFileName = widget.vehicle.actUploadUrl!.split('/').last;
+    final String? actUrl = widget.vehicle.actUploadUrl;
+    if (actUrl != null && actUrl.isNotEmpty) {
+      _docFileName = actUrl.split('/').last;
     }
   }
 
@@ -113,7 +117,7 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
   Future<void> _pickDocFile() async {
     FilePickerResult? result = await FilePicker.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'png'],
+      allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png'],
       withData: kIsWeb,
     );
 
@@ -124,6 +128,57 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
         _docFileName = result.files.single.name;
       });
     }
+  }
+
+  bool get _hasActFile =>
+      _pickedDocFile != null ||
+      _docFilePath != null ||
+      (widget.vehicle.actUploadUrl != null &&
+          widget.vehicle.actUploadUrl!.isNotEmpty);
+
+  IconData _getFileIcon(String? fileName) {
+    if (fileName == null) return Icons.upload_file;
+    final name = fileName.toLowerCase();
+    if (name.endsWith('.pdf')) return Icons.picture_as_pdf;
+    if (name.endsWith('.jpg') ||
+        name.endsWith('.jpeg') ||
+        name.endsWith('.png')) {
+      return Icons.image;
+    }
+    return Icons.insert_drive_file;
+  }
+
+  Color _getFileIconColor(String? fileName) {
+    if (fileName == null) return Colors.grey;
+    final name = fileName.toLowerCase();
+    if (name.endsWith('.pdf')) return Colors.red;
+    if (name.endsWith('.jpg') ||
+        name.endsWith('.jpeg') ||
+        name.endsWith('.png')) {
+      return Colors.blue;
+    }
+    return Colors.grey;
+  }
+
+  void _openActPreview() {
+    if (!_hasActFile) return;
+
+    final bool isLocal = _pickedDocFile != null || _docFilePath != null;
+    final File? localFile = _docFilePath != null ? File(_docFilePath!) : null;
+    final Uint8List? localBytes = kIsWeb ? _pickedDocFile?.bytes : null;
+    final String? networkUrl = isLocal ? null : widget.vehicle.actUploadUrl;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ActPreviewPage(
+          localFile: localFile,
+          localBytes: localBytes,
+          networkUrl: networkUrl,
+          fileName: _docFileName ?? 'document.pdf',
+        ),
+      ),
+    );
   }
 
   // 🚀 ฟังก์ชันยิง API อัปเดตข้อมูลรถยนต์ (PUT)
@@ -194,28 +249,29 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
 
       // 📸 กรณีผู้ใช้อัปโหลดรูปใหม่ (ถ้าไม่มีก็จะปล่อยว่างไว้ หลังบ้านจะใช้รูปเก่า)
       if (_newVehicleImage != null) {
-        final safeFileName =
-            'vehicle_${widget.vehicle.id}_${DateTime.now().millisecondsSinceEpoch}.png';
-
         if (kIsWeb) {
           final bytes = await _newVehicleImage!.readAsBytes();
+
+          // ตรวจสอบและบังคับนามสกุลไฟล์บน Web
+          String finalFileName = _newVehicleImage!.name;
+          String lowerName = finalFileName.toLowerCase();
+          if (!lowerName.endsWith('.png') &&
+              !lowerName.endsWith('.jpg') &&
+              !lowerName.endsWith('.jpeg') &&
+              !lowerName.endsWith('.webp')) {
+            finalFileName = 'vehicle_image.png';
+          }
 
           request.files.add(
             http.MultipartFile.fromBytes(
               'image',
               bytes,
-              filename: safeFileName,
-              contentType: MediaType('image', 'png'),
+              filename: finalFileName,
             ),
           );
         } else {
           request.files.add(
-            await http.MultipartFile.fromPath(
-              'image',
-              _newVehicleImage!.path,
-              filename: safeFileName,
-              contentType: MediaType('image', 'png'),
-            ),
+            await http.MultipartFile.fromPath('image', _newVehicleImage!.path),
           );
         }
       }
@@ -793,15 +849,11 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
                               child: Row(
                                 children: [
                                   Icon(
-                                    _docFileName != null
-                                        ? Icons.check_circle
-                                        : Icons.upload_file,
-                                    color: _docFileName != null
-                                        ? Colors.green
-                                        : Colors.grey,
+                                    _getFileIcon(_docFileName),
+                                    color: _getFileIconColor(_docFileName),
                                     size: 24,
                                   ),
-                                  const SizedBox(width: 12),
+                                  const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       _docFileName ?? 'ยังไม่ได้เลือกไฟล์',
@@ -810,6 +862,9 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
                                             ? Colors.black87
                                             : Colors.grey.shade600,
                                         fontSize: 12,
+                                        fontWeight: _docFileName != null
+                                            ? FontWeight.w500
+                                            : FontWeight.normal,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -819,13 +874,53 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          if (_hasActFile) ...[
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: _openActPreview,
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 14,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: const Color(0xFF009CB4),
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
+                                  color: const Color(0xFFE5F5F7),
+                                ),
+                                alignment: Alignment.center,
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.remove_red_eye_outlined,
+                                      size: 18,
+                                      color: Color(0xFF009CB4),
+                                    ),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'ดูเอกสาร',
+                                      style: TextStyle(
+                                        color: Color(0xFF009CB4),
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 8),
                           InkWell(
                             onTap: _pickDocFile,
                             borderRadius: BorderRadius.circular(10),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
+                                horizontal: 12,
                                 vertical: 14,
                               ),
                               decoration: BoxDecoration(
@@ -836,11 +931,11 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
                                 color: const Color(0xFFE5F5F7),
                               ),
                               alignment: Alignment.center,
-                              child: const Text(
-                                'เลือกไฟล์',
-                                style: TextStyle(
+                              child: Text(
+                                _hasActFile ? 'เปลี่ยนไฟล์' : 'เลือกไฟล์',
+                                style: const TextStyle(
                                   color: Color(0xFF009CB4),
-                                  fontSize: 14,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -975,5 +1070,317 @@ class _EditVehiclePageState extends State<EditVehiclePage> {
         child: Icon(icon, size: 16, color: const Color(0xFF75BBE1)),
       ),
     );
+  }
+}
+
+class ActPreviewPage extends StatefulWidget {
+  final File? localFile;
+  final Uint8List? localBytes;
+  final String? networkUrl;
+  final String fileName;
+
+  const ActPreviewPage({
+    super.key,
+    this.localFile,
+    this.localBytes,
+    this.networkUrl,
+    required this.fileName,
+  });
+
+  @override
+  State<ActPreviewPage> createState() => _ActPreviewPageState();
+}
+
+class _ActPreviewPageState extends State<ActPreviewPage> {
+  String? _localPdfPath;
+  bool _isLoadingPdf = false;
+  String? _pdfError;
+
+  bool get isPdf => widget.fileName.toLowerCase().endsWith('.pdf');
+  bool get isImage {
+    final lower = widget.fileName.toLowerCase();
+    return lower.endsWith('.png') ||
+        lower.endsWith('.jpg') ||
+        lower.endsWith('.jpeg');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (isPdf && !kIsWeb) {
+      _preparePdfFile();
+    }
+  }
+
+  Future<void> _preparePdfFile() async {
+    if (widget.localFile != null) {
+      setState(() {
+        _localPdfPath = widget.localFile!.path;
+      });
+      return;
+    }
+
+    if (widget.networkUrl != null && widget.networkUrl!.isNotEmpty) {
+      setState(() {
+        _isLoadingPdf = true;
+      });
+      try {
+        final baseUrl = kIsWeb
+            ? 'https://192.168.88.25:3002'
+            : 'https://192.168.88.25:3002';
+        final fullUrl = widget.networkUrl!.startsWith('http')
+            ? widget.networkUrl!
+            : '$baseUrl${widget.networkUrl}';
+
+        final response = await http.get(Uri.parse(fullUrl));
+        if (response.statusCode == 200) {
+          final dir = await getTemporaryDirectory();
+          final tempFile = File(
+            '${dir.path}/${DateTime.now().millisecondsSinceEpoch}_${widget.fileName}',
+          );
+          await tempFile.writeAsBytes(response.bodyBytes);
+          if (mounted) {
+            setState(() {
+              _localPdfPath = tempFile.path;
+              _isLoadingPdf = false;
+            });
+          }
+        } else {
+          throw Exception(
+            'ไม่สามารถดาวน์โหลดไฟล์ได้ (Code: ${response.statusCode})',
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _pdfError = e.toString();
+            _isLoadingPdf = false;
+          });
+        }
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final baseUrl = kIsWeb
+        ? 'https://192.168.88.25:3002'
+        : 'https://192.168.88.25:3002';
+
+    String? fullNetworkUrl;
+    if (widget.networkUrl != null && widget.networkUrl!.isNotEmpty) {
+      fullNetworkUrl = widget.networkUrl!.startsWith('http')
+          ? widget.networkUrl
+          : '$baseUrl${widget.networkUrl}';
+    }
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7FA),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF003E75),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'พรีวิวเอกสาร พ.ร.บ.',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
+        elevation: 0,
+      ),
+      body: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            color: Colors.white,
+            child: Row(
+              children: [
+                Icon(
+                  isPdf ? Icons.picture_as_pdf : Icons.image,
+                  color: isPdf ? Colors.red : Colors.blue,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.fileName,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF003E75),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, thickness: 1),
+          Expanded(child: _buildBodyContent(fullNetworkUrl)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBodyContent(String? fullNetworkUrl) {
+    if (isPdf) {
+      if (kIsWeb) {
+        return Center(
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.picture_as_pdf, size: 80, color: Colors.red),
+                const SizedBox(height: 16),
+                Text(
+                  widget.fileName,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF003E75),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                if (fullNetworkUrl != null)
+                  ElevatedButton.icon(
+                    onPressed: () async {
+                      final uri = Uri.parse(fullNetworkUrl);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.open_in_new, color: Colors.white),
+                    label: const Text(
+                      'เปิดดูไฟล์ PDF ในแท็บใหม่',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF009CB4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  )
+                else
+                  const Text(
+                    'ไฟล์ PDF ในเครื่อง (Web ไม่รองรับการแสดงผล PDF แบบ Offline)',
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+              ],
+            ),
+          ),
+        );
+      }
+
+      if (_isLoadingPdf) {
+        return const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: Color(0xFF003E75)),
+              SizedBox(height: 12),
+              Text(
+                'กำลังโหลดเอกสาร PDF...',
+                style: TextStyle(color: Color(0xFF003E75)),
+              ),
+            ],
+          ),
+        );
+      }
+      if (_pdfError != null) {
+        return Center(
+          child: Text(
+            'เกิดข้อผิดพลาด: $_pdfError',
+            style: const TextStyle(color: Colors.red),
+          ),
+        );
+      }
+      if (_localPdfPath != null) {
+        return PDFView(
+          filePath: _localPdfPath!,
+          enableSwipe: true,
+          swipeHorizontal: false,
+          autoSpacing: true,
+          pageFling: true,
+        );
+      }
+    }
+
+    if (isImage) {
+      if (kIsWeb && widget.localBytes != null) {
+        return InteractiveViewer(
+          child: Center(
+            child: Image.memory(widget.localBytes!, fit: BoxFit.contain),
+          ),
+        );
+      }
+      if (widget.localFile != null) {
+        return InteractiveViewer(
+          child: Center(
+            child: Image.file(widget.localFile!, fit: BoxFit.contain),
+          ),
+        );
+      }
+      if (fullNetworkUrl != null) {
+        return InteractiveViewer(
+          child: Center(
+            child: Image.network(
+              fullNetworkUrl,
+              fit: BoxFit.contain,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return const CircularProgressIndicator(
+                  color: Color(0xFF003E75),
+                );
+              },
+              errorBuilder: (context, error, stackTrace) => const Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.broken_image, size: 60, color: Colors.grey),
+                  SizedBox(height: 8),
+                  Text(
+                    'ไม่สามารถโหลดรูปภาพได้',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return const Center(child: Text('ไม่รองรับการแสดงผลไฟล์นี้'));
   }
 }

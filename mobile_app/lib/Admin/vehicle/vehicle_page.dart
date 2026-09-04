@@ -53,31 +53,155 @@ class Vehicle {
   });
 
   factory Vehicle.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> data = (json['vehicle'] is Map<String, dynamic>)
+        ? json['vehicle']
+        : (json['data'] is Map<String, dynamic> ? json['data'] : json);
+
+    final dynamic id = data['id'] ?? json['id'];
+
+    String name =
+        (data['vehicleName'] ??
+                data['vehicle_name'] ??
+                data['name'] ??
+                json['vehicleName'] ??
+                json['vehicle_name'] ??
+                json['name'] ??
+                '')
+            .toString()
+            .trim();
+
+    if (name.isEmpty) {
+      final b = (data['brand'] ?? json['brand'] ?? '').toString().trim();
+      final m = (data['model'] ?? json['model'] ?? '').toString().trim();
+      name = '$b $m'.trim();
+    }
+    if (name.isEmpty) {
+      name =
+          (data['plateNumber'] ??
+                  data['license_plate'] ??
+                  data['plate'] ??
+                  json['plateNumber'] ??
+                  json['license_plate'] ??
+                  json['plate'] ??
+                  '')
+              .toString()
+              .trim();
+    }
+    if (name.isEmpty) {
+      name = 'รถยนต์ ID ${id ?? ''}'.trim();
+    }
+
+    String? img =
+        data['uploadUrl'] ??
+        data['upload_url'] ??
+        data['imageUrl'] ??
+        data['image_url'] ??
+        data['imagePath'] ??
+        data['image_path'] ??
+        data['image'] ??
+        data['photo'] ??
+        json['uploadUrl'] ??
+        json['upload_url'] ??
+        json['imageUrl'] ??
+        json['image_url'] ??
+        json['imagePath'] ??
+        json['image_path'] ??
+        json['image'] ??
+        json['photo'];
+
+    String? actDocNum;
+    String? actIssueDate;
+    String? actExpDate;
+    String? actUrl;
+
+    final docsList = data['documents'] ?? json['documents'];
+    if (docsList is List && docsList.isNotEmpty) {
+      final actDoc = docsList.firstWhere(
+        (doc) =>
+            doc is Map &&
+            doc['documentType'] != null &&
+            (doc['documentType']['name'] == 'พ.ร.บ.' ||
+                doc['documentType']['name'] == 'ACT' ||
+                doc['documentType']['name'] == 'พรบ.' ||
+                doc['documentType']['name'] == 'พรบ'),
+        orElse: () => null,
+      );
+
+      if (actDoc != null) {
+        actDocNum = (actDoc['documentNumber'] ?? actDoc['document_number'])
+            ?.toString();
+        actIssueDate = (actDoc['issueDate'] ?? actDoc['issue_date'])
+            ?.toString();
+        actExpDate = (actDoc['expiryDate'] ?? actDoc['expiry_date'])
+            ?.toString();
+        actUrl =
+            (actDoc['uploadUrl'] ??
+                    actDoc['upload_url'] ??
+                    actDoc['filePath'] ??
+                    actDoc['file_path'] ??
+                    actDoc['url'] ??
+                    actDoc['act_upload_url'] ??
+                    actDoc['actUploadUrl'])
+                ?.toString();
+      }
+    }
+
     return Vehicle(
-      id: json['id'],
-      vehicleName:
-          json['vehicleName'] ??
-          json['vehicle_name'] ??
-          json['name'] ??
-          '${json['brand'] ?? ''} ${json['model'] ?? ''}'.trim(),
+      id: id,
+      vehicleName: name,
       plate:
-          json['plateNumber'] ?? json['license_plate'] ?? json['plate'] ?? '-',
-      province: json['province'],
-      brand: json['brand'] ?? '-',
-      model: json['model'] ?? '-',
-      seats: json['seats'] != null
-          ? int.tryParse(json['seats'].toString()) ?? 4
+          (data['plateNumber'] ??
+                  data['license_plate'] ??
+                  data['plate'] ??
+                  json['plateNumber'] ??
+                  json['license_plate'] ??
+                  json['plate'] ??
+                  '-')
+              .toString(),
+      province: (data['province'] ?? json['province'])?.toString(),
+      brand: (data['brand'] ?? json['brand'] ?? '-').toString(),
+      model: (data['model'] ?? json['model'] ?? '-').toString(),
+      seats: (data['seats'] ?? json['seats']) != null
+          ? int.tryParse((data['seats'] ?? json['seats']).toString()) ?? 4
           : 4,
-      status: json['status'] ?? 'AVAILABLE',
-      uploadUrl: json['uploadUrl'] ?? json['upload_url'] ?? json['imagePath'],
-      isDeleted: json['isDeleted'] ?? json['is_deleted'] ?? false,
-      type: json['type'] ?? 'รถยนต์',
-      hasFutureBooking: json['hasFutureBooking'] ?? false,
+      status: (data['status'] ?? json['status'] ?? 'AVAILABLE').toString(),
+      uploadUrl: img?.toString(),
+      isDeleted:
+          data['isDeleted'] == true ||
+          data['is_deleted'] == true ||
+          json['isDeleted'] == true ||
+          json['is_deleted'] == true,
+      type: (data['type'] ?? json['type'] ?? 'รถยนต์').toString(),
+      hasFutureBooking:
+          data['hasFutureBooking'] == true || json['hasFutureBooking'] == true,
       actDocumentNumber:
-          json['actDocumentNumber'] ?? json['act_document_number'],
-      actIssueDate: json['actIssueDate'] ?? json['act_issue_date'],
-      actExpiryDate: json['actExpiryDate'] ?? json['act_expiry_date'],
-      actUploadUrl: json['actUploadUrl'] ?? json['act_upload_url'],
+          actDocNum ??
+          (data['actDocumentNumber'] ??
+                  data['act_document_number'] ??
+                  json['actDocumentNumber'] ??
+                  json['act_document_number'])
+              ?.toString(),
+      actIssueDate:
+          actIssueDate ??
+          (data['actIssueDate'] ??
+                  data['act_issue_date'] ??
+                  json['actIssueDate'] ??
+                  json['act_issue_date'])
+              ?.toString(),
+      actExpiryDate:
+          actExpDate ??
+          (data['actExpiryDate'] ??
+                  data['act_expiry_date'] ??
+                  json['actExpiryDate'] ??
+                  json['act_expiry_date'])
+              ?.toString(),
+      actUploadUrl:
+          actUrl ??
+          (data['actUploadUrl'] ??
+                  data['act_upload_url'] ??
+                  json['actUploadUrl'] ??
+                  json['act_upload_url'])
+              ?.toString(),
     );
   }
 
@@ -171,15 +295,23 @@ class _VehiclePageState extends State<VehiclePage> {
       final responses = await Future.wait([vehicleFuture, bookingFuture]);
 
       if (responses[0].statusCode == 200) {
+        debugPrint('📦 VEHICLE API RESPONSE: ${responses[0].body}');
         final decodedData = jsonDecode(responses[0].body);
         List<dynamic> vehicleData = [];
 
-        if (decodedData['success'] == true) {
-          vehicleData = decodedData['data'];
-        } else if (decodedData is List) {
+        if (decodedData is List) {
           vehicleData = decodedData;
-        } else if (decodedData is Map && decodedData.containsKey('data')) {
-          vehicleData = decodedData['data'];
+        } else if (decodedData is Map) {
+          if (decodedData['data'] is List) {
+            vehicleData = decodedData['data'];
+          } else if (decodedData['vehicles'] is List) {
+            vehicleData = decodedData['vehicles'];
+          } else if (decodedData['success'] == true &&
+              decodedData['data'] != null) {
+            vehicleData = decodedData['data'] is List
+                ? decodedData['data']
+                : [];
+          }
         }
 
         List<Vehicle> fetchedList = vehicleData.map((json) {
@@ -297,13 +429,12 @@ class _VehiclePageState extends State<VehiclePage> {
     String newStatus,
   ) async {
     final baseUrl = AuthService.baseUrl;
-    final url = Uri.parse('$baseUrl/api/vehicles/${vehicle.id}');
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? '';
+      final token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
 
-      // 🟢 ปรับไปใช้ PATCH ตาม Backend ของเรา
       final patchUrl = Uri.parse('$baseUrl/api/vehicles/${vehicle.id}/status');
       final response = await http.patch(
         patchUrl,
@@ -563,7 +694,8 @@ class _VehiclePageState extends State<VehiclePage> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('token') ?? '';
+      final token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
 
       final response = await http.delete(
         url,
@@ -593,8 +725,11 @@ class _VehiclePageState extends State<VehiclePage> {
 
   String _getFullImageUrl(String? path) {
     if (path == null || path.isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path;
+    }
     final baseUrl = AuthService.baseUrl;
-    return '$baseUrl$path';
+    return path.startsWith('/') ? '$baseUrl$path' : '$baseUrl/$path';
   }
 
   void _showCannotDeleteDialog(BuildContext context) {
@@ -1214,11 +1349,8 @@ class _VehiclePageState extends State<VehiclePage> {
                         const SizedBox(width: 8),
                         ElevatedButton(
                           onPressed: () {
-                            if (vehicle.hasFutureBooking) {
-                              _showCannotDeleteDialog(context);
-                            } else {
-                              _showDeleteConfirmDialog(context, vehicle);
-                            }
+                            // 🟢 ปิดการเช็ก hasFutureBooking เพื่อให้เรียกแสดงหน้าต่างยืนยันลบได้ทันที (Backend จะยกเลิกการจองให้อัตโนมัติ)
+                            _showDeleteConfirmDialog(context, vehicle);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFB20000),

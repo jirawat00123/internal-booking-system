@@ -41,10 +41,8 @@ exports.getAllUsers = async (req, res) => {
     if (department) {
       whereCondition.employee = {
         ...whereCondition.employee,
-        position: {
-          department: {
-            name: { contains: department, mode: 'insensitive' } 
-          }
+        department: {
+          departmentName: { contains: department, mode: 'insensitive' } 
         }
       };
     }
@@ -55,6 +53,7 @@ exports.getAllUsers = async (req, res) => {
         role: true,
         employee: {
           include: {
+            department: true,
             position: { include: { department: true } }
           }
         }
@@ -77,12 +76,19 @@ exports.getAllUsers = async (req, res) => {
 exports.getUserById = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = parseInt(id, 10);
+
+    if (!userId || isNaN(userId)) {
+      return res.status(400).json({ success: false, error: "รหัสผู้ใช้งานไม่ถูกต้อง" });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { id: parseInt(id, 10) },
+      where: { id: userId },
       include: {
         role: true,
         employee: {
           include: {
+            department: true,
             position: { include: { department: true } }
           }
         }
@@ -107,10 +113,10 @@ exports.createUser = async (req, res) => {
   try {
     const { employeeCode, fullName, departmentId, positionId, roleId, active } = req.body;
 
-    if (!employeeCode || !fullName || !departmentId || !positionId) {
+    if (!employeeCode || !fullName || !departmentId) {
       return res.status(400).json({ 
         success: false, 
-        error: "กรุณากรอกข้อมูลพนักงาน (รหัสพนักงาน, ชื่อ-นามสกุล, แผนก, ตำแหน่ง) ให้ครบถ้วน" 
+        error: "กรุณากรอกข้อมูลพนักงาน (รหัสพนักงาน, ชื่อ-นามสกุล, แผนก) ให้ครบถ้วน" 
       });
     }
 
@@ -136,7 +142,7 @@ exports.createUser = async (req, res) => {
             employeeCode: cleanEmpCode,
             fullName: String(fullName).trim(),
             departmentId: parseInt(departmentId, 10),
-            positionId: parseInt(positionId, 10),
+            positionId: positionId ? parseInt(positionId, 10) : null,
             isActive: active !== undefined ? Boolean(active) : true
           }
         });
@@ -155,6 +161,7 @@ exports.createUser = async (req, res) => {
           role: true,
           employee: {
             include: {
+              department: true,
               position: { include: { department: true } }
             }
           }
@@ -226,7 +233,7 @@ exports.updateUser = async (req, res) => {
     if (employeeCode) employeeData.employeeCode = String(employeeCode).trim();
     if (fullName) employeeData.fullName = String(fullName).trim();
     if (departmentId) employeeData.departmentId = parseInt(departmentId, 10);
-    if (positionId) employeeData.positionId = parseInt(positionId, 10);
+    if (positionId !== undefined) employeeData.positionId = positionId ? parseInt(positionId, 10) : null;
 
     if (Object.keys(employeeData).length > 0) {
       dataToUpdate.employee = {
@@ -243,7 +250,15 @@ exports.updateUser = async (req, res) => {
     const updatedUser = await prisma.user.update({
       where: { id: parseInt(id) },
       data: dataToUpdate,
-      include: { role: true, employee: true }
+      include: {
+        role: true,
+        employee: {
+          include: {
+            department: true,
+            position: { include: { department: true } }
+          }
+        }
+      }
     });
 
     // 🟢 บันทึก AuditLog แยกตามประเภท (Change Role, Activate, Deactivate, Update)
@@ -332,5 +347,57 @@ exports.deleteUser = async (req, res) => {
   } catch (error) {
     console.error('Delete User Error:', error);
     return res.status(500).json({ success: false, error: "ไม่สามารถลบบัญชีได้ (อาจมีข้อมูลอ้างอิงอยู่)" });
+  }
+};
+
+// ==========================================
+// 🔍 5. ค้นหาข้อมูลผู้ใช้งานสำหรับ Autocomplete (GET Search)
+// ==========================================
+exports.searchUsers = async (req, res) => {
+  try {
+    const { q } = req.query;
+    const rawKeyword = String(q || '').trim();
+
+    // 1. คืนค่า 200 พร้อม Array ว่างทันทีถ้าไม่มีคำค้นหาหรือคำค้นหาสั้นกว่า 2 ตัวอักษร
+    if (!rawKeyword || rawKeyword.length < 2) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
+    // 2. แยกคำค้นหาด้วยช่องว่าง เพื่อรองรับการพิมพ์ "ชื่อ นามสกุล"
+    const searchTerms = rawKeyword.split(/\s+/).filter(Boolean);
+
+    // 3. สร้างเงื่อนไขการค้นหาแบบยืดหยุ่น (ทุกคำที่พิมพ์ต้องปรากฏใน ชื่อ หรือ รหัสพนักงาน)
+    const searchConditions = searchTerms.map(term => ({
+      OR: [
+        { fullName: { contains: term, mode: 'insensitive' } },
+        { employeeCode: { contains: term, mode: 'insensitive' } }
+      ]
+    }));
+
+    const users = await prisma.user.findMany({
+      where: {
+        isDeleted: false,
+        employee: {
+          AND: searchConditions
+        }
+      },
+      take: 10,
+      include: {
+        employee: {
+          include: {
+            department: true,
+            position: { include: { department: true } }
+          }
+        }
+      }
+    });
+
+    const safeUsers = users.map(u => sanitizeUser(u));
+
+    // ส่งออกเป็น Response Format
+    return res.status(200).json({ success: true, data: safeUsers });
+  } catch (error) {
+    console.error('Search Users Error:', error);
+    return res.status(500).json({ success: false, error: "ไม่สามารถค้นหาข้อมูลผู้ใช้งานได้" });
   }
 };

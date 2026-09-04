@@ -30,18 +30,19 @@ model Position {
 }
 
 model Employee {
-  id           Int        @id @default(autoincrement())
-  employeeCode String     @unique @map("employee_code")
-  fullName     String     @map("full_name")
-  positionId   Int        @map("position_id")
-  departmentId Int        @map("departments_id")
-  isActive     Boolean    @default(true) @map("is_active")
-  avatarUrl    String?    @map("avatar_url")
-  email        String?    @unique @map("email")
-  phone        String?    @map("phone")
-  department   Department @relation(fields: [departmentId], references: [id])
-  position     Position   @relation(fields: [positionId], references: [id])
+  id           Int                        @id @default(autoincrement())
+  employeeCode String                     @unique @map("employee_code")
+  fullName     String                     @map("full_name")
+  positionId   Int?                       @map("position_id")
+  departmentId Int                        @map("departments_id")
+  isActive     Boolean                    @default(true) @map("is_active")
+  avatarUrl    String?                    @map("avatar_url")
+  email        String?                    @unique @map("email")
+  phone        String?                    @map("phone")
+  department   Department                 @relation(fields: [departmentId], references: [id])
+  position     Position?                  @relation(fields: [positionId], references: [id])
   users        User[]
+  passengers   VehicleBookingPassenger[]
 
   @@index([positionId])
   @@map("employees")
@@ -135,6 +136,7 @@ model RoomBooking {
   startDatetime DateTime      @map("start_datetime")
   updatedAt     DateTime      @updatedAt @map("updated_at")
   userId        Int           @map("user_id")
+  attendeeCount Int?          @map("attendee_count")
   status        BookingStatus @default(PENDING)
   bookingCode   String?       @unique @default(uuid()) @map("booking_code")
   attachments   Attachment[]
@@ -174,22 +176,25 @@ model Vehicle {
 }
 
 model VehicleBooking {
-  id            Int           @id @default(autoincrement())
-  vehicleId     Int           @map("vehicle_id")
-  createdAt     DateTime      @default(now()) @map("created_at")
-  destination   String
-  purpose       String
-  startDatetime DateTime      @map("start_datetime")
-  endDatetime   DateTime      @map("return_date")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-  passengers    Int           @default(1) @map("passengers")
-  userId        Int           @map("user_id")
-  bookingCode   String?       @unique @default(uuid()) @map("booking_code")
-  status        BookingStatus @default(PENDING)
-  attachments   Attachment[]
-  user          User          @relation("BookingUser", fields: [userId], references: [id])
-  vehicle       Vehicle       @relation(fields: [vehicleId], references: [id])
-  vehicleLogs   VehicleLog?
+  id               Int                       @id @default(autoincrement())
+  vehicleId        Int                       @map("vehicle_id")
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  destination      String
+  purpose          String
+  startDatetime    DateTime                  @map("start_datetime")
+  endDatetime      DateTime                  @map("return_date")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+  passengers       Int                       @default(1) @map("passengers")
+  driverType       String?                   @default("ขับขี่เอง") @map("driver_type")
+  driverLicenseUrl String?                   @map("driver_license_url")
+  userId           Int                       @map("user_id")
+  bookingCode      String?                   @unique @default(uuid()) @map("booking_code")
+  status           BookingStatus             @default(PENDING)
+  attachments      Attachment[]
+  user             User                      @relation("BookingUser", fields: [userId], references: [id])
+  vehicle          Vehicle                   @relation(fields: [vehicleId], references: [id])
+  vehicleLogs      VehicleLog?
+  passengerDetails VehicleBookingPassenger[]
 
   @@index([vehicleId])
   @@index([userId])
@@ -369,4 +374,18 @@ enum NotificationType {
   SYSTEM
   VEHICLE
   ROOM
+}
+
+model VehicleBookingPassenger {
+  id         Int            @id @default(autoincrement())
+  bookingId  Int            @map("booking_id")
+  employeeId Int?           @map("employee_id")
+  fullName   String         @map("full_name")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  booking    VehicleBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  employee   Employee?      @relation(fields: [employeeId], references: [id])
+
+  @@index([bookingId])
+  @@index([employeeId])
+  @@map("vehicle_booking_passengers")
 }

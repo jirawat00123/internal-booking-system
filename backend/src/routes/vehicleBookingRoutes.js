@@ -14,13 +14,13 @@ const upload = require('../middlewares/uploadMiddleware'); // 🟢 เพิ่�
 router.post('/check-availability', authenticateToken, vehicleBookingController.checkAvailability);
 
 // API สำหรับสร้างการจองรถยนต์
-router.post('/', authenticateToken, vehicleBookingController.createBooking);
+router.post('/', authenticateToken, upload.any(), vehicleBookingController.createBooking);
 
 // API สำหรับดึงข้อมูลประวัติการจองของตัวเอง (⚠️ ต้องวางก่อน /:id เพื่อไม่ให้ Express สับสน Route)
 router.get('/history', authenticateToken, vehicleBookingController.getUserBookings);
 
 // API สำหรับดึงข้อมูลประวัติการจองรถยนต์ทั้งหมด (มีการดักสิทธิ์ ADMIN ไว้ใน Controller แล้ว)
-router.get('/', authenticateToken, vehicleBookingController.getBookingHistory);
+router.get('/', authenticateToken, vehicleBookingController.getBookings);
 
 // API สำหรับดึงรายละเอียดการจองรถยนต์แบบรายตัว
 router.get('/:id', authenticateToken, vehicleBookingController.getBookingById);

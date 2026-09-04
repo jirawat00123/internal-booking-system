@@ -84,14 +84,20 @@ router.get('/employees', async (req, res) => {
     const { departmentId } = req.query;
     const whereClause = {};
 
-    if (departmentId && departmentId !== 'undefined' && departmentId !== 'null') {
-      const parsedId = !isNaN(Number(departmentId)) ? Number(departmentId) : departmentId;
-      whereClause.position = { departmentId: parsedId };
+    if (departmentId && departmentId !== 'undefined' && departmentId !== 'null' && departmentId !== 'all' && departmentId !== '') {
+      const parsedId = parseInt(departmentId, 10);
+      if (!isNaN(parsedId)) {
+        whereClause.OR = [
+          { departmentId: parsedId },
+          { position: { departmentId: parsedId } }
+        ];
+      }
     }
 
     const employees = await prisma.employee.findMany({
       where: whereClause,
       include: {
+        department: true,
         position: { include: { department: true } },
         users: { include: { role: true } }
       },
@@ -104,8 +110,8 @@ router.get('/employees', async (req, res) => {
         id: emp.id,
         employeeCode: emp.employeeCode,
         fullName: emp.fullName,
-        departmentId: emp.position?.departmentId,
-        departmentName: emp.position?.department?.departmentName || "ไม่ระบุแผนก",
+        departmentId: emp.departmentId || emp.position?.departmentId,
+        departmentName: emp.department?.departmentName || emp.position?.department?.departmentName || "ไม่ระบุแผนก",
         positionName: emp.position?.positionName || "ไม่ระบุตำแหน่ง",
         role: userAcc?.role?.name || "USER",
         active: userAcc?.active ?? true,
@@ -126,14 +132,17 @@ router.post('/employees', async (req, res) => {
   // 1. รับค่าจาก req.body ทั้งหมด (ห้าม Hardcode)
   const { employeeCode, fullName, departmentId, positionId, roleId, active } = req.body;
 
-  // 2. Validation: ตรวจสอบข้อมูลเบื้องต้น
-  if (!employeeCode || !fullName || !departmentId || !positionId || !roleId) {
-    return res.status(400).json({ success: false, error: 'กรุณาส่งข้อมูลให้ครบถ้วน (employeeCode, fullName, departmentId, positionId, roleId)' });
+  // 2. Validation: ตรวจสอบข้อมูลเบื้องต้น (ไม่ต้องบังคับ positionId)
+  if (!employeeCode || !fullName || !departmentId || !roleId) {
+    return res.status(400).json({ success: false, error: 'กรุณาส่งข้อมูลให้ครบถ้วน (employeeCode, fullName, departmentId, roleId)' });
   }
 
   try {
     const parsedDeptId = parseInt(departmentId, 10);
-    const parsedPosId = parseInt(positionId, 10);
+    // ดักจับกรณี Flutter ส่งค่า String 'null', 'undefined' หรือค่าว่าง ('') มาแทนที่จะเป็น null จริงๆ
+    const parsedPosId = (positionId && positionId !== 'null' && positionId !== 'undefined' && positionId !== '') 
+      ? parseInt(positionId, 10) 
+      : null;
     const parsedRoleId = parseInt(roleId, 10);
     // แปลงค่า active ให้เป็น Boolean (ถ้าไม่ได้ส่งมาให้ default เป็น true)
     const isActiveStatus = active !== undefined ? Boolean(active) : true;
@@ -145,15 +154,17 @@ router.post('/employees', async (req, res) => {
       return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลแผนก (Department) นี้ในระบบ' });
     }
 
-    // 3.2 เช็กว่า Position มีอยู่จริง
-    const posExists = await prisma.position.findUnique({ where: { id: parsedPosId } });
-    if (!posExists) {
-      return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลตำแหน่ง (Position) นี้ในระบบ' });
-    }
+    // 3.2 เช็กว่า Position มีอยู่จริง (หากส่ง positionId มา)
+    if (parsedPosId) {
+      const posExists = await prisma.position.findUnique({ where: { id: parsedPosId } });
+      if (!posExists) {
+        return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลตำแหน่ง (Position) นี้ในระบบ' });
+      }
 
-    // 3.3 เช็กว่า Position อยู่ใน Department นั้นจริง
-    if (posExists.departmentId !== parsedDeptId) {
-      return res.status(400).json({ success: false, error: 'ตำแหน่งที่เลือกไม่ได้สังกัดอยู่ในแผนกที่ระบุ' });
+      // 3.3 เช็กว่า Position อยู่ใน Department นั้นจริง
+      if (posExists.departmentId !== parsedDeptId) {
+        return res.status(400).json({ success: false, error: 'ตำแหน่งที่เลือกไม่ได้สังกัดอยู่ในแผนกที่ระบุ' });
+      }
     }
 
     // 3.4 เช็กว่า Role มีอยู่จริง
@@ -164,13 +175,13 @@ router.post('/employees', async (req, res) => {
 
     // 4. สร้างข้อมูลลง PostgreSQL ด้วย Prisma Transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 4.1 สร้าง Employee (ใส่ข้อมูลให้ครบตาม Schema)
+      // 4.1 สร้าง Employee (ใช้ relation connect เพื่อแก้ปัญหา PrismaClientValidationError)
       const newEmployee = await tx.employee.create({
         data: {
           employeeCode: employeeCode.trim(),
           fullName: fullName.trim(),
-          departmentId: parsedDeptId, // ✅ ใส่ค่า departmentId ที่ขาดหายไปแล้ว
-          positionId: parsedPosId,
+          department: { connect: { id: parsedDeptId } },
+          ...(parsedPosId ? { position: { connect: { id: parsedPosId } } } : {}),
           isActive: isActiveStatus,
         }
       });
@@ -232,22 +243,33 @@ router.put('/employees/:id', async (req, res) => {
         data: {
           ...(employeeCode && { employeeCode: employeeCode.trim() }),
           ...(fullName && { fullName: fullName.trim() }),
-          ...(positionId && { positionId: parseInt(positionId, 10) }),
-          ...(departmentId && { departmentId: parseInt(departmentId, 10) }),
+          // ดักจับค่าว่างหรือ string 'null' ป้องกัน Error จาก Prisma Connect
+          ...(positionId !== undefined && (positionId && positionId !== 'null' && positionId !== 'undefined' && positionId !== '' ? { position: { connect: { id: parseInt(positionId, 10) } } } : { position: { disconnect: true } })),
+          ...(departmentId !== undefined && (departmentId ? { department: { connect: { id: parseInt(departmentId, 10) } } } : {})),
           ...(isActive !== undefined && { isActive }),
         }
       });
 
-      if ((roleId || active !== undefined) && existingEmployee.users.length > 0) {
-        const userId = existingEmployee.users[0].id;
-        await tx.user.update({
-          where: { id: userId },
+      const parsedRoleId = roleId ? parseInt(roleId, 10) : undefined;
+      const userActiveStatus = active !== undefined ? Boolean(active) : (isActive !== undefined ? Boolean(isActive) : undefined);
+
+      if (existingEmployee.users.length > 0) {
+        await tx.user.updateMany({
+          where: { employeeId: employeeId },
           data: {
-            ...(roleId && { roleId: parseInt(roleId, 10) }),
-            ...(active !== undefined && { 
-              active: Boolean(active),
-              ...(Boolean(active) ? { failedLoginAttempts: 0, lockedUntil: null } : { currentSessionId: null }) // 🟢 หากเปิดใช้งานบัญชี ให้ปลดล็อคและรีเซ็ตจำนวนครั้งที่ผิด
+            ...(parsedRoleId && { roleId: parsedRoleId }),
+            ...(userActiveStatus !== undefined && { 
+              active: userActiveStatus,
+              ...(userActiveStatus ? { failedLoginAttempts: 0, lockedUntil: null } : { currentSessionId: null })
             })
+          }
+        });
+      } else if (parsedRoleId) {
+        await tx.user.create({
+          data: {
+            employeeId: employeeId,
+            roleId: parsedRoleId,
+            active: userActiveStatus ?? true
           }
         });
       }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import '../../Booking_vehicle/Vehicle_model.dart';
@@ -24,14 +25,16 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
 
   DateTime startDate = DateTime.now();
   DateTime endDate = DateTime.now().add(const Duration(days: 2));
-  TimeOfDay useTime = TimeOfDay.now(); // 👈 เพิ่มตัวแปรเก็บเวลา
+  TimeOfDay useTime = TimeOfDay.now();
 
   int passengerCount = 4;
+  final List<TextEditingController> passengerControllers = [];
 
   late VehicleModel selectedVehicle;
 
-  // 💡 ตัวแปรเก็บช่วงวันที่โดนจองไปแล้ว
   List<DateTimeRange> bookedDateRanges = [];
+
+  List<String> _allEmployeeNames = [];
 
   @override
   void initState() {
@@ -49,8 +52,69 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
           uploadUrl: '',
         );
 
-    // 💡 โหลดวันที่มีคนจองแล้วทันทีที่เปิดหน้านี้
+    _updatePassengerControllers();
     _fetchBookedDates();
+    _fetchEmployees();
+  }
+
+  @override
+  void dispose() {
+    destinationController.dispose();
+    for (var controller in passengerControllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _updatePassengerControllers() {
+    while (passengerControllers.length < passengerCount) {
+      passengerControllers.add(TextEditingController());
+    }
+    while (passengerControllers.length > passengerCount) {
+      passengerControllers.removeLast().dispose();
+    }
+  }
+
+  // ==========================================
+  // 📥 ฟังก์ชันดึงรายชื่อพนักงานทั้งหมดล่วงหน้า (ตามต้นแบบ user_page.dart)
+  // ==========================================
+  Future<void> _fetchEmployees() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String? token =
+          prefs.getString('token') ?? prefs.getString('accessToken');
+
+      final response = await http.get(
+        Uri.parse('${AuthService.baseUrl}/api/users'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null && token.isNotEmpty && token != 'undefined')
+            'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body['success'] == true && body['data'] != null) {
+          final List users = body['data'];
+          final List<String> names = users
+              .map<String>((u) {
+                final emp = u['employee'];
+                return emp != null ? (emp['fullName'] ?? '').toString() : '';
+              })
+              .where((name) => name.isNotEmpty)
+              .toList();
+
+          if (mounted) {
+            setState(() {
+              _allEmployeeNames = names;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      print('เกิดข้อผิดพลาดในการดึงรายชื่อพนักงาน: $e');
+    }
   }
 
   // ==========================================
@@ -65,7 +129,8 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
         Uri.parse('${AuthService.baseUrl}/api/vehicle-bookings'),
         headers: {
           'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
+          if (token != null && token.isNotEmpty && token != 'undefined')
+            'Authorization': 'Bearer $token',
         },
       );
 
@@ -178,6 +243,12 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
 
   void _onNextPressed() {
     if (_formKey.currentState!.validate()) {
+      // 🟢 กรองเฉพาะชื่อที่ไม่ว่างเปล่าก่อนส่งไปยังหน้าต่อไป
+      final List<String> passengerNames = passengerControllers
+          .map((controller) => controller.text.trim())
+          .where((name) => name.isNotEmpty)
+          .toList();
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -186,8 +257,10 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
             destination: destinationController.text,
             startDate: _formatDateThai(startDate),
             endDate: _formatDateThai(endDate),
-            timeRange: _formatTime(useTime), // 👈 ส่งเวลาที่เลือกไปยังหน้าต่อไป
-            passengerCount: passengerCount,
+            timeRange: _formatTime(useTime),
+            passengerCount:
+                passengerNames.length, // ปรับให้ตรงกับจำนวนจริงที่กรอก
+            passengerNames: passengerNames,
             driverType: 'ขับขี่เอง',
           ),
         ),
@@ -234,7 +307,14 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
     }
   }
 
-  // ลบฟังก์ชัน _selectTime ออกเนื่องจากยกเลิกการระบุเวลา
+  List<String> _searchEmployees(String query) {
+    final cleanQuery = query.trim().toLowerCase();
+    if (cleanQuery.isEmpty) return [];
+
+    return _allEmployeeNames
+        .where((name) => name.toLowerCase().contains(cleanQuery))
+        .toList();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -425,8 +505,12 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       _buildStepperBtn(Icons.remove, () {
-                                        if (passengerCount > 1)
-                                          setState(() => passengerCount--);
+                                        if (passengerCount > 1) {
+                                          setState(() {
+                                            passengerCount--;
+                                            _updatePassengerControllers();
+                                          });
+                                        }
                                       }),
                                       const SizedBox(width: 24),
                                       Row(
@@ -450,7 +534,10 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                                       ),
                                       const SizedBox(width: 24),
                                       _buildStepperBtn(Icons.add, () {
-                                        setState(() => passengerCount++);
+                                        setState(() {
+                                          passengerCount++;
+                                          _updatePassengerControllers();
+                                        });
                                       }),
                                     ],
                                   ),
@@ -458,6 +545,8 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                               ],
                             ),
                           ),
+                          const SizedBox(height: 24),
+                          _buildPassengerFields(),
                         ],
                       ),
                     ),
@@ -573,16 +662,18 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
   }
 
   Widget _buildStepLine({required bool isActive}) {
-    return Container(
-      margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
-      width: 80,
-      height: 2,
-      color: isActive ? const Color(0xFF009CB4) : const Color(0xFFE6EDF5),
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.only(top: 17, left: 4, right: 4),
+        height: 2,
+        color: isActive ? const Color(0xFF009CB4) : const Color(0xFFE6EDF5),
+      ),
     );
   }
 
   Widget _buildSelectedVehicleCard() {
     String imagePath = selectedVehicle.uploadUrl ?? '';
+    String fullImageUrl = AuthService.getImageUrl(imagePath);
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -601,70 +692,22 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(10),
-            child: imagePath.isNotEmpty
-                ? (imagePath.startsWith('/uploads')
-                      ? Image.network(
-                          '${AuthService.baseUrl}$imagePath',
-                          width: 100,
-                          height: 70,
-                          fit: BoxFit.cover,
-                          errorBuilder: (c, e, s) => Container(
-                            width: 100,
-                            height: 70,
-                            color: Colors.grey.shade200,
-                            child: const Icon(
-                              Icons.directions_car,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        )
-                      : imagePath.startsWith('assets/')
-                      ? Image.asset(
-                          imagePath,
-                          width: 100,
-                          height: 70,
-                          fit: BoxFit.cover,
-                          errorBuilder: (c, e, s) => Container(
-                            width: 100,
-                            height: 70,
-                            color: Colors.grey.shade200,
-                            child: const Icon(
-                              Icons.directions_car,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        )
-                      : (kIsWeb
-                            ? Image.network(
-                                imagePath,
-                                width: 100,
-                                height: 70,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => Container(
-                                  width: 100,
-                                  height: 70,
-                                  color: Colors.grey.shade200,
-                                  child: const Icon(
-                                    Icons.directions_car,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              )
-                            : Image.file(
-                                File(imagePath),
-                                width: 100,
-                                height: 70,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => Container(
-                                  width: 100,
-                                  height: 70,
-                                  color: Colors.grey.shade200,
-                                  child: const Icon(
-                                    Icons.directions_car,
-                                    color: Colors.grey,
-                                  ),
-                                ),
-                              )))
+            child: fullImageUrl.isNotEmpty
+                ? Image.network(
+                    fullImageUrl,
+                    width: 100,
+                    height: 70,
+                    fit: BoxFit.cover,
+                    errorBuilder: (c, e, s) => Container(
+                      width: 100,
+                      height: 70,
+                      color: Colors.grey.shade200,
+                      child: const Icon(
+                        Icons.directions_car,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  )
                 : Container(
                     width: 100,
                     height: 70,
@@ -769,6 +812,165 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPassengerFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel('รายชื่อผู้โดยสาร', isRequired: true),
+        const SizedBox(height: 12),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: passengerCount,
+          itemBuilder: (context, index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ผู้โดยสาร ${index + 1}',
+                    style: TextStyle(
+                      fontFamily: 'Kanit',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Autocomplete<String>(
+                    initialValue: TextEditingValue(
+                      text: passengerControllers[index].text,
+                    ),
+                    optionsBuilder: (TextEditingValue textEditingValue) {
+                      if (textEditingValue.text.trim().isEmpty) {
+                        return const Iterable<String>.empty();
+                      }
+                      return _searchEmployees(textEditingValue.text);
+                    },
+                    onSelected: (String selection) {
+                      passengerControllers[index].text = selection;
+                    },
+                    fieldViewBuilder:
+                        (context, controller, focusNode, onFieldSubmitted) {
+                          controller.addListener(() {
+                            passengerControllers[index].text = controller.text;
+                          });
+
+                          return TextFormField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            style: const TextStyle(
+                              fontFamily: 'Kanit',
+                              fontSize: 14,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'ชื่อ-นามสกุล',
+                              hintStyle: TextStyle(
+                                fontFamily: 'Kanit',
+                                color: Colors.grey.shade400,
+                                fontSize: 14,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(
+                                  color: Colors.grey.shade300,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFF009CB4),
+                                ),
+                              ),
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'กรุณากรอกชื่อ-นามสกุลผู้โดยสาร ${index + 1}';
+                              }
+                              return null;
+                            },
+                          );
+                        },
+                    optionsViewBuilder: (context, onSelected, options) {
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Material(
+                          elevation: 4,
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: MediaQuery.of(context).size.width - 80,
+                            constraints: const BoxConstraints(maxHeight: 200),
+                            color: Colors.white,
+                            child: ListView.builder(
+                              padding: EdgeInsets.zero,
+                              shrinkWrap: true,
+                              itemCount: options.length,
+                              itemBuilder:
+                                  (BuildContext context, int optIndex) {
+                                    final option = options.elementAt(optIndex);
+                                    return ListTile(
+                                      title: Text(
+                                        option,
+                                        style: const TextStyle(
+                                          fontFamily: 'Kanit',
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                      onTap: () {
+                                        onSelected(option);
+                                      },
+                                    );
+                                  },
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        OutlinedButton.icon(
+          onPressed: () {
+            setState(() {
+              passengerCount++;
+              _updatePassengerControllers();
+            });
+          },
+          icon: const Icon(Icons.add, color: Color(0xFF009CB4), size: 18),
+          label: const Text(
+            'เพิ่มผู้โดยสาร',
+            style: TextStyle(
+              fontFamily: 'Kanit',
+              color: Color(0xFF009CB4),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Color(0xFF009CB4)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            minimumSize: const Size(double.infinity, 44),
+          ),
+        ),
+      ],
     );
   }
 

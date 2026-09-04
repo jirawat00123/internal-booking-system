@@ -25,12 +25,13 @@ services:
       NODE_ENV: production
       PORT: 3001
       TZ: Asia/Bangkok
+      UPLOAD_DIR: /app/attachments
     env_file:
       - .env
     volumes:
       # 🟢 ผูกโฟลเดอร์ uploads ออกมาข้างนอก เพื่อให้รูปภาพ/ไฟล์ไม่หายเวลา Restart
       - ./uploads:/app/uploads
-      - "/volume1/Internal Booking System/Internal Booking System/attachments:/attachments"
+      - "/volume1/Internal Booking System/Internal Booking System/attachments:/app/attachments"
     depends_on:
       - db
 

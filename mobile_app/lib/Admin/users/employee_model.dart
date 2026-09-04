@@ -3,6 +3,7 @@ class Employee {
   final String id;
   final String employeeCode;
   final String fullName;
+  final String departmentId;
   final String departmentName;
   final String positionName;
   final String role;
@@ -12,6 +13,7 @@ class Employee {
     required this.id,
     required this.employeeCode,
     required this.fullName,
+    required this.departmentId,
     required this.departmentName,
     required this.positionName,
     required this.role,
@@ -19,7 +21,6 @@ class Employee {
   });
 
   factory Employee.fromJson(Map<String, dynamic> json) {
-    // 🟢 1. แยก Object พนักงาน, ตำแหน่ง และแผนก (รองรับข้อมูล Nested จาก Backend)
     final emp = json['employee'] is Map<String, dynamic>
         ? json['employee'] as Map<String, dynamic>
         : json;
@@ -28,20 +29,51 @@ class Employee {
         ? emp['position'] as Map<String, dynamic>
         : null;
 
-    final dept = pos != null && pos['department'] is Map<String, dynamic>
-        ? pos['department'] as Map<String, dynamic>
-        : (emp['department'] is Map<String, dynamic>
-              ? emp['department'] as Map<String, dynamic>
+    final dept = emp['department'] is Map<String, dynamic>
+        ? emp['department'] as Map<String, dynamic>
+        : (pos != null && pos['department'] is Map<String, dynamic>
+              ? pos['department'] as Map<String, dynamic>
               : null);
 
-    // 🟢 2. แปลง role เป็น String ป้องกัน Map เข้ามาแทรกจนเกิด TypeError
+    String deptId =
+        dept?['id']?.toString() ??
+        emp['departmentId']?.toString() ??
+        emp['departments_id']?.toString() ??
+        json['departmentId']?.toString() ??
+        '';
+
+    String deptName = 'ไม่ระบุแผนก';
+    if (dept != null && dept['departmentName'] != null) {
+      deptName = dept['departmentName'].toString().trim();
+    } else if (dept != null && dept['name'] != null) {
+      deptName = dept['name'].toString().trim();
+    } else if (json['departmentName'] != null &&
+        json['departmentName'].toString().isNotEmpty) {
+      deptName = json['departmentName'].toString().trim();
+    } else if (emp['departmentName'] != null &&
+        emp['departmentName'].toString().isNotEmpty) {
+      deptName = emp['departmentName'].toString().trim();
+    } else if (emp['department'] is String) {
+      deptName = emp['department'].toString().trim();
+    }
+
     String roleStr = 'USER';
-    if (json['role'] is Map) {
-      roleStr = json['role']['name']?.toString() ?? 'USER';
-    } else if (json['role'] is String) {
-      roleStr = json['role'];
-    } else if (json['roles'] is String) {
-      roleStr = json['roles'];
+    final rawRole =
+        json['role'] ??
+        emp['role'] ??
+        (json['users'] is List && (json['users'] as List).isNotEmpty
+            ? (json['users'] as List)[0]['role']
+            : null);
+    if (rawRole is Map) {
+      roleStr =
+          rawRole['name']?.toString() ??
+          rawRole['roleName']?.toString() ??
+          'USER';
+    } else if (rawRole is String && rawRole.isNotEmpty) {
+      roleStr = rawRole;
+    } else if (json['roles'] is String &&
+        (json['roles'] as String).isNotEmpty) {
+      roleStr = json['roles'] as String;
     }
 
     return Employee(
@@ -52,10 +84,8 @@ class Employee {
           '',
       fullName:
           emp['fullName']?.toString() ?? json['fullName']?.toString() ?? '',
-      departmentName:
-          dept?['departmentName']?.toString() ??
-          json['departmentName']?.toString() ??
-          'ไม่ระบุแผนก',
+      departmentId: deptId,
+      departmentName: deptName,
       positionName:
           pos?['positionName']?.toString() ??
           json['positionName']?.toString() ??
@@ -78,6 +108,7 @@ class Employee {
       'id': id,
       'employeeCode': employeeCode,
       'fullName': fullName,
+      'departmentId': departmentId,
       'departmentName': departmentName,
       'positionName': positionName,
       'role': role,

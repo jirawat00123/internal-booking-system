@@ -92,6 +92,7 @@ exports.createBooking = async (req, res, next) => {
     const endDatetime = req.body?.endDatetime;
     const title = req.body?.title || req.body?.purpose;
     const rawUserId = req.body?.userId || req.body?.user_id || (req.user ? (req.user.userId || req.user.id) : null);
+    const attendeeCount = req.body?.attendeeCount || req.body?.attendeesCount || req.body?.attendees || req.body?.numberOfAttendees || req.body?.attendee_count;
 
     if (!roomId || !rawUserId || !startDatetime || !endDatetime || !title) {
       return res.status(400).json({ 
@@ -103,7 +104,6 @@ exports.createBooking = async (req, res, next) => {
     const start = new Date(startDatetime);
     const end = new Date(endDatetime);
 
-    // 1. เพิ่ม Time Validation 
     if (isNaN(start.getTime()) || isNaN(end.getTime())) {
       return res.status(400).json({ success: false, message: 'รูปแบบของวันที่และเวลาไม่ถูกต้อง' });
     }
@@ -125,7 +125,6 @@ exports.createBooking = async (req, res, next) => {
       });
     }
 
-    // 2. นำ AuditLog เข้ามารวมใน Transaction
     const newBooking = await prisma.$transaction(async (tx) => {
       const booking = await tx.roomBooking.create({
         data: {
@@ -134,7 +133,8 @@ exports.createBooking = async (req, res, next) => {
           startDatetime: start,     
           endDatetime: end,         
           purpose: title,           
-          status: BookingStatus.PENDING // เปลี่ยนกลับเป็น PENDING เพื่อรออนุมัติ
+          ...(attendeeCount ? { attendeeCount: parseInt(attendeeCount) } : {}),
+          status: BookingStatus.PENDING
         },
         include: { room: true }
       });
@@ -206,7 +206,7 @@ exports.getBookingHistory = async (req, res, next) => {
       prisma.roomBooking.count({ where: whereClause }),
       prisma.roomBooking.findMany({
         where: whereClause,
-        orderBy: { startDatetime: 'desc' },
+        orderBy: { createdAt: 'desc' },
         skip: skip,
         take: limit,
         include: { 

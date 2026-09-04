@@ -74,6 +74,9 @@ class _MeetingRoomListScreenState extends State<MeetingRoomListScreen> {
         );
 
         // ส่งค่ากลับไปให้ ValueNotifier เพื่อสั่งให้หน้าจอรีเฟรชตัวเองแบบ Real-time
+        globalMeetingRooms.value =
+            currentRooms; // 🟢 เพิ่มบรรทัดนี้เพื่ออัปเดต State ทันที
+
         // 🔔 แสดง SnackBar แจ้งเตือนเมื่อลบสำเร็จสำเร็จ
 
         ScaffoldMessenger.of(context).showSnackBar(

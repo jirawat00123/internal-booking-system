@@ -10,8 +10,9 @@ const prisma = new PrismaClient();
 const uploadFile = async (req, res) => {
   try {
     console.log('[AttachmentController Debug] req.file:', req.file);
-    // 1. Validate Middleware Input
-    if (!req.file) {
+    // 1. Validate Middleware Input (รองรับทั้ง req.file และ req.files)
+    const file = req.file || (Array.isArray(req.files) ? req.files[0] : (req.files && Object.values(req.files)[0]?.[0]));
+    if (!file) {
       return res.status(400).json({ error: 'No file uploaded or invalid file type' });
     }
 
@@ -20,12 +21,12 @@ const uploadFile = async (req, res) => {
       return res.status(400).json({ error: 'entityType and entityId are required' });
     }
 
-    // 2. Get User from JWT (Assumption: req.user was set by auth middleware)
-    const userId = req.user.userId;
+    // 2. Get User from JWT (รองรับทั้ง req.user.id และ req.user.userId)
+    const userId = req.user?.id || req.user?.userId;
 
     // 3. Forward to Core Service
     const attachment = await attachmentService.createAttachmentRecord(
-      req.file,
+      file,
       entityType,
       entityId,
       userId
@@ -60,8 +61,8 @@ await prisma.auditLog.create({
 const downloadFile = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.userId;
-    const roleId = req.user.roleId;
+    const userId = req.user?.id || req.user?.userId;
+    const roleId = req.user?.roleId || req.user?.role_id;
 
     // 1. Get DB Record & IDOR Check via Service
     const attachment = await attachmentService.getAttachmentById(id, userId, roleId);
@@ -127,8 +128,8 @@ const getAttachmentsByEntity = async (req, res) => {
 const deleteFile = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user.userId; // ใช้ userId ตามที่แก้ไว้
-    const roleId = req.user.roleId;
+    const userId = req.user?.id || req.user?.userId;
+    const roleId = req.user?.roleId || req.user?.role_id;
 
     await attachmentService.deleteAttachmentById(id, userId, roleId);
 

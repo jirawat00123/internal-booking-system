@@ -5,6 +5,7 @@ import 'Manage.dart';
 import 'package:mobile_app/Digitel.dart';
 import 'Notification/notification_page.dart'; // 👈 นำเข้า NotificationPage ใหม่
 import 'Dashboard/dashboard_page.dart';
+import 'package:mobile_app/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); // 👈 เพิ่มบรรทัดนี้
@@ -37,8 +38,35 @@ class WelcomeApp extends StatelessWidget {
 }
 
 // โครงสร้างคลาส WelcomeScreen ด้านล่างนี้เหมือนเดิมทุกอย่าง...
-class WelcomeScreen extends StatelessWidget {
+class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
+
+  @override
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends State<WelcomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _checkAuth();
+  }
+
+  Future<void> _checkAuth() async {
+    final hasToken = await AuthService.instance.isLoggedIn();
+    if (hasToken) {
+      final success = await AuthService.instance.refreshToken();
+      if (success) {
+        AuthService.instance.startSilentRefresh();
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/digitel');
+        }
+        return;
+      } else {
+        await AuthService.instance.deleteToken();
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

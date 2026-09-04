@@ -27,21 +27,107 @@ const getUploadedFile = (files, fieldNames) => {
 // =======================================================
 exports.createBooking = async (req, res) => {
     try {
-        const { vehicleId, destination, startDatetime, returnDate, endDatetime, passengerCount, passengers, driverType, userId, purpose } = req.body;
+        const { vehicleId, destination, startDatetime, returnDate, endDatetime, passengerCount, passengers, passengerNames, driverType, driverLicenseUrl, userId, purpose } = req.body;
         const finalEndDate = endDatetime || returnDate;
+
+        const requestFiles = req.files || (req.file ? [req.file] : null);
+        const licenseFile = getUploadedFile(requestFiles, ['driverLicenseUrl', 'driverLicense', 'licenseImage', 'license', 'file', 'image', 'attachments']) || (Array.isArray(requestFiles) && requestFiles.length > 0 ? requestFiles[0] : null);
+
+        const normalizeLicensePath = (filePath) => {
+            if (!filePath) return null;
+            const clean = String(filePath).replace(/\\/g, '/');
+            const idx = clean.indexOf('attachments/');
+            return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
+        };
+
+        const rawLicenseBody = req.body.driverLicenseUrl || req.body.driverLicense || driverLicenseUrl || null;
+        const finalDriverLicenseUrl = licenseFile ? normalizeLicensePath(licenseFile.path) : (rawLicenseBody && !rawLicenseBody.startsWith('data:image') ? normalizeLicensePath(rawLicenseBody) : null);
 
         if (!vehicleId || !startDatetime || !finalEndDate) {
             return res.status(400).json({ success: false, error: "กรุณาส่งข้อมูลที่จำเป็นให้ครบถ้วน" });
         }
 
         const finalPassengers = parseInt(passengerCount || passengers) || 1;
-        const finalUserId = parseInt(req.user?.userId || req.user?.id, 10);
+        const finalUserId = parseInt(req.user?.userId || req.user?.id || userId || req.body?.userId, 10);
+
+        // --- เพิ่ม DEBUG LOG ตาม PHASE 3.1 ---
+        console.log('[CREATE VEHICLE BOOKING] req.body:', JSON.stringify(req.body, null, 2));
+        console.log('[PASSENGER INPUT] passengers:', passengers);
+        console.log('[PASSENGER INPUT] passengerNames:', passengerNames);
+
+        let parsedPassengerNames = [];
+        
+        // จัดการกรณี Flutter ส่งมาเป็น Array ตรงๆ, JSON String หรือ FormData Array (ดักจับ Key ที่เป็นไปได้ทั้งหมด)
+        const targetKeys = ['passengerNames', 'passengers', 'passengerDetails', 'vehicleBookingPassengers'];
+        
+        targetKeys.forEach(key => {
+            const val = req.body[key];
+            if (val) {
+                if (typeof val === 'string') {
+                    try {
+                        const parsed = JSON.parse(val);
+                        if (Array.isArray(parsed)) {
+                            parsedPassengerNames.push(...parsed);
+                        } else if (isNaN(val)) {
+                            parsedPassengerNames.push(val);
+                        }
+                    } catch (e) {
+                        if (val.includes(',')) {
+                            parsedPassengerNames.push(...val.split(','));
+                        } else if (isNaN(val)) {
+                            parsedPassengerNames.push(val);
+                        }
+                    }
+                } else if (Array.isArray(val)) {
+                    parsedPassengerNames.push(...val);
+                }
+            }
+        });
+
+        // กรณี Flutter ส่ง Array มาผ่าน FormData โดยระบุ Index (เช่น passengerNames[0], passengers[], ฯลฯ)
+        const keys = Object.keys(req.body).filter(k => 
+            k.startsWith('passengerNames[') || k === 'passengerNames[]' ||
+            k.startsWith('passengers[') || k === 'passengers[]' ||
+            k.startsWith('passengerDetails[') || k === 'passengerDetails[]' ||
+            k.startsWith('vehicleBookingPassengers[') || k === 'vehicleBookingPassengers[]'
+        );
+        if (keys.length > 0) {
+            keys.forEach(k => {
+                const val = req.body[k];
+                if (Array.isArray(val)) parsedPassengerNames.push(...val);
+                else parsedPassengerNames.push(val);
+            });
+        }
+
+        if (typeof parsedPassengerNames === 'string') {
+            parsedPassengerNames = [parsedPassengerNames];
+        }
+
+        if (!Array.isArray(parsedPassengerNames)) {
+            return res.status(400).json({ success: false, error: "ข้อมูลรายชื่อผู้โดยสารต้องอยู่ในรูปแบบ Array" });
+        }
+
+        // ดึงเฉพาะชื่อ กรณี Flutter ส่งมาเป็น Object { fullName: "..." }
+        const cleanPassengerNames = parsedPassengerNames.map(name => {
+            if (typeof name === 'object' && name !== null) {
+                return String(name.fullName || name.name || '').trim();
+            }
+            return String(name).trim();
+        }).filter(Boolean);
+
+        console.log('[PASSENGER INPUT] cleanPassengerNames:', cleanPassengerNames);
+
+        let validatedPassengersCount = finalPassengers;
+        if (cleanPassengerNames.length > finalPassengers) {
+            // ปรับจำนวนผู้โดยสารตามรายชื่อที่แนบมาจริง หากตัวเลขน้อยกว่า ป้องกันการเกิด Error 400
+            validatedPassengersCount = cleanPassengerNames.length;
+        }
 
         const reqStart = new Date(startDatetime);
         const reqEnd = new Date(finalEndDate);
-        const now = new Date();
+        const nowBuffer = new Date(Date.now() - 5 * 60 * 1000);
 
-        if (reqStart < now) {
+        if (reqStart < nowBuffer) {
             return res.status(400).json({ success: false, error: "ไม่สามารถทำรายการจองรถยนต์ย้อนหลังได้ กรุณาเลือกเวลาที่เป็นปัจจุบันหรืออนาคต" });
         }
 
@@ -65,16 +151,21 @@ exports.createBooking = async (req, res) => {
                 throw new Error('TIME_OVERLAP');
             }
 
-            const booking = await tx.vehicleBooking.create({
+            let booking = await tx.vehicleBooking.create({
                 data: {
                     vehicleId: parseInt(vehicleId),
                     userId: finalUserId, 
                     destination: destination || "-",
                     startDatetime: reqStart,
                     endDatetime: reqEnd,
-                    passengers: finalPassengers, 
+                    passengers: validatedPassengersCount, 
                     purpose: purpose || "ใช้งานบริษัท",
-                    status: BookingStatus.PENDING
+                    driverType: driverType || "ขับขี่เอง",
+                    driverLicenseUrl: finalDriverLicenseUrl,
+                    status: BookingStatus.PENDING,
+                    passengerDetails: cleanPassengerNames.length > 0 ? {
+                        create: cleanPassengerNames.map(name => ({ fullName: name }))
+                    } : undefined
                 },
                 include: {
                     vehicle: {
@@ -85,9 +176,94 @@ exports.createBooking = async (req, res) => {
                                 }
                             }
                         }
-                    }
+                    },
+                    user: {
+                        include: { employee: true }
+                    },
+                    attachments: true,
+                    passengerDetails: true
                 }
             });
+
+            const targetRawLicense = req.body.driverLicenseUrl || req.body.driverLicense || driverLicenseUrl;
+            let licenseBuffer = null;
+            let tempSourcePath = null;
+            let fileExt = '.png';
+
+            if (licenseFile) {
+                fileExt = path.extname(licenseFile.originalname || licenseFile.filename || '.png') || '.png';
+                if (licenseFile.buffer) {
+                    licenseBuffer = licenseFile.buffer;
+                } else if (licenseFile.path) {
+                    tempSourcePath = licenseFile.path;
+                }
+            } else if (targetRawLicense && typeof targetRawLicense === 'string') {
+                if (targetRawLicense.startsWith('data:image')) {
+                    const matches = targetRawLicense.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+                    if (matches) {
+                        fileExt = `.${matches[1]}`;
+                        licenseBuffer = Buffer.from(matches[2], 'base64');
+                    }
+                } else if (targetRawLicense.includes('attachments/')) {
+                    fileExt = path.extname(targetRawLicense) || '.png';
+                    const baseUploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../attachments');
+                    const cleanPath = targetRawLicense.replace(/\\/g, '/');
+                    const relPath = cleanPath.substring(cleanPath.indexOf('attachments/') + 'attachments/'.length);
+                    const possiblePath1 = path.join(baseUploadDir, relPath);
+                    const possiblePath2 = path.join(__dirname, '../../', cleanPath.startsWith('/') ? cleanPath.substring(1) : cleanPath);
+
+                    if (fs.existsSync(possiblePath1)) {
+                        tempSourcePath = possiblePath1;
+                    } else if (fs.existsSync(possiblePath2)) {
+                        tempSourcePath = possiblePath2;
+                    }
+                }
+            }
+
+            if (licenseBuffer || tempSourcePath) {
+                const baseUploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../attachments');
+                const licenseDir = path.join(baseUploadDir, 'vehicles', 'license_driver');
+                if (!fs.existsSync(licenseDir)) {
+                    fs.mkdirSync(licenseDir, { recursive: true, mode: 0o777 });
+                }
+
+                const rawUserName = req.user?.username || req.user?.name || booking.user?.employee?.fullName || `user_${finalUserId}`;
+                const cleanUserName = String(rawUserName).replace(/[^a-zA-Z0-9_\u0E00-\u0E7F]/g, '_');
+                const timestamp = Math.floor(Date.now() / 1000);
+                const newFileName = `booking_${booking.id}_${cleanUserName}_${timestamp}${fileExt}`;
+                const destPath = path.join(licenseDir, newFileName);
+
+                if (licenseBuffer) {
+                    fs.writeFileSync(destPath, licenseBuffer);
+                    try { fs.chmodSync(destPath, 0o777); } catch (e) {}
+                } else if (tempSourcePath && fs.existsSync(tempSourcePath)) {
+                    fs.copyFileSync(tempSourcePath, destPath);
+                    try { fs.chmodSync(destPath, 0o777); } catch (e) {}
+                }
+
+                const savedLicenseUrl = `/attachments/vehicles/license_driver/${newFileName}`;
+
+                booking = await tx.vehicleBooking.update({
+                    where: { id: booking.id },
+                    data: { driverLicenseUrl: savedLicenseUrl },
+                    include: {
+                        vehicle: {
+                            include: {
+                                documents: {
+                                    include: {
+                                        documentType: true
+                                    }
+                                }
+                            }
+                        },
+                        user: {
+                            include: { employee: true }
+                        },
+                        attachments: true,
+                        passengerDetails: true
+                    }
+                });
+            }
 
             const actionUserId = parseInt(req.user?.userId || req.user?.id, 10) || finalUserId;
             if (actionUserId) {
@@ -117,7 +293,45 @@ exports.createBooking = async (req, res) => {
             entityId: newBooking.id
         });
 
-        return res.status(201).json({ success: true, data: newBooking, message: "บันทึกคำขอจองรถสำเร็จ รอการอนุมัติ" });
+        const actDoc = newBooking.vehicle?.documents?.find(doc => {
+            const docTypeName = doc.documentType?.name || doc.name || doc.title || '';
+            const docTypeKey = doc.documentType?.key || doc.type || '';
+            return docTypeName.includes('พ.ร.บ') || docTypeName.includes('พรบ') || docTypeName.toUpperCase().includes('ACT') || docTypeKey.toUpperCase().includes('ACT');
+        });
+        const rawActUrl = newBooking.vehicle?.actFilePath || newBooking.vehicle?.act_file_path || newBooking.vehicle?.actFile || (actDoc ? (actDoc.uploadUrl || actDoc.filePath || actDoc.url || null) : null);
+        const normalizePath = (filePath) => {
+            if (!filePath) return null;
+            const clean = String(filePath).replace(/\\/g, '/');
+            const idx = clean.indexOf('attachments/');
+            return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
+        };
+        const actUrl = normalizePath(rawActUrl);
+        const formattedNewBooking = {
+            ...newBooking,
+            userName: newBooking.user?.employee?.fullName || newBooking.user?.username || '-',
+            passengerNames: newBooking.passengerDetails?.map(p => p.fullName) || cleanPassengerNames,
+            actDocumentUrl: actUrl,
+            actFilePath: actUrl,
+            act_file_path: actUrl,
+            actFile: actUrl,
+            act_file: actUrl,
+            actUrl: actUrl,
+            actUploadUrl: actUrl,
+            pororborUrl: actUrl,
+            vehicle: newBooking.vehicle ? {
+                ...newBooking.vehicle,
+                actDocumentUrl: actUrl,
+                actFilePath: actUrl,
+                act_file_path: actUrl,
+                actFile: actUrl,
+                act_file: actUrl,
+                actUrl: actUrl,
+                actUploadUrl: actUrl,
+                pororborUrl: actUrl
+            } : newBooking.vehicle
+        };
+
+        return res.status(201).json({ success: true, data: formattedNewBooking, message: "บันทึกคำขอจองรถสำเร็จ รอการอนุมัติ" });
 
     } catch (error) {
         console.error("Create Vehicle Booking Error:", error);
@@ -138,18 +352,17 @@ exports.getBookings = async (req, res) => {
         let whereClause = {};
 
         if (startDate && endDate) {
-            // 🟢 ยกเลิกการบังคับใช้ new Date() เป็นจุดเริ่มต้น เพื่อให้ประวัติการจองเก่าไม่ถูกซ่อน
             whereClause.startDatetime = { lte: new Date(endDate) };
             whereClause.endDatetime = { gte: new Date(startDate) };
 
-            if (status) {
+            if (status && status.toUpperCase() !== 'ALL') {
                 whereClause.status = status;
-            } else {
+            } else if (!status) {
                 whereClause.status = {
                     notIn: [BookingStatus.COMPLETED, BookingStatus.CANCELLED, BookingStatus.EXPIRED, BookingStatus.REJECTED]
                 };
             }
-        } else if (status) {
+        } else if (status && status.toUpperCase() !== 'ALL') {
             whereClause.status = status;
         }
 
@@ -165,13 +378,20 @@ exports.getBookings = async (req, res) => {
                     include: {
                         documents: {
                             include: {
-                                documentType: true // ดึงข้อมูลเอกสาร พ.ร.บ. จากตาราง VehicleDocument
+                                documentType: true
                             }
                         }
                     }
                 },
                 user: { include: { employee: true } },
-                attachments: true // ดึงข้อมูลตาราง attachments ของการจอง (เช่น รูปรถตอนปล่อย/คืน)
+                attachments: true,
+                passengerDetails: true,
+                vehicleLogs: {
+                    include: {
+                        checkoutBy: { include: { employee: true } },
+                        returnBy: { include: { employee: true } }
+                    }
+                }
             }
         });
 
@@ -183,8 +403,96 @@ exports.getBookings = async (req, res) => {
             const isAdmin = currentUserRole === 'ADMIN';
             const isPendingOrApproved = [BookingStatus.PENDING, BookingStatus.APPROVED].includes(booking.status);
 
+            const actDoc = booking.vehicle?.documents?.find(doc => {
+                const docTypeName = doc.documentType?.name || doc.name || doc.title || '';
+                const docTypeKey = doc.documentType?.key || doc.type || '';
+                return docTypeName.includes('พ.ร.บ') || docTypeName.includes('พรบ') || docTypeName.toUpperCase().includes('ACT') || docTypeKey.toUpperCase().includes('ACT');
+            });
+
+            const rawActUrl = booking.vehicle?.actFilePath || booking.vehicle?.act_file_path || booking.vehicle?.actFile || (actDoc ? (actDoc.uploadUrl || actDoc.filePath || actDoc.url || null) : null);
+
+            const normalizePath = (filePath) => {
+                if (!filePath) return null;
+                const clean = String(filePath).replace(/\\/g, '/');
+                const idx = clean.indexOf('attachments/');
+                return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
+            };
+
+            const actUrl = normalizePath(rawActUrl);
+
+            const vehicleWithAct = booking.vehicle ? {
+                ...booking.vehicle,
+                actDocumentUrl: actUrl,
+                actFilePath: actUrl,
+                act_file_path: actUrl,
+                actFile: actUrl,
+                act_file: actUrl,
+                actUrl: actUrl,
+                actUploadUrl: actUrl,
+                pororborUrl: actUrl
+            } : booking.vehicle;
+
+            const extractedPassengerNames = (booking.passengerDetails || [])
+                .map(p => typeof p === 'object' && p !== null ? (p.fullName || p.passengerName || p.name || '') : String(p))
+                .filter(name => name.trim().length > 0);
+
+            const normalizedAttachments = (booking.attachments || []).map(att => ({
+                ...att,
+                filePath: normalizePath(att.filePath) || att.filePath,
+                url: normalizePath(att.filePath) || att.filePath
+            }));
+
+            const latestLog = Array.isArray(booking.vehicleLogs)
+                ? (booking.vehicleLogs.length > 0 ? booking.vehicleLogs[booking.vehicleLogs.length - 1] : null)
+                : (booking.vehicleLogs || null);
+
+            const logReleaseImages = latestLog ? [latestLog.checkoutFrontPhoto, latestLog.checkoutBackPhoto, latestLog.checkoutMileagePhoto].filter(Boolean).map(a => normalizePath(a)) : [];
+            const logReturnImages = latestLog ? [latestLog.returnFrontPhoto, latestLog.returnBackPhoto, latestLog.returnMileagePhoto].filter(Boolean).map(a => normalizePath(a)) : [];
+
+            const releaseImages = [
+                ...normalizedAttachments
+                    .filter(a => a.entityType === 'VEHICLE_RELEASE_IMAGE')
+                    .map(a => a.filePath),
+                ...logReleaseImages
+            ];
+
+            const returnImages = [
+                ...normalizedAttachments
+                    .filter(a => a.entityType === 'VEHICLE_RETURN_IMAGE')
+                    .map(a => a.filePath),
+                ...logReturnImages
+            ];
+
             return {
                 ...booking,
+                userName: booking.user?.employee?.fullName || booking.user?.username || '-',
+                passengerNames: extractedPassengerNames.length > 0 ? extractedPassengerNames : (booking.passengerNames || []),
+                vehicle: vehicleWithAct,
+                actDocumentUrl: actUrl,
+                actFilePath: actUrl,
+                act_file_path: actUrl,
+                actFile: actUrl,
+                act_file: actUrl,
+                actUrl: actUrl,
+                actUploadUrl: actUrl,
+                pororborUrl: actUrl,
+                attachments: normalizedAttachments,
+                checkoutTime: latestLog?.checkoutTime || null,
+                returnTime: latestLog?.returnTime || null,
+                actualCheckoutTime: latestLog?.checkoutTime || null,
+                actualReturnTime: latestLog?.returnTime || null,
+                releaseImages: releaseImages,
+                returnImages: returnImages,
+                releasePhotos: releaseImages,
+                returnPhotos: returnImages,
+                vehicleLogs: booking.vehicleLogs || [],
+                vehicleLog: latestLog,
+                checkoutMileage: latestLog?.checkoutMileage || null,
+                returnMileage: latestLog?.returnMileage || null,
+                checkoutFuelLevel: latestLog?.checkoutFuelLevel || null,
+                returnFuelLevel: latestLog?.returnFuelLevel || null,
+                checkoutByName: latestLog?.checkoutBy?.employee?.fullName || latestLog?.checkoutBy?.username || '-',
+                returnByName: latestLog?.returnBy?.employee?.fullName || latestLog?.returnBy?.username || '-',
                 permissions: {
                     canCancel: (isOwner || isAdmin) && isPendingOrApproved,
                     canEdit: (isOwner || isAdmin) && booking.status === BookingStatus.PENDING,
@@ -264,7 +572,11 @@ exports.updateBookingStatus = async (req, res) => {
 
             const booking = await tx.vehicleBooking.update({
                 where: { id: bookingId },
-                data: { status: validStatus }
+                data: { status: validStatus },
+                include: {
+                    user: { include: { employee: true } },
+                    vehicle: true
+                }
             });
 
             if (validStatus === BookingStatus.CANCELLED || validStatus === BookingStatus.COMPLETED || validStatus === BookingStatus.REJECTED) {
@@ -401,12 +713,19 @@ exports.releaseVehicle = async (req, res) => {
 
             const updatedBooking = await tx.vehicleBooking.update({
                 where: { id: bookingId },
-                data: { status: validStatus }
+                data: { status: validStatus },
+                include: {
+                    user: { include: { employee: true } },
+                    vehicle: true
+                }
             });
 
             await tx.vehicle.update({
                 where: { id: bookingExists.vehicleId },
-                data: { status: VehicleStatus.IN_USE }
+                data: { 
+                    status: VehicleStatus.IN_USE,
+                    currentMileage: finalMileage
+                }
             });
 
             const requestFiles = req.files || (req.file ? [req.file] : null);
@@ -423,9 +742,10 @@ exports.releaseVehicle = async (req, res) => {
             if (!mileageFile && unassignedFiles.length > 0) mileageFile = unassignedFiles.shift();
 
             // 🟢 1. สร้าง โฟลเดอร์ปลายทาง NAS / Inspections Target และคัดลอกย้ายไฟล์เข้ามาให้เรียบร้อย
-            const releaseDir = path.join(__dirname, '../../../attachments', 'vehicles', 'inspections', String(bookingId), 'release');
+            const baseUploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../attachments');
+            const releaseDir = path.join(baseUploadDir, 'vehicles', 'inspections', String(bookingId), 'release');
             if (!fs.existsSync(releaseDir)) {
-                fs.mkdirSync(releaseDir, { recursive: true });
+                fs.mkdirSync(releaseDir, { recursive: true, mode: 0o777 });
             }
 
             const moveFileToNAS = (file) => {
@@ -435,12 +755,16 @@ exports.releaseVehicle = async (req, res) => {
 
                 if (file.buffer) {
                     fs.writeFileSync(destPath, file.buffer);
+                    try { fs.chmodSync(destPath, 0o777); } catch (e) {}
                     file.path = destPath;
                     file.filename = filename;
                 } else if (file.path) {
                     if (file.path !== destPath && fs.existsSync(file.path)) {
                         fs.copyFileSync(file.path, destPath);
+                        try { fs.chmodSync(destPath, 0o777); } catch (e) {}
                         try { fs.unlinkSync(file.path); } catch (e) {}
+                    } else if (fs.existsSync(destPath)) {
+                        try { fs.chmodSync(destPath, 0o777); } catch (e) {}
                     }
                     file.path = destPath;
                     file.filename = filename;
@@ -455,12 +779,9 @@ exports.releaseVehicle = async (req, res) => {
                 return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
             };
 
-            const frontPath = normalizePath(frontFile?.path);
-            const backPath = normalizePath(backFile?.path);
-            const mileagePath = normalizePath(mileageFile?.path);
+            const currentUploadedNames = [frontFile, backFile, mileageFile].filter(Boolean).map(f => f.filename);
 
-            if (fs.existsSync(releaseDir)) {
-                const currentUploadedNames = [frontFile, backFile, mileageFile].filter(Boolean).map(f => f.filename);
+            if (fs.existsSync(releaseDir) && currentUploadedNames.length > 0) {
                 const files = fs.readdirSync(releaseDir);
                 for (const file of files) {
                     if (!currentUploadedNames.includes(file)) {
@@ -665,9 +986,10 @@ exports.completeVehicleBooking = async (req, res) => {
             if (!returnMileageFile && unassignedFiles.length > 0) returnMileageFile = unassignedFiles.shift();
 
             // 🟢 1. สร้าง โฟลเดอร์ปลายทาง NAS / Inspections Target และคัดลอกย้ายไฟล์เข้ามาให้เรียบร้อย
-            const returnDir = path.join(__dirname, '../../../attachments', 'vehicles', 'inspections', String(bookingId), 'return');
+            const baseUploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../attachments');
+            const returnDir = path.join(baseUploadDir, 'vehicles', 'inspections', String(bookingId), 'return');
             if (!fs.existsSync(returnDir)) {
-                fs.mkdirSync(returnDir, { recursive: true });
+                fs.mkdirSync(returnDir, { recursive: true, mode: 0o777 });
             }
 
             const moveFileToNAS = (file) => {
@@ -677,12 +999,16 @@ exports.completeVehicleBooking = async (req, res) => {
 
                 if (file.buffer) {
                     fs.writeFileSync(destPath, file.buffer);
+                    try { fs.chmodSync(destPath, 0o777); } catch (e) {}
                     file.path = destPath;
                     file.filename = filename;
                 } else if (file.path) {
                     if (file.path !== destPath && fs.existsSync(file.path)) {
                         fs.copyFileSync(file.path, destPath);
+                        try { fs.chmodSync(destPath, 0o777); } catch (e) {}
                         try { fs.unlinkSync(file.path); } catch (e) {}
+                    } else if (fs.existsSync(destPath)) {
+                        try { fs.chmodSync(destPath, 0o777); } catch (e) {}
                     }
                     file.path = destPath;
                     file.filename = filename;
@@ -697,12 +1023,9 @@ exports.completeVehicleBooking = async (req, res) => {
                 return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
             };
 
-            const returnFrontPath = normalizePath(returnFrontFile?.path);
-            const returnBackPath = normalizePath(returnBackFile?.path);
-            const returnMileagePath = normalizePath(returnMileageFile?.path);
+            const currentUploadedNames = [returnFrontFile, returnBackFile, returnMileageFile].filter(Boolean).map(f => f.filename);
 
-            if (fs.existsSync(returnDir)) {
-                const currentUploadedNames = [returnFrontFile, returnBackFile, returnMileageFile].filter(Boolean).map(f => f.filename);
+            if (fs.existsSync(returnDir) && currentUploadedNames.length > 0) {
                 const files = fs.readdirSync(returnDir);
                 for (const file of files) {
                     if (!currentUploadedNames.includes(file)) {
@@ -725,6 +1048,16 @@ exports.completeVehicleBooking = async (req, res) => {
                 await tx.vehicleLog.update({
                     where: { id: latestLog.id },
                     data: logUpdateData
+                });
+            } else {
+                await tx.vehicleLog.create({
+                    data: {
+                        vehicleBookingId: bookingId,
+                        returnTime: new Date(),
+                        returnMileage: !isNaN(parsedReturnMileage) ? parsedReturnMileage : undefined,
+                        returnFuelLevel: !isNaN(parsedReturnFuel) ? parsedReturnFuel : undefined,
+                        returnById: reqUserId
+                    }
                 });
             }
 
@@ -854,7 +1187,11 @@ exports.approveVehicleBooking = async (req, res) => {
 
             const updated = await tx.vehicleBooking.update({
                 where: { id: bookingId },
-                data: { status: BookingStatus.APPROVED }
+                data: { status: BookingStatus.APPROVED },
+                include: {
+                    user: { include: { employee: true } },
+                    vehicle: true
+                }
             });
 
             await tx.auditLog.create({
@@ -917,7 +1254,11 @@ exports.rejectVehicleBooking = async (req, res) => {
         const updatedBooking = await prisma.$transaction(async (tx) => {
             const updated = await tx.vehicleBooking.update({
                 where: { id: bookingId },
-                data: { status: BookingStatus.REJECTED }
+                data: { status: BookingStatus.REJECTED },
+                include: {
+                    user: { include: { employee: true } },
+                    vehicle: true
+                }
             });
 
             await tx.vehicle.update({
@@ -1219,17 +1560,64 @@ exports.getVehicleCalendar = async (req, res) => {
                             include: { department: true }
                         }
                     }
-                }
+                },
+                attachments: true,
+                passengerDetails: true
             },
             orderBy: { startDatetime: 'asc' }
         });
 
-        // 🟢 Map สถานะ APPROVED เป็น RESERVED ก่อนส่งไปหน้า Calendar
-        // เพื่อป้องกันหน้า Calendar นำสถานะที่ยังไม่ถูกปล่อยรถ ไปตีความและแสดงเป็น IN_USE เอง
-        const formattedBookings = bookings.map(booking => ({
-            ...booking,
-            status: booking.status === 'APPROVED' ? 'RESERVED' : booking.status
-        }));
+        // 🟢 Map สถานะ APPROVED เป็น RESERVED และแนบข้อมูลไฟล์ พ.ร.บ. ก่อนส่งไปหน้า Calendar
+        const formattedBookings = bookings.map(booking => {
+            const actDoc = booking.vehicle?.documents?.find(doc => {
+                const docTypeName = doc.documentType?.name || doc.name || doc.title || '';
+                const docTypeKey = doc.documentType?.key || doc.type || '';
+                return docTypeName.includes('พ.ร.บ') || docTypeName.includes('พรบ') || docTypeName.toUpperCase().includes('ACT') || docTypeKey.toUpperCase().includes('ACT');
+            });
+
+            const rawActUrl = booking.vehicle?.actFilePath || booking.vehicle?.act_file_path || booking.vehicle?.actFile || (actDoc ? (actDoc.uploadUrl || actDoc.filePath || actDoc.url || null) : null);
+
+            const normalizePath = (filePath) => {
+                if (!filePath) return null;
+                const clean = String(filePath).replace(/\\/g, '/');
+                const idx = clean.indexOf('attachments/');
+                return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
+            };
+
+            const actUrl = normalizePath(rawActUrl);
+
+            const vehicleWithAct = booking.vehicle ? {
+                ...booking.vehicle,
+                actDocumentUrl: actUrl,
+                actFilePath: actUrl,
+                act_file_path: actUrl,
+                actFile: actUrl,
+                act_file: actUrl,
+                actUrl: actUrl,
+                actUploadUrl: actUrl,
+                pororborUrl: actUrl
+            } : booking.vehicle;
+
+            const extractedPassengerNames = (booking.passengerDetails || [])
+                .map(p => typeof p === 'object' && p !== null ? (p.fullName || p.passengerName || p.name || '') : String(p))
+                .filter(name => name.trim().length > 0);
+
+            return {
+                ...booking,
+                userName: booking.user?.employee?.fullName || booking.user?.username || '-',
+                passengerNames: extractedPassengerNames.length > 0 ? extractedPassengerNames : (booking.passengerNames || []),
+                vehicle: vehicleWithAct,
+                actDocumentUrl: actUrl,
+                actFilePath: actUrl,
+                act_file_path: actUrl,
+                actFile: actUrl,
+                act_file: actUrl,
+                actUrl: actUrl,
+                actUploadUrl: actUrl,
+                pororborUrl: actUrl,
+                status: booking.status === 'APPROVED' ? 'RESERVED' : booking.status
+            };
+        });
 
         return res.status(200).json({
             success: true,
@@ -1244,3 +1632,140 @@ exports.getVehicleCalendar = async (req, res) => {
 
 exports.getHistory = exports.getBookings;
 exports.returnVehicle = exports.completeVehicleBooking;
+
+// =======================================================
+// 13. ดึงข้อมูลการจองตาม ID (GET /:id)
+// =======================================================
+exports.getBookingById = async (req, res) => {
+    try {
+        const bookingId = parseInt(req.params.id, 10);
+        if (isNaN(bookingId)) {
+            return res.status(400).json({ success: false, error: "รหัสการจองไม่ถูกต้อง" });
+        }
+
+        const booking = await prisma.vehicleBooking.findUnique({
+            where: { id: bookingId },
+            include: {
+                vehicle: {
+                    include: {
+                        documents: {
+                            include: {
+                                documentType: true
+                            }
+                        }
+                    }
+                },
+                user: {
+                    include: { employee: true }
+                },
+                attachments: true,
+                passengerDetails: true,
+                vehicleLogs: {
+                    include: {
+                        checkoutBy: { include: { employee: true } },
+                        returnBy: { include: { employee: true } }
+                    }
+                }
+            }
+        });
+
+        if (!booking) {
+            return res.status(404).json({ success: false, error: "ไม่พบข้อมูลการจอง" });
+        }
+
+        const actDoc = booking.vehicle?.documents?.find(doc => {
+            const docTypeName = doc.documentType?.name || doc.name || doc.title || '';
+            const docTypeKey = doc.documentType?.key || doc.type || '';
+            return docTypeName.includes('พ.ร.บ') || docTypeName.includes('พรบ') || docTypeName.toUpperCase().includes('ACT') || docTypeKey.toUpperCase().includes('ACT');
+        });
+
+        const rawActUrl = booking.vehicle?.actFilePath || booking.vehicle?.act_file_path || booking.vehicle?.actFile || (actDoc ? (actDoc.uploadUrl || actDoc.filePath || actDoc.url || null) : null);
+
+        const normalizePath = (filePath) => {
+            if (!filePath) return null;
+            const clean = String(filePath).replace(/\\/g, '/');
+            const idx = clean.indexOf('attachments/');
+            return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
+        };
+
+        const actUrl = normalizePath(rawActUrl);
+
+        const extractedPassengerNames = (booking.passengerDetails || [])
+            .map(p => typeof p === 'object' && p !== null ? (p.fullName || p.passengerName || p.name || '') : String(p))
+            .filter(name => name.trim().length > 0);
+
+        const normalizedAttachments = (booking.attachments || []).map(att => ({
+            ...att,
+            filePath: normalizePath(att.filePath) || att.filePath,
+            url: normalizePath(att.filePath) || att.filePath
+        }));
+
+        const latestLog = Array.isArray(booking.vehicleLogs)
+            ? (booking.vehicleLogs.length > 0 ? booking.vehicleLogs[booking.vehicleLogs.length - 1] : null)
+            : (booking.vehicleLogs || null);
+
+        const logReleaseImages = latestLog ? [latestLog.checkoutFrontPhoto, latestLog.checkoutBackPhoto, latestLog.checkoutMileagePhoto].filter(Boolean).map(a => normalizePath(a)) : [];
+        const logReturnImages = latestLog ? [latestLog.returnFrontPhoto, latestLog.returnBackPhoto, latestLog.returnMileagePhoto].filter(Boolean).map(a => normalizePath(a)) : [];
+
+        const releaseImages = [
+            ...normalizedAttachments
+                .filter(a => a.entityType === 'VEHICLE_RELEASE_IMAGE')
+                .map(a => a.filePath),
+            ...logReleaseImages
+        ];
+
+        const returnImages = [
+            ...normalizedAttachments
+                .filter(a => a.entityType === 'VEHICLE_RETURN_IMAGE')
+                .map(a => a.filePath),
+            ...logReturnImages
+        ];
+
+        const formattedBooking = {
+            ...booking,
+            userName: booking.user?.employee?.fullName || booking.user?.username || '-',
+            passengerNames: extractedPassengerNames.length > 0 ? extractedPassengerNames : (booking.passengerNames || []),
+            vehicle: booking.vehicle ? {
+                ...booking.vehicle,
+                actDocumentUrl: actUrl,
+                actFilePath: actUrl,
+                act_file_path: actUrl,
+                actFile: actUrl,
+                act_file: actUrl,
+                actUrl: actUrl,
+                actUploadUrl: actUrl,
+                pororborUrl: actUrl
+            } : booking.vehicle,
+            actDocumentUrl: actUrl,
+            actFilePath: actUrl,
+            act_file_path: actUrl,
+            actFile: actUrl,
+            act_file: actUrl,
+            actUrl: actUrl,
+            actUploadUrl: actUrl,
+            pororborUrl: actUrl,
+            attachments: normalizedAttachments,
+            checkoutTime: latestLog?.checkoutTime || null,
+            returnTime: latestLog?.returnTime || null,
+            actualCheckoutTime: latestLog?.checkoutTime || null,
+            actualReturnTime: latestLog?.returnTime || null,
+            releaseImages: releaseImages,
+            returnImages: returnImages,
+            releasePhotos: releaseImages,
+            returnPhotos: returnImages,
+            vehicleLogs: booking.vehicleLogs || [],
+            vehicleLog: latestLog,
+            checkoutMileage: latestLog?.checkoutMileage || null,
+            returnMileage: latestLog?.returnMileage || null,
+            checkoutFuelLevel: latestLog?.checkoutFuelLevel || null,
+            returnFuelLevel: latestLog?.returnFuelLevel || null,
+            checkoutByName: latestLog?.checkoutBy?.employee?.fullName || latestLog?.checkoutBy?.username || '-',
+            returnByName: latestLog?.returnBy?.employee?.fullName || latestLog?.returnBy?.username || '-'
+        };
+
+        return res.status(200).json({ success: true, data: formattedBooking });
+    } catch (error) {
+        console.error("Get Booking By ID Error:", error);
+        return res.status(500).json({ success: false, error: "ไม่สามารถดึงข้อมูลการจองได้" });
+    }
+};

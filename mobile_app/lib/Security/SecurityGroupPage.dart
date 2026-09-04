@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'SecurityVehicleList.dart'; // โยงไปหน้าถ่ายรูปปล่อยรถ
 import '../Select.dart'; // โยงไปหน้า Welcome Security
 import '../Dashboard/dashboard_page.dart';
+import '../auth_service.dart'; // 🟢 เพิ่มการนำเข้า AuthService เพื่อล้างเซสชัน
 
 class SecurityGroupPage extends StatelessWidget {
   const SecurityGroupPage({super.key});
@@ -39,12 +40,66 @@ class SecurityGroupPage extends StatelessWidget {
                   Align(
                     alignment: Alignment.topRight,
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
+                      onPressed: () async {
+                        // 🟢 1. แสดง Dialog ยืนยันการออกจากระบบ ป้องกันการกดผิดพลาด
+                        final shouldLogout = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            title: const Text(
+                              'ยืนยันการออกจากระบบ',
+                              style: TextStyle(
+                                fontFamily: 'Kanit',
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF00529B),
+                              ),
+                            ),
+                            content: const Text(
+                              'คุณต้องการออกจากระบบใช่หรือไม่?',
+                              style: TextStyle(fontFamily: 'Kanit'),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: const Text(
+                                  'ยกเลิก',
+                                  style: TextStyle(
+                                    fontFamily: 'Kanit',
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text(
+                                  'ออกจากระบบ',
+                                  style: TextStyle(
+                                    fontFamily: 'Kanit',
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+
+                        if (shouldLogout != true) return;
+
+                        // 🟢 2. เคลียร์ข้อมูลเซสชันทั้งหมดแบบ 100% (ล้างทั้ง Memory และ Storage)
+                        await AuthService.instance.logout();
+
+                        if (!context.mounted) return;
+
+                        // 🟢 3. กลับไปหน้าแรกและเคลียร์ Stack ทิ้งป้องกัน State ค้าง
+                        Navigator.pushAndRemoveUntil(
                           context,
                           MaterialPageRoute(
                             builder: (context) => const LoginSelectionPage(),
                           ),
+                          (route) => false,
                         );
                       },
                       icon: const Icon(
@@ -61,9 +116,9 @@ class SecurityGroupPage extends StatelessWidget {
                         ),
                       ),
                       style: OutlinedButton.styleFrom(
-                        backgroundColor: Colors.white.withOpacity(
-                          0.15,
-                        ), // ปรับให้โปร่งใสขึ้นนิดหน่อยตามแบบ
+                        backgroundColor: Colors.red.withOpacity(
+                          0.8,
+                        ), // 🟢 เปลี่ยนพื้นหลังเป็นสีแดงให้เหมือนหน้าอื่นๆ
                         side: BorderSide(color: Colors.white.withOpacity(0.5)),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(20),
@@ -115,7 +170,7 @@ class SecurityGroupPage extends StatelessWidget {
                     child: ListView(
                       physics: const BouncingScrollPhysics(),
                       children: [
-                        SecurityMenuCard(
+                        /*SecurityMenuCard(
                           icon: Icons.dashboard_outlined,
                           title: 'แดชบอร์ด\nSecurity',
                           onTap: () {
@@ -126,7 +181,7 @@ class SecurityGroupPage extends StatelessWidget {
                               ),
                             );
                           },
-                        ),
+                        ),*/
                         const SizedBox(height: 12),
                         SecurityMenuCard(
                           icon: Icons

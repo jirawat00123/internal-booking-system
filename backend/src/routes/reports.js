@@ -17,6 +17,14 @@ router.get(
   reportController.getAdminDashboard
 );
 
+// Summary & Overview Stats สำหรับ Dashboard
+router.get(
+  '/dashboard-stats',
+  authenticateToken,
+  requireRole(['ADMIN']),
+  reportController.getDashboardStats
+);
+
 // Dashboard สำหรับ User ทั่วไป (ใช้สิทธิ์ Token ของตนเอง)
 router.get(
   '/dashboard/user',

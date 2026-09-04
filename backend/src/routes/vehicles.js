@@ -36,14 +36,8 @@ const checkHandler = (handler, name) => {
 
 // 🔓 อนุญาตให้ Guest (ไม่มี Token) สามารถดูรายการรถยนต์ได้
 router.get('/', 
-    (req, res, next) => {
-        console.log('[TRACE] GET /api/vehicles ROUTE HIT');
-        next();
-    },
-    (req, res, next) => {
-        console.log('[TRACE] Calling vehicleController.getVehicles');
-        next();
-    },
+    checkHandler(verifyToken, 'verifyToken'),
+    checkHandler(requireRole(['ADMIN', 'USER', 'GUARD', 'GUEST']), 'requireRole'),
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
 );
 
@@ -63,16 +57,18 @@ router.get('/history',
 
 // 🔒 เพิ่มข้อมูลรถ (ต้องใช้ Token และสิทธิ์ ADMIN)
 router.post('/', 
-    checkHandler(verifyToken, 'verifyToken'), 
-    checkHandler(isAdmin, 'isAdmin'), 
+    checkHandler(verifyToken, 'verifyToken'),
+    checkHandler(isAdmin, 'isAdmin'),
     uploadMiddleware.fields([
         { name: 'image', maxCount: 5 },
         { name: 'actFile', maxCount: 5 },
+        { name: 'actDocument', maxCount: 5 },
+        { name: 'act_file', maxCount: 5 },
         { name: 'file', maxCount: 5 },
         { name: 'uploadUrl', maxCount: 5 },
         { name: 'upload_url', maxCount: 5 },
         { name: 'vehicle_image', maxCount: 5 },
-        { name: 'act_file', maxCount: 5 }
+        { name: 'attachments', maxCount: 5 }
     ]), 
     checkHandler(vehicleController.createVehicle, 'vehicleController.createVehicle')
 );
@@ -90,11 +86,13 @@ router.put('/:id',
     uploadMiddleware.fields([
         { name: 'image', maxCount: 5 },
         { name: 'actFile', maxCount: 5 },
+        { name: 'actDocument', maxCount: 5 },
+        { name: 'act_file', maxCount: 5 },
         { name: 'file', maxCount: 5 },
         { name: 'uploadUrl', maxCount: 5 },
         { name: 'upload_url', maxCount: 5 },
         { name: 'vehicle_image', maxCount: 5 },
-        { name: 'act_file', maxCount: 5 }
+        { name: 'attachments', maxCount: 5 }
     ]), 
     checkHandler(vehicleController.updateVehicle, 'vehicleController.updateVehicle')
 );

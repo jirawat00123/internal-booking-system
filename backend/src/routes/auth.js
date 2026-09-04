@@ -57,6 +57,18 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // 🔴 ป้องกันการ Login ซ้ำ (Single Active Session)
+    const TEN_MINUTES_IN_MS = 10 * 60 * 1000;
+    const isSessionExpired = userAccount.lastLoginAt && (new Date() - new Date(userAccount.lastLoginAt) > TEN_MINUTES_IN_MS);
+
+    if (userAccount.currentSessionId && !isSessionExpired) {
+      return res.status(409).json({ 
+        success: false, 
+        error: "SESSION_ALREADY_ACTIVE",
+        message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน" 
+      });
+    }
+
     const role = userAccount.role ? userAccount.role.name : 'USER';
 
     // 2. 🛡️ เช็ก PIN: บังคับตรวจเฉพาะ Role ระดับสูง หรือเมื่อมีการส่ง PIN มาใน Request Body
@@ -128,7 +140,7 @@ router.post('/login', async (req, res) => {
         sessionId: newSessionId 
       }, 
       secretKey, 
-      { expiresIn: '1d' }
+      { expiresIn: '10m' }
     );
     
 // 🟢 [แก้ไขใหม่] บันทึก AuditLog ให้แสดงรูปแบบเหมือนเส้น /login-pin
@@ -211,6 +223,18 @@ router.post('/login-pin', async (req, res) => {
           return res.status(403).json({ success: false, message: 'บัญชีถูกระงับการใช้งานชั่วคราว' });
         }
 
+        // 🔴 ป้องกันการ Login ซ้ำ (Single Active Session)
+        const TEN_MINUTES_IN_MS = 10 * 60 * 1000;
+        const isSessionExpired = matchedUser.lastLoginAt && (new Date() - new Date(matchedUser.lastLoginAt) > TEN_MINUTES_IN_MS);
+
+        if (matchedUser.currentSessionId && !isSessionExpired) {
+          return res.status(409).json({ 
+            success: false, 
+            error: "SESSION_ALREADY_ACTIVE",
+            message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน" 
+          });
+        }
+
         if (!matchedUser.pin || !(await verifyPin(matchedUser.pin, inputPin))) {
           // 🟢 หากหมดเวลาอายัดบัญชีแล้ว ให้เริ่มนับจำนวนครั้งที่ใส่ผิดใหม่จาก 0
           const isLockExpired = matchedUser.lockedUntil && matchedUser.lockedUntil <= new Date();
@@ -287,6 +311,15 @@ router.post('/login-pin', async (req, res) => {
           return res.status(401).json({
             success: false,
             message: 'รหัส PIN ไม่ถูกต้อง หรือบัญชีถูกระงับ'
+          });
+        }
+
+        // 🔴 ป้องกันการ Login ซ้ำ (Single Active Session)
+        if (matchedUser.currentSessionId) {
+          return res.status(409).json({ 
+            success: false, 
+            error: "SESSION_ALREADY_ACTIVE",
+            message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน" 
           });
         }
 
@@ -369,7 +402,7 @@ router.post('/login-pin', async (req, res) => {
         sessionId: newSessionId 
       }, 
       secretKey, 
-      { expiresIn: '12h' }
+      { expiresIn: '10m' }
     );
     
     return res.status(200).json({ success: true, message: 'เข้าสู่ระบบด้วย PIN สำเร็จ', token: token, role: assignedRole });
@@ -469,8 +502,21 @@ router.post('/logout', authenticateToken, async (req, res) => {
   try {
     await prisma.user.update({
       where: { id: req.user.userId },
-      data: { currentSessionId: null }
+      data: { currentSessionId: null } // 🟢 เคลียร์ Active Session ให้เป็น null
     });
+
+    // 🟢 เพิ่มการบันทึก AuditLog เพื่อให้ทราบประวัติการออกจากระบบและล้าง Session 
+    await prisma.auditLog.create({
+      data: {
+        action: "LOGOUT_SYSTEM",
+        module: "AUTH",
+        entityId: parseInt(req.user.userId, 10),
+        entityType: "USER",
+        userId: parseInt(req.user.userId, 10),
+        details: "ออกจากระบบและเคลียร์ Active Session สำเร็จ"
+      }
+    }).catch(err => console.error("AuditLog Error [LOGOUT_SYSTEM]:", err.message));
+
     return res.status(200).json({ success: true, message: "ออกจากระบบสำเร็จ" });
   } catch (error) {
     return res.status(500).json({ success: false, error: "ระบบไม่สามารถออกจากระบบได้" });
@@ -483,6 +529,11 @@ router.post('/logout', authenticateToken, async (req, res) => {
 router.post('/setup-pin', authController.setupPin);
 router.post('/change-pin', authenticateToken, authController.changePin);
 router.post('/admin/users/:id/reset-pin', authenticateToken, isAdmin, authController.resetUserPin);
+
+// ==========================================
+// 🔄 API 8: Refresh Token
+// ==========================================
+router.post('/refresh', authenticateToken, authController.refreshToken);
 
 router.isAdmin = isAdmin;
 router.isGuard = isGuard;

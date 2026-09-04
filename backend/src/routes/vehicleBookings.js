@@ -24,48 +24,6 @@ const {
 // Helper ป้องกัน Server Crash กรณี Controller ฟังก์ชันใดฟังก์ชันหนึ่งเป็น undefined
 const safeHandler = (fn, name) => typeof fn === 'function' ? fn : (req, res) => res.status(501).json({ success: false, error: `Function ${name} is not implemented` });
 
-// ==========================================
-// 📂 ตั้งค่าระบบจัดการไฟล์ (Multer Configuration)
-// ==========================================
-const uploadDir = 'uploads/vehicles/';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true }); // สร้างโฟลเดอร์อัตโนมัติถ้ายังไม่มี
-}
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, 'booking-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
-const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|pdf/;
-  
-  // ตรวจสอบนามสกุลไฟล์ (สำคัญสุด)
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-  
-  // 💡 ตรวจสอบ MimeType และอนุโลมให้ 'application/octet-stream' ผ่านได้ 
-  // เพราะแอป Flutter หรือ Mobile มักจะส่ง Generic MimeType นี้มาเมื่อไม่ได้ระบุเจาะจง
-  const mimetype = allowedTypes.test(file.mimetype) || file.mimetype === 'application/octet-stream';
-
-  if (extname && mimetype) {
-    return cb(null, true);
-  } else {
-    // โยน Error เดิมกลับไป แต่คราวนี้ไฟล์ .jpg จาก Flutter จะไม่หลุดเข้ามาติดบล็อกนี้แล้ว
-    cb(new Error("รองรับเฉพาะไฟล์ PDF, PNG และ JPG เท่านั้น! (หรือประเภทไฟล์ที่คุณอัปโหลดไม่รองรับ)"));
-  }
-};
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // จำกัดขนาด 5MB
-  fileFilter: fileFilter
-});
-
 // Helper Function: สำหรับลบไฟล์ขยะ (Garbage Collection)
 const deleteGarbageFile = (fileOrFiles) => {
   if (!fileOrFiles) return;
@@ -87,23 +45,31 @@ const deleteGarbageFile = (fileOrFiles) => {
 // 🟢 สเตปที่ 1: สร้างการจอง อัปโหลดไฟล์ และ The Brain (เช็กรถ + เช็กคนขับ)
 // ==========================================
 // 💡 เพิ่ม authenticateToken เพื่อยืนยันตัวตนผู้จองเสมอ
-router.post('/', authenticateToken, (req, res, next) => {
-  upload.single('document')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({ success: false, error: err.message });
-    }
-    next();
-  });
-}, async (req, res) => {
+router.post('/', authenticateToken, uploadMiddleware.any(), async (req, res) => {
+  const requestFiles = req.files || (req.file ? [req.file] : []);
+
   try {
-    const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, returnDate, purpose, driverType } = req.body;
+    const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, returnDate, purpose, driverType, driverLicenseUrl } = req.body;
     
     // 💡 รองรับทั้ง key แบบเก่า (endDatetime) และแบบใหม่ (returnDate) จาก Frontend
     const finalReturnDate = returnDate || endDatetime;
 
+    const licenseFile = Array.isArray(requestFiles) && requestFiles.length > 0
+      ? (requestFiles.find(f => ['driverLicenseUrl', 'driverLicense', 'licenseImage', 'license', 'image', 'file', 'attachment', 'attachments'].includes(f.fieldname)) || requestFiles[0]) 
+      : null;
+
+    const normalizeLicensePath = (filePath) => {
+      if (!filePath) return null;
+      const clean = String(filePath).replace(/\\/g, '/');
+      const idx = clean.indexOf('uploads/');
+      return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
+    };
+
+    const finalDriverLicenseUrl = licenseFile ? normalizeLicensePath(licenseFile.path) : (driverLicenseUrl || null);
+
 // 🛑 1. ตรวจสอบข้อมูลเบื้องต้น
     if (!vehicleId || !startDatetime || !finalReturnDate) {
-      deleteGarbageFile(req.file);
+      deleteGarbageFile(requestFiles);
       return res.status(400).json({
         success: false,
         error: "กรุณากรอกข้อมูลให้ครบถ้วน (รหัสรถ, วันเวลาเริ่มและวันที่สิ้นสุด)"
@@ -112,7 +78,7 @@ router.post('/', authenticateToken, (req, res, next) => {
 
     const parsedVehicleId = parseInt(vehicleId, 10);
     if (isNaN(parsedVehicleId)) {
-      deleteGarbageFile(req.file);
+      deleteGarbageFile(requestFiles);
       return res.status(400).json({ success: false, error: "รหัสรถยนต์ไม่ถูกต้อง" });
     }
 
@@ -120,8 +86,16 @@ router.post('/', authenticateToken, (req, res, next) => {
     const returnInput = new Date(finalReturnDate);
 
     if (isNaN(startInput.getTime()) || isNaN(returnInput.getTime())) {
-      deleteGarbageFile(req.file);
+      deleteGarbageFile(requestFiles);
       return res.status(400).json({ success: false, error: "รูปแบบวันที่และเวลาไม่ถูกต้อง" });
+    }
+
+    if (returnInput < startInput) {
+      deleteGarbageFile(requestFiles);
+      return res.status(400).json({
+        success: false,
+        error: "วันที่และเวลาคืนรถต้องไม่น้อยกว่าวันเวลาเริ่มใช้งาน กรุณาตรวจสอบอีกครั้ง"
+      });
     }
 
     // 🌟 Business Rule: ปรับ Expected Return Date ให้เป็นเวลาสิ้นวัน (23:59:59.999) 
@@ -131,7 +105,7 @@ router.post('/', authenticateToken, (req, res, next) => {
 
     // 🛑 1.1 ตรวจสอบความถูกต้องของวันเวลา
     if (expectedReturnDate <= startInput) {
-      deleteGarbageFile(req.file);
+      deleteGarbageFile(requestFiles);
       return res.status(400).json({
         success: false,
         error: "วันที่คืนรถต้องมากกว่าหรือเป็นวันเดียวกับวันที่เริ่มใช้งาน กรุณาตรวจสอบอีกครั้ง"
@@ -139,26 +113,69 @@ router.post('/', authenticateToken, (req, res, next) => {
     }
 
     // 💡 รองรับทั้ง key แบบเก่าและใหม่ที่ Flutter ส่งมา
-    const parsedPassengers = parseInt(passengers || passengerCount || 1, 10);
+    let parsedPassengers = parseInt(passengers || passengerCount || 1, 10);
+
+    // 👥 แปลงข้อมูลผู้โดยสาร (รองรับทั้ง Array และ JSON String)
+    let passengerList = [];
+    
+    // ดักจับ Key ที่เป็นไปได้ทั้งหมดจาก Flutter รวมถึง FormData
+    const targetKeys = ['passengers', 'passengerNames', 'passengerDetails', 'vehicleBookingPassengers'];
+    targetKeys.forEach(key => {
+      const val = req.body[key];
+      if (val) {
+        if (typeof val === 'string') {
+          try {
+            const parsed = JSON.parse(val);
+            if (Array.isArray(parsed)) passengerList.push(...parsed);
+            else if (isNaN(val)) passengerList.push(val);
+          } catch (e) {
+            if (val.includes(',')) passengerList.push(...val.split(','));
+            else if (isNaN(val)) passengerList.push(val);
+          }
+        } else if (Array.isArray(val)) {
+          passengerList.push(...val);
+        }
+      }
+    });
+
+    // ดักจับกรณีส่งมาเป็น Array index ผ่าน FormData (เช่น passengers[0])
+    const formDataKeys = Object.keys(req.body).filter(k => 
+      k.startsWith('passengers[') || k === 'passengers[]' ||
+      k.startsWith('passengerNames[') || k === 'passengerNames[]' ||
+      k.startsWith('passengerDetails[') || k === 'passengerDetails[]' ||
+      k.startsWith('vehicleBookingPassengers[') || k === 'vehicleBookingPassengers[]'
+    );
+    if (formDataKeys.length > 0) {
+      formDataKeys.forEach(k => {
+        const val = req.body[k];
+        if (Array.isArray(val)) passengerList.push(...val);
+        else passengerList.push(val);
+      });
+    }
+
+    // ปรับจำนวนผู้โดยสารให้สอดคล้องกับรายชื่อที่จับได้จริง ป้องกัน Error หากตัวเลขน้อยกว่า
+    if (passengerList.length > parsedPassengers) {
+      parsedPassengers = passengerList.length;
+    }
     
     // 👤 2. ดึง User ID จาก Token ที่ผ่านการตรวจสอบแล้ว (มั่นใจได้ว่าถูกคน 100%)
     const finalUserId = parseInt(req.user.userId || req.user.id, 10); // 💡 รองรับทั้ง userId และ id ป้องกัน Token ผิดรูปแบบ
 
     if (!finalUserId || isNaN(finalUserId)) {
-      deleteGarbageFile(req.file);
+      deleteGarbageFile(requestFiles);
       return res.status(401).json({ success: false, error: "ไม่พบสิทธิ์ผู้ใช้งาน กรุณาล็อกอินใหม่" });
     }
 
     // 🧠 3. The Brain & Transaction (รวมการเช็กคิวและล็อกสถานะรถเข้าด้วยกัน)
     const newBooking = await prisma.$transaction(async (tx) => {
       
-      // 3.1 ตรวจสอบรถยนต์ว่ามีในระบบ และ "ว่าง (AVAILABLE)" หรือไม่
+      // 3.1 ตรวจสอบรถยนต์ว่ามีในระบบ และไม่อยู่ในสถานะงดใช้งาน/ส่งซ่อม
       const vehicle = await tx.vehicle.findFirst({
         where: { id: parsedVehicleId, isDeleted: false }
       });
 
       if (!vehicle) throw new Error('NOT_FOUND');
-      if (vehicle.status !== 'AVAILABLE') throw new Error('NOT_AVAILABLE');
+      if (['MAINTENANCE', 'UNAVAILABLE', 'DISABLED'].includes(vehicle.status)) throw new Error('NOT_AVAILABLE');
 
       // 3.2 ตรวจสอบคิวรถทับซ้อน (Collision Detection: ยึดเวลาสิ้นวันเป็นหลัก)
       const overlappingVehicle = await tx.vehicleBooking.findFirst({
@@ -171,7 +188,8 @@ router.post('/', authenticateToken, (req, res, next) => {
       });
 
       if (overlappingVehicle) throw new Error('OVERLAP');
-      return await tx.vehicleBooking.create({
+      
+      const createdBooking = await tx.vehicleBooking.create({
         data: {
           vehicleId: parsedVehicleId,
           userId: finalUserId,
@@ -180,21 +198,79 @@ router.post('/', authenticateToken, (req, res, next) => {
           startDatetime: startInput,
           endDatetime: expectedReturnDate, // บันทึกเวลาที่ปัดเป็น 23:59:59 ลง Database
           purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
+          driverType: driverType || 'ขับขี่เอง',
+          driverLicenseUrl: finalDriverLicenseUrl,
           status: 'PENDING'
         }
       });
+
+      // 👥 บันทึกรายชื่อผู้โดยสารลงตาราง vehicle_booking_passengers
+      if (Array.isArray(passengerList) && passengerList.length > 0) {
+        const passengerData = passengerList.map(p => {
+          if (typeof p === 'object' && p !== null) {
+            return {
+              bookingId: createdBooking.id,
+              fullName: p.fullName || p.passengerName || p.name || 'ไม่ระบุชื่อ',
+              employeeId: p.employeeId ? parseInt(p.employeeId, 10) : null
+            };
+          }
+          return {
+            bookingId: createdBooking.id,
+            fullName: String(p).trim(),
+            employeeId: null
+          };
+        }).filter(p => p.fullName.length > 0);
+
+        if (passengerData.length > 0) {
+          await tx.vehicleBookingPassenger.createMany({
+            data: passengerData
+          });
+        }
+      }
+
+      return createdBooking;
     });
 
     // 📎 4. บันทึกข้อมูลไฟล์แนบ (ถ้ามีการอัปโหลด)
-    if (req.file) {
+    const uploadedFile = licenseFile || (requestFiles.length > 0 ? requestFiles[0] : null);
+    if (uploadedFile) {
       try {
+        const userObj = await prisma.user.findUnique({
+          where: { id: finalUserId },
+          include: { employee: true }
+        });
+        const rawUserName = req.user?.username || req.user?.name || userObj?.employee?.fullName || `user_${finalUserId}`;
+        const cleanUserName = String(rawUserName).replace(/[^a-zA-Z0-9_\u0E00-\u0E7F]/g, '_');
+        const fileExt = path.extname(uploadedFile.originalname || '').toLowerCase() || '.png';
+        const timestamp = Math.floor(Date.now() / 1000);
+        const newFileName = `booking_${newBooking.id}_${cleanUserName}_${timestamp}${fileExt}`;
+
+        const uploadBaseDir = process.env.UPLOAD_DIR || path.resolve(__dirname, '../../../attachments');
+        const licenseDir = path.join(uploadBaseDir, 'vehicles/license_driver');
+
+        if (!fs.existsSync(licenseDir)) {
+          fs.mkdirSync(licenseDir, { recursive: true, mode: 0o777 });
+        }
+
+        const destPath = path.join(licenseDir, newFileName);
+        fs.copyFileSync(uploadedFile.path, destPath);
+        try { fs.chmodSync(destPath, 0o777); } catch (e) {}
+
+        const relativePath = `/attachments/vehicles/license_driver/${newFileName}`;
+
+        await prisma.vehicleBooking.update({
+          where: { id: newBooking.id },
+          data: { driverLicenseUrl: relativePath }
+        });
+        newBooking.driverLicenseUrl = relativePath;
+
         await prisma.attachment.create({
           data: {
             entityType: "VEHICLE_BOOKING",
             entityId: newBooking.id,
-            fileName: req.file.originalname,
-            filePath: req.file.path.replace(/\\/g, '/'),
-            fileType: req.file.mimetype,
+            fileName: newFileName,
+            filePath: relativePath,
+            fileType: uploadedFile.mimetype,
             uploadedBy: { connect: { id: finalUserId } },
             bookingVehicle: { connect: { id: newBooking.id } }
           }
@@ -211,7 +287,7 @@ router.post('/', authenticateToken, (req, res, next) => {
     });
 
   } catch (error) {
-    deleteGarbageFile(req.file);
+    deleteGarbageFile(requestFiles);
     console.error("🔴 Create Vehicle Booking Error:", error);
     
     if (error.message === 'OVERLAP') return res.status(409).json({ success: false, error: "รถคันนี้มีการจองในช่วงเวลาดังกล่าวแล้ว กรุณาเลือกช่วงเวลาอื่น" });
@@ -245,17 +321,63 @@ router.get('/history', async (req, res) => {
             }
           }
         },
+        user: { include: { employee: true } },
+        passengerDetails: true,
         attachments: true
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { id: 'desc' }
     });
 
-    // 🟢 Map ส่งกลับไปทั้งสองคีย์ เพื่อให้ Frontend เก่าและใหม่ทำงานได้ปกติ
-    const mappedHistoryBookings = historyBookings.map(booking => ({
-      ...booking,
-      endDatetime: booking.endDatetime,
-      returnDate: booking.endDatetime
-    }));
+    // 🟢 Map ส่งกลับไปทั้งสองคีย์ พร้อมสกัด URL เอกสาร พ.ร.บ. และรายชื่อผู้โดยสาร ส่งให้ Frontend
+    const mappedHistoryBookings = historyBookings.map(booking => {
+      const actDoc = booking.vehicle?.documents?.find(doc => {
+        const docTypeId = doc.documentTypeId || doc.document_type_id;
+        const docTypeName = doc.documentType?.name || doc.name || doc.title || '';
+        const docTypeKey = doc.documentType?.key || doc.type || '';
+        return docTypeId === 1 || 
+               docTypeName.includes('พ.ร.บ') || 
+               docTypeName.includes('พรบ') || 
+               docTypeName.toUpperCase().includes('ACT') ||
+               docTypeKey.toUpperCase().includes('ACT');
+      });
+      let actUrl = actDoc ? (actDoc.uploadUrl || actDoc.upload_url || actDoc.filePath || actDoc.file_path || actDoc.url || null) : null;
+      if (actUrl && (actUrl.startsWith('/uploads/') || actUrl.startsWith('/attachments/'))) {
+        if (!actUrl.startsWith('/attachments/vehicles/documents/')) {
+          actUrl = '/attachments/vehicles/documents/' + path.basename(actUrl);
+        }
+      }
+
+      const vehicleWithAct = booking.vehicle ? {
+        ...booking.vehicle,
+        actUploadUrl: actUrl,
+        act_upload_url: actUrl,
+        actUrl: actUrl,
+        act_url: actUrl,
+        actFilePath: actUrl,
+        act_file_path: actUrl,
+        pororborUrl: actUrl
+      } : booking.vehicle;
+
+      const passengerNames = (booking.passengerDetails || [])
+        .map(p => typeof p === 'object' && p !== null ? (p.fullName || p.passengerName || p.name || '') : String(p))
+        .filter(name => name.trim().length > 0);
+
+      return {
+        ...booking,
+        userName: booking.user?.employee?.fullName || booking.user?.username || '-',
+        vehicle: vehicleWithAct,
+        actUploadUrl: actUrl,
+        act_upload_url: actUrl,
+        actUrl: actUrl,
+        act_url: actUrl,
+        actFilePath: actUrl,
+        act_file_path: actUrl,
+        pororborUrl: actUrl,
+        passengerNames: passengerNames.length > 0 ? passengerNames : (booking.passengerNames || []),
+        endDatetime: booking.endDatetime,
+        returnDate: booking.endDatetime
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -291,6 +413,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
           }
         },
         user: { include: { employee: true } },
+        passengerDetails: true,
         attachments: true
       }
     });
@@ -319,9 +442,52 @@ router.get('/:id', authenticateToken, async (req, res) => {
       orderBy: { createdAt: 'desc' }
     });
 
+    // 🟢 สกัดไฟล์ พ.ร.บ. จาก vehicle.documents
+    const actDoc = booking.vehicle?.documents?.find(doc => {
+      const docTypeId = doc.documentTypeId || doc.document_type_id;
+      const docTypeName = doc.documentType?.name || doc.name || doc.title || '';
+      const docTypeKey = doc.documentType?.key || doc.type || '';
+      return docTypeId === 1 || 
+             docTypeName.includes('พ.ร.บ') || 
+             docTypeName.includes('พรบ') || 
+             docTypeName.toUpperCase().includes('ACT') ||
+             docTypeKey.toUpperCase().includes('ACT');
+    });
+    let actUrl = actDoc ? (actDoc.uploadUrl || actDoc.upload_url || actDoc.filePath || actDoc.file_path || actDoc.url || null) : null;
+    if (actUrl && (actUrl.startsWith('/uploads/') || actUrl.startsWith('/attachments/'))) {
+      if (!actUrl.startsWith('/attachments/vehicles/documents/')) {
+        actUrl = '/attachments/vehicles/documents/' + path.basename(actUrl);
+      }
+    }
+
+    const vehicleWithAct = booking.vehicle ? {
+      ...booking.vehicle,
+      actUploadUrl: actUrl,
+      act_upload_url: actUrl,
+      actUrl: actUrl,
+      act_url: actUrl,
+      actFilePath: actUrl,
+      act_file_path: actUrl,
+      pororborUrl: actUrl
+    } : booking.vehicle;
+
+    const passengerNames = (booking.passengerDetails || [])
+      .map(p => typeof p === 'object' && p !== null ? (p.fullName || p.passengerName || p.name || '') : String(p))
+      .filter(name => name.trim().length > 0);
+
     // 🟢 Map ส่งกลับไปทั้งสองคีย์ เพื่อให้ Frontend เก่าและใหม่ทำงานได้ปกติ พร้อมแนบสถานะ Early Release และ Early Return
     const mappedBooking = {
       ...booking,
+      userName: booking.user?.employee?.fullName || booking.user?.username || '-',
+      vehicle: vehicleWithAct,
+      actUploadUrl: actUrl,
+      act_upload_url: actUrl,
+      actUrl: actUrl,
+      act_url: actUrl,
+      actFilePath: actUrl,
+      act_file_path: actUrl,
+      pororborUrl: actUrl,
+      passengerNames: passengerNames.length > 0 ? passengerNames : (booking.passengerNames || []),
       endDatetime: booking.endDatetime,
       returnDate: booking.endDatetime,
       earlyReleaseStatus: latestEarlyRequest ? latestEarlyRequest.action : null,
@@ -356,19 +522,63 @@ router.get('/', authenticateToken, async (req, res) => {
             }
           }
         },
-        user: { include: { employee: true } }
+        user: { include: { employee: true } },
+        passengerDetails: true
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: 'desc' },
       take: 100
     });
 
-    // 🟢 Map returnDate กลับไปเป็น endDatetime เพื่อให้ Frontend ทำงานได้ปกติ
-// 🟢 Map ส่งกลับไปทั้งสองคีย์ เพื่อให้ Frontend เก่าและใหม่ทำงานได้ปกติ
-    const mappedBookings = bookings.map(booking => ({
-      ...booking,
-      endDatetime: booking.endDatetime,
-      returnDate: booking.endDatetime
-    }));
+    // 🟢 Map ส่งกลับไปทั้งสองคีย์ พร้อมสกัด URL เอกสาร พ.ร.บ. และรายชื่อผู้โดยสาร ส่งให้ Frontend
+    const mappedBookings = bookings.map(booking => {
+      const actDoc = booking.vehicle?.documents?.find(doc => {
+        const docTypeId = doc.documentTypeId || doc.document_type_id;
+        const docTypeName = doc.documentType?.name || doc.name || doc.title || '';
+        const docTypeKey = doc.documentType?.key || doc.type || '';
+        return docTypeId === 1 || 
+               docTypeName.includes('พ.ร.บ') || 
+               docTypeName.includes('พรบ') || 
+               docTypeName.toUpperCase().includes('ACT') ||
+               docTypeKey.toUpperCase().includes('ACT');
+      });
+      let actUrl = actDoc ? (actDoc.uploadUrl || actDoc.upload_url || actDoc.filePath || actDoc.file_path || actDoc.url || null) : null;
+      if (actUrl && (actUrl.startsWith('/uploads/') || actUrl.startsWith('/attachments/'))) {
+        if (!actUrl.startsWith('/attachments/vehicles/documents/')) {
+          actUrl = '/attachments/vehicles/documents/' + path.basename(actUrl);
+        }
+      }
+
+      const vehicleWithAct = booking.vehicle ? {
+        ...booking.vehicle,
+        actUploadUrl: actUrl,
+        act_upload_url: actUrl,
+        actUrl: actUrl,
+        act_url: actUrl,
+        actFilePath: actUrl,
+        act_file_path: actUrl,
+        pororborUrl: actUrl
+      } : booking.vehicle;
+
+      const passengerNames = (booking.passengerDetails || [])
+        .map(p => typeof p === 'object' && p !== null ? (p.fullName || p.passengerName || p.name || '') : String(p))
+        .filter(name => name.trim().length > 0);
+
+      return {
+        ...booking,
+        userName: booking.user?.employee?.fullName || booking.user?.username || '-',
+        vehicle: vehicleWithAct,
+        actUploadUrl: actUrl,
+        act_upload_url: actUrl,
+        actUrl: actUrl,
+        act_url: actUrl,
+        actFilePath: actUrl,
+        act_file_path: actUrl,
+        pororborUrl: actUrl,
+        passengerNames: passengerNames.length > 0 ? passengerNames : (booking.passengerNames || []),
+        endDatetime: booking.endDatetime,
+        returnDate: booking.endDatetime
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -406,7 +616,8 @@ router.patch('/:id/cancel', authenticateToken, async (req, res) => {
 
     // 🛡️ เช็กสิทธิ์ข้อ 2: พนักงานทั่วไป (USER) ยกเลิกได้เฉพาะรายการที่ตัวเองเป็นคนจองเท่านั้น
     // (ADMIN จะหลุดรอดเงื่อนไขนี้ไป ทำให้ยกเลิกของใครก็ได้ตาม Requirement)
-    if (req.user.role === 'USER' && bookingExists.userId !== req.user.userId) {
+    const currentUserId = parseInt(req.user.userId || req.user.id, 10);
+    if (req.user.role === 'USER' && bookingExists.userId !== currentUserId) {
       return res.status(403).json({ success: false, error: "คุณไม่มีสิทธิ์ยกเลิกการจองของผู้อื่น" });
     }
 

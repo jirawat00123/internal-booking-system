@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'adduser_successpage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AddUserPage extends StatefulWidget {
   const AddUserPage({super.key});
@@ -45,20 +46,23 @@ class _AddUserPageState extends State<AddUserPage> {
       final responses = await Future.wait([
         http.get(Uri.parse('$baseUrl/departments')),
         http.get(Uri.parse('$baseUrl/roles')),
-        http.get(Uri.parse('$baseUrl/employees/generate-code')),
       ]);
 
       if (responses[0].statusCode == 200) {
         final data = jsonDecode(responses[0].body);
-        departments = data['data'];
+        if (data is List) {
+          departments = data;
+        } else if (data['data'] is List) {
+          departments = data['data'];
+        }
       }
       if (responses[1].statusCode == 200) {
         final data = jsonDecode(responses[1].body);
-        roles = data['data'];
-      }
-      if (responses[2].statusCode == 200) {
-        final data = jsonDecode(responses[2].body);
-        empCodeController.text = data['code'];
+        if (data is List) {
+          roles = data;
+        } else if (data['data'] is List) {
+          roles = data['data'];
+        }
       }
     } catch (e) {
       debugPrint("Error fetching initial data: $e");
@@ -204,8 +208,12 @@ class _AddUserPageState extends State<AddUserPage> {
       final bodyData = jsonEncode({
         'employeeCode': empCodeController.text.trim(),
         'fullName': nameController.text.trim(),
-        'departmentId': selectedDepartmentId,
-        'roleId': selectedRoleId,
+        'departmentId': selectedDepartmentId != null
+            ? int.parse(selectedDepartmentId.toString())
+            : null,
+        'roleId': selectedRoleId != null
+            ? int.parse(selectedRoleId.toString())
+            : null,
         'active': selectedStatus,
       });
 
@@ -367,10 +375,17 @@ class _AddUserPageState extends State<AddUserPage> {
                             items: departments.map<DropdownMenuItem<int>>((
                               dept,
                             ) {
+                              final intId = dept['id'] is int
+                                  ? dept['id'] as int
+                                  : int.tryParse(dept['id'].toString());
+                              final deptName =
+                                  dept['departmentName']?.toString() ??
+                                  dept['name']?.toString() ??
+                                  '';
                               return DropdownMenuItem<int>(
-                                value: dept['id'],
+                                value: intId,
                                 child: Text(
-                                  dept['departmentName'],
+                                  deptName,
                                   style: const TextStyle(fontSize: 14),
                                 ),
                               );
@@ -404,10 +419,17 @@ class _AddUserPageState extends State<AddUserPage> {
                               color: Color(0xFF009CB4),
                             ),
                             items: roles.map<DropdownMenuItem<int>>((role) {
+                              final intId = role['id'] is int
+                                  ? role['id'] as int
+                                  : int.tryParse(role['id'].toString());
+                              final roleName =
+                                  role['name']?.toString() ??
+                                  role['roleName']?.toString() ??
+                                  '';
                               return DropdownMenuItem<int>(
-                                value: role['id'],
+                                value: intId,
                                 child: Text(
-                                  role['name'],
+                                  roleName,
                                   style: const TextStyle(fontSize: 14),
                                 ),
                               );

@@ -21,6 +21,35 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
   List<dynamic> pendingVehicles = []; // รอปล่อยออก
   List<dynamic> inUseVehicles = []; // กำลังใช้งาน (รอรับเข้า)
   List<dynamic> historyVehicles = []; // 🎯 ประวัติ (เสร็จสิ้น)
+  String _token = ''; // 🎯 เพิ่มตัวแปรสำหรับเก็บ Token
+
+  // 🎯 กำหนด IP/Domain ของ Backend
+  final String baseUrl = kIsWeb
+      ? 'https://192.168.88.25:3002'
+      : 'https://192.168.88.25:3002';
+
+  // 💡 ฟังก์ชันช่วยเติม Base URL ให้พาธรูปภาพ
+  String _getFullImageUrl(String path) {
+    if (path.isEmpty) return '';
+
+    // แปลง Backslash ให้เป็น Slash
+    String normalizedPath = path.replaceAll('\\', '/');
+
+    if (normalizedPath.startsWith('http://') ||
+        normalizedPath.startsWith('https://')) {
+      return normalizedPath;
+    }
+
+    // 🎯 ถ้ามีชื่อโฟลเดอร์เต็มจากฝั่ง Server (เช่น /Internal Booking System/...)
+    // ให้ตัดทิ้งแล้วเริ่มที่ /attachments/ เพื่อให้ตรงกับ Static Route ของ API
+    if (normalizedPath.contains('/attachments/')) {
+      normalizedPath = normalizedPath.substring(
+        normalizedPath.indexOf('/attachments/'),
+      );
+    }
+
+    return '$baseUrl${normalizedPath.startsWith('/') ? '' : '/'}$normalizedPath';
+  }
 
   @override
   void initState() {
@@ -50,7 +79,37 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
       String day = dt.day.toString().padLeft(2, '0');
       String month = months[dt.month - 1];
       String year = dt.year.toString();
-      return 'วันที่ $day $month $year';
+      String hour = dt.hour.toString().padLeft(2, '0');
+      String minute = dt.minute.toString().padLeft(2, '0');
+      return '$day $month $year เวลา $hour:$minute น.';
+    } catch (e) {
+      return isoDate;
+    }
+  }
+
+  // 💡 ฟังก์ชันช่วยแปลงวันที่แสดงเฉพาะวันที่ (ไม่แสดงเวลา)
+  String _formatThaiDateOnly(String? isoDate) {
+    if (isoDate == null || isoDate.isEmpty) return '-';
+    try {
+      DateTime dt = DateTime.parse(isoDate).toLocal();
+      List<String> months = [
+        'ม.ค.',
+        'ก.พ.',
+        'มี.ค.',
+        'เม.ย.',
+        'พ.ค.',
+        'มิ.ย.',
+        'ก.ค.',
+        'ส.ค.',
+        'ก.ย.',
+        'ต.ค.',
+        'พ.ย.',
+        'ธ.ค.',
+      ];
+      String day = dt.day.toString().padLeft(2, '0');
+      String month = months[dt.month - 1];
+      String year = dt.year.toString();
+      return '$day $month $year';
     } catch (e) {
       return isoDate;
     }
@@ -67,6 +126,9 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
         if (mounted) setState(() => isLoading = false);
         return;
       }
+
+      // 🎯 บันทึก Token ลง State เพื่อนำไปแนบ Headers
+      if (mounted) setState(() => _token = token);
 
       final String baseUrl = kIsWeb
           ? 'https://192.168.88.25:3002'
@@ -222,20 +284,336 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
         var vehicle = booking['vehicle'] ?? {};
         var user = booking['user']?['employee'] ?? booking['user'] ?? {};
 
+        // 🎯 ดึงข้อมูล Logs สำหรับเวลาเข้า-ออกจริง (รองรับทั้ง Map และ List)
+        var vehicleLogs = booking['vehicleLogs'];
+        var log = (vehicleLogs is List && vehicleLogs.isNotEmpty)
+            ? vehicleLogs.last
+            : (vehicleLogs is Map
+                  ? vehicleLogs
+                  : (booking['vehicleLog'] ?? {}));
+
+        // 🎯 ปรับให้เรียกใช้ releaseTime / returnTime จาก Backend/Database ก่อนเสมอ
+        String? actualCheckoutTime =
+            log['releaseTime'] ??
+            booking['releaseTime'] ??
+            log['checkoutTime'] ??
+            booking['checkoutTime'] ??
+            booking['actualCheckoutTime'] ??
+            booking['actual_checkout_time'] ??
+            log['checkout_time'];
+
+        String? actualReturnTime =
+            log['returnTime'] ??
+            booking['returnTime'] ??
+            booking['actualReturnTime'] ??
+            booking['actual_return_time'] ??
+            log['return_time'];
+
+        // 🎯 ดึง Array จาก attachments
+        List<dynamic> attachments = booking['attachments'] is List
+            ? booking['attachments']
+            : [];
+
+        // 🎯 ดึงรูปภาพปล่อยรถ (Release Images) จาก releaseImages ลำดับแรก แล้วจึง fallback ไปที่ attachments
+        List<String> checkOutImages = [];
+        var rawRelease =
+            booking['releaseImages'] ??
+            booking['checkOutImages'] ??
+            booking['check_out_images'] ??
+            booking['checkoutImages'] ??
+            booking['releasePhotos'];
+
+        if (rawRelease is List && rawRelease.isNotEmpty) {
+          checkOutImages = rawRelease
+              .map<String>((e) {
+                if (e is Map) {
+                  return _getFullImageUrl(
+                    (e['filePath'] ?? e['file_path'] ?? e['url'] ?? '')
+                        .toString(),
+                  );
+                }
+                return _getFullImageUrl(e.toString());
+              })
+              .where((p) => p.isNotEmpty)
+              .toList();
+        }
+
+        if (checkOutImages.isEmpty) {
+          checkOutImages = attachments
+              .where((a) {
+                String type =
+                    (a['entityType'] ?? a['type'] ?? a['category'] ?? '')
+                        .toString()
+                        .toUpperCase();
+                String path =
+                    (a['filePath'] ?? a['file_path'] ?? a['url'] ?? '')
+                        .toString()
+                        .toLowerCase();
+                return type.contains('RELEASE') || path.contains('/release');
+              })
+              .map<String>(
+                (a) => _getFullImageUrl(
+                  (a['filePath'] ??
+                          a['file_path'] ??
+                          a['url'] ??
+                          a['fileName'] ??
+                          '')
+                      .toString(),
+                ),
+              )
+              .where((p) => p.isNotEmpty)
+              .toList();
+        }
+
+        // 🎯 ดึงรูปภาพปล่อยรถเพิ่มเติมจาก vehicleLogs (checkoutFrontPhoto, checkoutBackPhoto, checkoutMileagePhoto)
+        if (log is Map) {
+          for (var field in [
+            'checkoutFrontPhoto',
+            'checkoutBackPhoto',
+            'checkoutMileagePhoto',
+          ]) {
+            if (log[field] != null && log[field].toString().isNotEmpty) {
+              String imgUrl = _getFullImageUrl(log[field].toString());
+              if (imgUrl.isNotEmpty && !checkOutImages.contains(imgUrl)) {
+                checkOutImages.add(imgUrl);
+              }
+            }
+          }
+        }
+
+        // 🎯 ดึงรูปภาพรับรถเข้า (Return Images) จาก returnImages ลำดับแรก แล้วจึง fallback ไปที่ attachments
+        List<String> checkInImages = [];
+        var rawReturn =
+            booking['returnImages'] ??
+            booking['checkInImages'] ??
+            booking['check_in_images'] ??
+            booking['receiveImages'] ??
+            booking['returnPhotos'];
+
+        if (rawReturn is List && rawReturn.isNotEmpty) {
+          checkInImages = rawReturn
+              .map<String>((e) {
+                if (e is Map) {
+                  return _getFullImageUrl(
+                    (e['filePath'] ?? e['file_path'] ?? e['url'] ?? '')
+                        .toString(),
+                  );
+                }
+                return _getFullImageUrl(e.toString());
+              })
+              .where((p) => p.isNotEmpty)
+              .toList();
+        }
+
+        if (checkInImages.isEmpty) {
+          checkInImages = attachments
+              .where((a) {
+                String type =
+                    (a['entityType'] ?? a['type'] ?? a['category'] ?? '')
+                        .toString()
+                        .toUpperCase();
+                String path =
+                    (a['filePath'] ?? a['file_path'] ?? a['url'] ?? '')
+                        .toString()
+                        .toLowerCase();
+                return type.contains('RETURN') || path.contains('/return');
+              })
+              .map<String>(
+                (a) => _getFullImageUrl(
+                  (a['filePath'] ??
+                          a['file_path'] ??
+                          a['url'] ??
+                          a['fileName'] ??
+                          '')
+                      .toString(),
+                ),
+              )
+              .where((p) => p.isNotEmpty)
+              .toList();
+        }
+
+        // 🎯 ดึงรูปภาพรับรถเข้าเพิ่มเติมจาก vehicleLogs (returnFrontPhoto, returnBackPhoto, returnMileagePhoto)
+        if (log is Map) {
+          for (var field in [
+            'returnFrontPhoto',
+            'returnBackPhoto',
+            'returnMileagePhoto',
+          ]) {
+            if (log[field] != null && log[field].toString().isNotEmpty) {
+              String imgUrl = _getFullImageUrl(log[field].toString());
+              if (imgUrl.isNotEmpty && !checkInImages.contains(imgUrl)) {
+                checkInImages.add(imgUrl);
+              }
+            }
+          }
+        }
+
+        // 🎯 ปรับลำดับให้ใช้ bookingRef นำหน้าก่อน bookingCode
+        String bookingRef =
+            (booking['bookingRef'] ??
+                    booking['bookingCode'] ??
+                    booking['id'] ??
+                    '')
+                .toString();
+
+        dynamic relObj =
+            booking['checkoutByName'] ??
+            log['checkoutByName'] ??
+            log['releasedBy'] ??
+            log['checkoutBy'] ??
+            log['releaseBy'] ??
+            booking['releasedBy'] ??
+            booking['checkoutBy'] ??
+            booking['releaseBy'];
+        String releasedBy = '-';
+        if (relObj is String) {
+          // เพิ่มการกรองเพื่อป้องกันกรณีที่ค่าเป็นว่าง หรือ Backend ส่งกลับมาเป็น ObjectId (ไอดีความยาว 24 ตัวอักษร)
+          releasedBy =
+              (relObj.trim().isEmpty ||
+                  (relObj.length == 24 && !relObj.contains(' ')))
+              ? '-'
+              : relObj;
+        } else if (relObj is Map) {
+          releasedBy =
+              relObj['fullName'] ??
+              relObj['name'] ??
+              relObj['employee']?['fullName'] ??
+              relObj['employee']?['name'] ??
+              '-';
+        }
+
+        dynamic retObj =
+            booking['returnByName'] ??
+            log['returnByName'] ??
+            log['returnedBy'] ??
+            log['checkinBy'] ??
+            log['returnBy'] ??
+            booking['returnedBy'] ??
+            booking['checkinBy'] ??
+            booking['returnBy'];
+        String returnedBy = '-';
+        if (retObj is String) {
+          // เพิ่มการกรองเพื่อป้องกันกรณีที่ค่าเป็นว่าง หรือ Backend ส่งกลับมาเป็น ObjectId (ไอดีความยาว 24 ตัวอักษร)
+          returnedBy =
+              (retObj.trim().isEmpty ||
+                  (retObj.length == 24 && !retObj.contains(' ')))
+              ? '-'
+              : retObj;
+        } else if (retObj is Map) {
+          returnedBy =
+              retObj['fullName'] ??
+              retObj['name'] ??
+              retObj['employee']?['fullName'] ??
+              retObj['employee']?['name'] ??
+              '-';
+        }
+
         return _buildVehicleCard(
           bookingId: (booking['id'] ?? booking['bookingId'] ?? '').toString(),
+          bookingRef: bookingRef,
           carName:
               vehicle['vehicleName'] ?? vehicle['model'] ?? 'ไม่ระบุรุ่นรถ',
           plate: vehicle['plateNumber'] ?? vehicle['licensePlate'] ?? '-',
           booker: user['fullName'] ?? user['name'] ?? 'ไม่ระบุชื่อ',
-          imageUrl: vehicle['uploadUrl'] ?? vehicle['imageUrl'] ?? '',
-          startDate:
-              booking['startDatetime'] ??
-              booking['startDate'], // ส่งวันที่ไปแปลง
-          endDate:
-              booking['endDatetime'] ?? booking['endDate'], // ส่งวันที่ไปแปลง
+          releasedBy: releasedBy,
+          returnedBy: returnedBy,
+          imageUrl: _getFullImageUrl(
+            vehicle['uploadUrl'] ?? vehicle['imageUrl'] ?? '',
+          ),
+          startDate: booking['startDatetime'] ?? booking['startDate'],
+          endDate: booking['endDatetime'] ?? booking['endDate'],
+          createdAt: booking['createdAt'] ?? booking['created_at'],
+          actualCheckoutTime: actualCheckoutTime,
+          actualReturnTime: actualReturnTime,
+          checkOutImages: checkOutImages,
+          checkInImages: checkInImages,
         );
       },
+    );
+  }
+
+  void _showImageGallery(
+    BuildContext context,
+    String title,
+    List<String>? imageUrls,
+  ) {
+    if (imageUrls == null || imageUrls.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'ไม่มีรูปภาพบันทึกไว้',
+            style: TextStyle(fontFamily: 'Kanit'),
+          ),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Kanit',
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 300,
+              child: PageView.builder(
+                itemCount: imageUrls.length,
+                itemBuilder: (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        imageUrls[index],
+                        headers: {
+                          'Authorization': 'Bearer $_token',
+                        }, // 🎯 แนบ Token
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Center(
+                              child: Text(
+                                'ไม่สามารถโหลดรูปภาพได้',
+                                style: TextStyle(fontFamily: 'Kanit'),
+                              ),
+                            ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12.0),
+              child: Text(
+                'จำนวนทั้งหมด ${imageUrls.length} รูป (เลื่อนซ้าย-ขวาเพื่อดูรูป)',
+                style: const TextStyle(fontFamily: 'Kanit'),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -270,12 +648,20 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
 
   Widget _buildVehicleCard({
     required String bookingId,
+    String? bookingRef,
     required String carName,
     required String plate,
     required String booker,
+    String? releasedBy,
+    String? returnedBy,
     required String imageUrl,
     String? startDate,
     String? endDate,
+    String? createdAt,
+    String? actualCheckoutTime,
+    String? actualReturnTime,
+    List<String>? checkOutImages,
+    List<String>? checkInImages,
   }) {
     bool isPending = _selectedIndex == 0;
     bool isInUse = _selectedIndex == 1;
@@ -307,7 +693,10 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
                     color: Colors.grey.shade200,
                     child: imageUrl.isNotEmpty
                         ? Image.network(
-                            '${kIsWeb ? "https://192.168.88.25:3002" : "https://192.168.88.25:3002"}$imageUrl',
+                            imageUrl, // 🎯 ใช้ imageUrl ที่ผ่าน _getFullImageUrl มาแล้วเพื่อไม่ให้ URL เบิ้ลซ้อนกัน
+                            headers: {
+                              'Authorization': 'Bearer $_token',
+                            }, // 🎯 แนบ Token
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => const Icon(
                               Icons.directions_car,
@@ -378,22 +767,28 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
             ),
             const SizedBox(height: 12),
 
-            // 🎯 สลับการแสดงผลข้อมูลระหว่าง "หน้าปกติ" กับ "หน้าประวัติ"
+            const Divider(),
+            const SizedBox(height: 8),
+
+            _buildDetailRow('เวลาที่กดจอง :', _formatThaiDate(createdAt)),
+
+            // 🟢 แสดงผลแยกตามสถานะ (ปล่อยรถ / รับรถเข้า / ประวัติ)
+            if (isPending) ...[
+              _buildDetailRow('เริ่มใช้งาน :', _formatThaiDateOnly(startDate)),
+              _buildDetailRow('ถึงวัน :', _formatThaiDateOnly(endDate)),
+            ] else if (isInUse) ...[
+              _buildDetailRow('เริ่มใช้งาน :', _formatThaiDateOnly(startDate)),
+              _buildDetailRow('ถึงวัน :', _formatThaiDateOnly(endDate)),
+            ] else if (isHistory) ...[
+              _buildDetailRow('เริ่มใช้งาน :', _formatThaiDateOnly(startDate)),
+              _buildDetailRow('ถึงวันที่ :', _formatThaiDateOnly(endDate)),
+            ],
+
+            _buildDetailRow('ผู้ทำรายการ :', booker),
+
             if (isHistory) ...[
-              const Divider(),
-              const SizedBox(height: 8),
-              _buildDetailRow('วันที่ใช้ :', _formatThaiDate(startDate)),
-              _buildDetailRow('ถึงวันที่ :', _formatThaiDate(endDate)),
-              _buildDetailRow('ผู้ขับขี่ :', booker),
-            ] else ...[
-              Text(
-                'ผู้จอง : $booker',
-                style: const TextStyle(
-                  color: Colors.blueGrey,
-                  fontSize: 13,
-                  fontFamily: 'Kanit',
-                ),
-              ),
+              _buildDetailRow('ผู้ปล่อยรถ :', releasedBy ?? '-'),
+              _buildDetailRow('ผู้รับรถเข้า :', returnedBy ?? '-'),
             ],
 
             const SizedBox(height: 8),
@@ -444,6 +839,51 @@ class _SecurityVehicleListScreenState extends State<SecurityVehicleListScreen> {
                     ),
                   ),
                 ),
+              ),
+            ],
+
+            // 🎯 แสดงปุ่มดูรูปภาพปล่อยรถ / รับรถเข้า ตามความจริงของข้อมูลที่มีอยู่ (รองรับการดูรูปปล่อยรถแม้ขณะอยู่ในแท็บกำลังใช้งาน)
+            if ((checkOutImages != null && checkOutImages.isNotEmpty) ||
+                (checkInImages != null && checkInImages.isNotEmpty)) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (checkOutImages != null && checkOutImages.isNotEmpty)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.photo_camera_outlined, size: 16),
+                        label: const Text(
+                          'รูปปล่อยรถ',
+                          style: TextStyle(fontFamily: 'Kanit', fontSize: 13),
+                        ),
+                        onPressed: () => _showImageGallery(
+                          context,
+                          'รูปปล่อยรถ',
+                          checkOutImages,
+                        ),
+                      ),
+                    ),
+                  if (checkOutImages != null &&
+                      checkOutImages.isNotEmpty &&
+                      checkInImages != null &&
+                      checkInImages.isNotEmpty)
+                    const SizedBox(width: 8),
+                  if (checkInImages != null && checkInImages.isNotEmpty)
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.image_outlined, size: 16),
+                        label: const Text(
+                          'รูปรับรถเข้า',
+                          style: TextStyle(fontFamily: 'Kanit', fontSize: 13),
+                        ),
+                        onPressed: () => _showImageGallery(
+                          context,
+                          'รูปรับรถเข้า',
+                          checkInImages,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ],

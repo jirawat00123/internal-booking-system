@@ -546,9 +546,20 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
 
     if (path.isEmpty) return fallbackIcon;
 
-    if (path.startsWith('/uploads')) {
+    if (path.startsWith('http://') || path.startsWith('https://')) {
       return Image.network(
-        '${AuthService.baseUrl}$path',
+        path,
+        height: 160,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (c, e, s) => fallbackIcon,
+      );
+    } else if (path.startsWith('/') ||
+        path.startsWith('attachments/') ||
+        path.startsWith('uploads/')) {
+      final String formattedPath = path.startsWith('/') ? path : '/$path';
+      return Image.network(
+        'http://192.168.88.25:3002$formattedPath',
         height: 160,
         width: double.infinity,
         fit: BoxFit.cover,
@@ -564,7 +575,7 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
       );
     } else if (kIsWeb) {
       return Image.network(
-        path,
+        'http://192.168.88.25:3002/$path',
         height: 160,
         width: double.infinity,
         fit: BoxFit.cover,
@@ -595,24 +606,24 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
       statusColor = const Color(0xFFE65100);
       statusBgColor = const Color(0xFFFFF3E0);
       buttonText = 'รถส่งซ่อม';
+      isAvailable = false;
     } else if (rawStatus == 'IN_USE' ||
         rawStatus == 'IN USE' ||
         rawStatus == 'IN-USE' ||
         rawStatus == 'กำลังใช้งาน') {
       displayStatus = 'In Use';
       statusBgColor = const Color(0xFFE6F2FF);
-      statusColor = const Color(
-        0xFF004381,
-      ); // 🟢 เปลี่ยนจาก statusTextColor เป็น statusColor
-      buttonText = 'รถกำลังใช้งาน';
+      statusColor = const Color(0xFF004381);
+      buttonText = 'เลือกรถคันนี้';
+      isAvailable = true;
     } else if (vehicle.hasFutureBooking ||
         rawStatus == 'PENDING' ||
         rawStatus == 'จองแล้ว') {
-      // 🟢 นำ rawStatus == 'RESERVED' ออก และใช้ vehicle.hasFutureBooking ในการตรวจสอบ UI แทน
       displayStatus = 'Reserved';
       statusColor = const Color(0xFFF59E0B);
       statusBgColor = const Color(0xFFFEF3C7);
-      buttonText = 'ถูกจองแล้ว';
+      buttonText = 'เลือกรถคันนี้';
+      isAvailable = true;
     } else {
       isAvailable = true;
       displayStatus = 'Available';
@@ -648,7 +659,9 @@ class _VehicleBookingStep1PageState extends State<VehicleBooking> {
           children: [
             Hero(
               tag: 'vehicle_img_${vehicle.id}',
-              child: _buildVehicleImage(vehicle.uploadUrl ?? ''),
+              child: _buildVehicleImage(
+                vehicle.fullImageUrl ?? vehicle.uploadUrl ?? '',
+              ),
             ),
             Padding(
               padding: const EdgeInsets.all(16.0),

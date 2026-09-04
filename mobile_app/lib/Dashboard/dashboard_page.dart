@@ -177,11 +177,7 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     if (_adminData != null) {
-      return AdminDashboardView(
-        data: _adminData!,
-        onRefresh: _loadDashboardData,
-        onExport: _handleExport,
-      );
+      return const AdminDashboardView();
     }
 
     if (_securityData != null) {

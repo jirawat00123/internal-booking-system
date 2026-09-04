@@ -169,17 +169,16 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
           String lowerName = finalFileName.toLowerCase();
           if (!lowerName.endsWith('.png') &&
               !lowerName.endsWith('.jpg') &&
-              !lowerName.endsWith('.jpeg')) {
+              !lowerName.endsWith('.jpeg') &&
+              !lowerName.endsWith('.webp')) {
             finalFileName = 'vehicle_image.png';
           }
 
           request.files.add(
             http.MultipartFile.fromBytes(
-              'image', // 🚨 ชื่อฟิลด์ต้องตรงกับที่ Multer ใน Backend ตั้งไว้
+              'image',
               bytes,
-              filename:
-                  finalFileName, // ส่งชื่อไฟล์ที่การันตีว่ามีนามสกุลแน่นอน
-              contentType: MediaType('image', 'png'),
+              filename: finalFileName,
             ),
           );
         } else {
@@ -187,7 +186,6 @@ class _AddVehiclePageState extends State<AddVehiclePage> {
             await http.MultipartFile.fromPath(
               'image',
               _vehicleImage!.path,
-              contentType: MediaType('image', 'png'),
             ),
           );
         }

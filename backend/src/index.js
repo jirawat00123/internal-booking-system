@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client'); 
 
@@ -61,8 +62,96 @@ process.on('unhandledRejection', (reason, promise) => {
 // ==========================================
 // ล็อก Path ให้ชี้ตรงไปที่ uploads ของ Container (/app/uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-// 🟢 ผูก Path ให้ชี้ตรงไปที่ attachments ของ Container (/app/attachments)
-app.use('/attachments', express.static(path.join(__dirname, '../attachments')));
+
+// 🟢 เพิ่ม Mapping ตรงสำหรับรููปภาพห้องประชุม (/uploads/rooms) ให้ดึงไฟล์จากโฟลเดอร์ attachments/rooms/images แทน
+app.use('/uploads/rooms', express.static(path.normalize('/Internal Booking System/Internal Booking System/attachments/rooms/images')));
+app.use('/uploads/rooms', express.static(path.resolve(__dirname, '../attachments/rooms/images')));
+app.use('/uploads/rooms', express.static(path.resolve(__dirname, '../../attachments/rooms/images')));
+
+// 🟢 Fallback รองรับ Path เก่า (/uploads/vehicles) ให้ชี้ไปที่โฟลเดอร์จัดเก็บรูปภาพจริง
+app.use('/uploads/vehicles', express.static(path.normalize('/Internal Booking System/Internal Booking System/attachments/vehicles/images')));
+app.use('/uploads/vehicles', express.static(path.resolve(__dirname, '../attachments/vehicles/images')));
+app.use('/uploads/vehicles', express.static(path.resolve(__dirname, '../../attachments/vehicles/images')));
+
+// 🟢 Middleware ตรวจสอบไฟล์ใน /attachments (ย้ายขึ้นมาทำงานก่อน static route เพื่อแก้ไฟล์ภาษาไทยและค้นหารูปภาพ/ใบขับขี่/เอกสาร)
+app.use('/attachments', (req, res, next) => {
+  const candidateRoots = [
+    process.env.UPLOAD_DIR,
+    path.normalize('/Internal Booking System/Internal Booking System/attachments'),
+    path.normalize('C:/Internal Booking System/Internal Booking System/attachments'),
+    path.resolve(__dirname, '../../attachments'),
+    path.resolve(__dirname, '../attachments'),
+    path.resolve(__dirname, '../../../attachments'),
+    path.resolve(__dirname, '../uploads'),
+    path.join(process.cwd(), 'attachments'),
+    path.join(process.cwd(), 'Internal Booking System/Internal Booking System/attachments'),
+    path.join(process.cwd(), 'Internal Booking System/attachments'),
+    path.join(process.cwd(), '../attachments'),
+  ].filter(Boolean);
+
+  const rawPath = req.path;
+  let decodedPath = rawPath;
+  try {
+    decodedPath = decodeURIComponent(rawPath);
+  } catch (e) {}
+
+  for (const rootDir of candidateRoots) {
+    const filePathsToTry = [
+      path.join(rootDir, decodedPath),
+      path.join(rootDir, rawPath),
+      path.join(rootDir, decodedPath.replace('/vehicles/documents/', '/vehicles/images/')),
+      path.join(rootDir, decodedPath.replace('/vehicles/images/', '/vehicles/documents/')),
+      path.join(rootDir, 'vehicles/documents', path.basename(decodedPath)),
+      path.join(rootDir, 'vehicles/images', path.basename(decodedPath))
+    ];
+
+    for (const filePath of filePathsToTry) {
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+        console.log(`[File Found Check] ✅ พบไฟล์จริงที่ Path: ${filePath}`);
+        return res.sendFile(path.resolve(filePath));
+      }
+    }
+  }
+
+  console.log(`[File Found Check] ❌ ไม่พบไฟล์สำหรับ URL: ${decodedPath}`);
+  next();
+});
+
+// 🟢 เพิ่ม Mapping ตรงสำหรับรูปภาพรถยนต์ (/attachments/vehicles/images) พร้อม Fallback ค้นหาใน uploads
+app.use('/attachments/vehicles/images', express.static(path.normalize('/Internal Booking System/Internal Booking System/attachments/vehicles/images')));
+app.use('/attachments/vehicles/images', express.static(path.join(__dirname, '../attachments/vehicles/images')));
+app.use('/attachments/vehicles/images', express.static(path.join(__dirname, '../../attachments/vehicles/images')));
+app.use('/attachments/vehicles/images', express.static(path.join(__dirname, '../uploads/vehicles')));
+app.use('/attachments/vehicles/images', express.static(path.join(__dirname, '../uploads')));
+
+// 🟢 เพิ่ม Mapping สำหรับเอกสาร พรบ. / ทะเบียน (/attachments/vehicles/documents)
+app.use('/attachments/vehicles/documents', express.static(path.normalize('/Internal Booking System/Internal Booking System/attachments/vehicles/documents')));
+app.use('/attachments/vehicles/documents', express.static(path.resolve(__dirname, '../../attachments/vehicles/documents')));
+app.use('/attachments/vehicles/documents', express.static(path.resolve(__dirname, '../attachments/vehicles/documents')));
+app.use('/attachments/vehicles/documents', express.static(path.join(process.cwd(), '../attachments/vehicles/documents')));
+app.use('/attachments/vehicles/documents', express.static(path.join(process.cwd(), 'attachments/vehicles/documents')));
+
+// 🟢 เพิ่ม Mapping สำหรับเอกสารใบขับขี่ (/attachments/vehicles/license_driver)
+app.use('/attachments/vehicles/license_driver', express.static(path.normalize('/Internal Booking System/Internal Booking System/attachments/vehicles/license_driver')));
+app.use('/attachments/vehicles/license_driver', express.static(path.join(__dirname, '../attachments/vehicles/license_driver')));
+app.use('/attachments/vehicles/license_driver', express.static(path.join(__dirname, '../../attachments/vehicles/license_driver')));
+
+// 🟢 เพิ่ม Mapping สำหรับรูปการตรวจรับ/ปล่อยรถ (/attachments/vehicles/inspections)
+app.use('/attachments/vehicles/inspections', express.static(path.normalize('/Internal Booking System/Internal Booking System/attachments/vehicles/inspections')));
+app.use('/attachments/vehicles/inspections', express.static(path.resolve(__dirname, '../../attachments/vehicles/inspections')));
+app.use('/attachments/vehicles/inspections', express.static(path.resolve(__dirname, '../attachments/vehicles/inspections')));
+app.use('/attachments/vehicles/inspections', express.static(path.join(process.cwd(), '../attachments/vehicles/inspections')));
+app.use('/attachments/vehicles/inspections', express.static(path.join(process.cwd(), 'attachments/vehicles/inspections')));
+
+// 🟢 ผูก Path ให้ชี้ตรงไปที่ attachments ของ Container และโฟลเดอร์บน NAS (Absolute Path)
+if (process.env.UPLOAD_DIR) {
+  app.use('/attachments', express.static(process.env.UPLOAD_DIR));
+}
+app.use('/attachments', express.static(path.normalize('/Internal Booking System/Internal Booking System/attachments')));
+app.use('/attachments', express.static(path.resolve(__dirname, '../../attachments')));
+app.use('/attachments', express.static(path.resolve(__dirname, '../attachments')));
+app.use('/attachments', express.static(path.join(process.cwd(), '../attachments')));
+app.use('/attachments', express.static(path.join(process.cwd(), 'attachments')));
 app.use('/documents', express.static(path.join(__dirname, '../documents')));
 // ==========================================
 // 📑 ตั้งค่าหน้าปกคู่มือ API (Swagger)
@@ -365,7 +454,28 @@ app.get('/api/vehicles/available', authenticateToken, async (req, res) => {
       },
       orderBy: { id: 'desc' }
     });
-    return res.status(200).json(availableVehicles);
+
+    const formattedVehicles = availableVehicles.map(vehicle => {
+      const computedName = vehicle.vehicleName || [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || vehicle.plateNumber || 'ไม่ระบุรุ่น';
+      const plate = vehicle.plateNumber || vehicle.plate_number || vehicle.licensePlate || 'ไม่ระบุทะเบียน';
+      const seatVal = vehicle.capacity || vehicle.seats || vehicle.seatCapacity || 4;
+
+      return {
+        ...vehicle,
+        name: computedName,
+        vehicleName: computedName,
+        title: computedName,
+        plateNumber: plate,
+        plate_number: plate,
+        licensePlate: plate,
+        capacity: seatVal,
+        seats: seatVal,
+        seatCapacity: seatVal,
+        status: vehicle.status
+      };
+    });
+
+    return res.status(200).json(formattedVehicles);
   } catch (error) {
     console.error('Error fetching available vehicles:', error);
     return res.status(500).json({ message: 'เกิดข้อผิดพลาดในการดึงข้อมูลรถยนต์ที่ว่าง' });

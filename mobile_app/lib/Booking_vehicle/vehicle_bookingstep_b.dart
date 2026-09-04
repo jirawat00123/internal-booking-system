@@ -13,6 +13,7 @@ class VehicleBookingFormBPage extends StatefulWidget {
   final String endDate;
   final String timeRange;
   final int passengerCount;
+  final List<String> passengerNames;
   final String driverType; // 💡 1. เพิ่มตัวแปร userId ตรงนี้ครับ!
 
   const VehicleBookingFormBPage({
@@ -23,6 +24,7 @@ class VehicleBookingFormBPage extends StatefulWidget {
     required this.endDate,
     required this.timeRange,
     required this.passengerCount,
+    this.passengerNames = const [],
     required this.driverType, // 💡 2. บังคับรับค่า userId
   });
 
@@ -39,10 +41,19 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
   final TextEditingController detailsController = TextEditingController();
   final TextEditingController pettyCashController = TextEditingController();
 
+  late String _selectedDriverType;
   XFile? _licenseImage;
   int _imageRotation = 0;
 
   final ImagePicker _picker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDriverType = (widget.driverType.isNotEmpty)
+        ? widget.driverType
+        : 'ขับขี่เอง';
+  }
 
   @override
   void dispose() {
@@ -130,9 +141,11 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
     );
   }
 
-  Future<void> _pickLicenseImage() async {
+  Future<void> _pickLicenseImage([
+    ImageSource source = ImageSource.gallery,
+  ]) async {
     try {
-      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+      final XFile? image = await _picker.pickImage(source: source);
       if (image != null) {
         setState(() {
           _licenseImage = image;
@@ -146,10 +159,52 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
     }
   }
 
+  void _showImageSourceSelector() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Color(0xFF004381)),
+                title: const Text(
+                  'ถ่ายรูปจากกล้อง',
+                  style: TextStyle(fontFamily: 'Kanit'),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickLicenseImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(
+                  Icons.photo_library,
+                  color: Color(0xFF004381),
+                ),
+                title: const Text(
+                  'เลือกจากคลังภาพ',
+                  style: TextStyle(fontFamily: 'Kanit'),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickLicenseImage(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // 🔥 2. ฟังก์ชันกดปุ่ม "ต่อไป" แก้ให้พาไปหน้า Step 3
   void _onNextPressed() {
     if (_formKey.currentState!.validate()) {
-      if (_licenseImage == null) {
+      if (_selectedDriverType == 'ขับขี่เอง' && _licenseImage == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -160,6 +215,12 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
           ),
         );
         return;
+      }
+
+      // 🟢 นำรายละเอียดเพิ่มเติม (ถ้ามี) มาต่อท้ายวัตถุประสงค์เพื่อไม่ให้ข้อมูลสูญหาย
+      String finalPurpose = objectiveController.text.trim();
+      if (detailsController.text.trim().isNotEmpty) {
+        finalPurpose += ' - ${detailsController.text.trim()}';
       }
 
       // 🚀 นำทางไปหน้า Step 3 (ตรวจสอบข้อมูลและยืนยัน)
@@ -173,7 +234,10 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
             endDate: widget.endDate,
             timeRange: widget.timeRange,
             passengerCount: widget.passengerCount,
-            driverType: widget.driverType,
+            passengerNames: widget.passengerNames,
+            driverType: _selectedDriverType,
+            licenseImage: _licenseImage,
+            purpose: finalPurpose,
             bookerName: globalCurrentUserName, // ดึงชื่อตัวจริงมา
             userId:
                 globalCurrentUserId, // 💡 เปลี่ยนเลข 2 เป็นตัวแปรที่เก็บ ID ตัวจริงครับ!
@@ -350,7 +414,62 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
                       ),
                       const SizedBox(height: 20),
 
-                      _buildLabel('อัปโหลดรูปภาพใบขับขี่', isRequired: true),
+                      _buildLabel('ประเภทผู้ขับขี่', isRequired: true),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: RadioListTile<String>(
+                              title: const Text(
+                                'ขับขี่เอง',
+                                style: TextStyle(
+                                  fontFamily: 'Kanit',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              value: 'ขับขี่เอง',
+                              groupValue: _selectedDriverType,
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: const Color(0xFF009CB4),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _selectedDriverType = value;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                          Expanded(
+                            child: RadioListTile<String>(
+                              title: const Text(
+                                'บริษัท',
+                                style: TextStyle(
+                                  fontFamily: 'Kanit',
+                                  fontSize: 14,
+                                ),
+                              ),
+                              value: 'บริษัท',
+                              groupValue: _selectedDriverType,
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: const Color(0xFF009CB4),
+                              onChanged: (value) {
+                                if (value != null) {
+                                  setState(() {
+                                    _selectedDriverType = value;
+                                  });
+                                }
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      _buildLabel(
+                        'อัปโหลดรูปภาพใบขับขี่',
+                        isRequired: _selectedDriverType == 'ขับขี่เอง',
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         'อัปโหลดใบขับขี่ (ผู้ขับขี่ต้องเป็นพนักงาน)',
@@ -364,7 +483,9 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
 
                       // 📸 กล่องอัปโหลดรูปภาพ
                       InkWell(
-                        onTap: _licenseImage == null ? _pickLicenseImage : null,
+                        onTap: _licenseImage == null
+                            ? _showImageSourceSelector
+                            : null,
                         borderRadius: BorderRadius.circular(8),
                         child: Container(
                           width: double.infinity,
@@ -385,11 +506,45 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
                                           child: kIsWeb
                                               ? Image.network(
                                                   _licenseImage!.path,
+                                                  key: ValueKey(
+                                                    _licenseImage!.path,
+                                                  ),
+                                                  width: double.infinity,
+                                                  height: double.infinity,
                                                   fit: BoxFit.cover,
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) => const Center(
+                                                        child: Icon(
+                                                          Icons.broken_image,
+                                                          color: Colors.grey,
+                                                          size: 40,
+                                                        ),
+                                                      ),
                                                 )
                                               : Image.file(
                                                   File(_licenseImage!.path),
+                                                  key: ValueKey(
+                                                    _licenseImage!.path,
+                                                  ),
+                                                  width: double.infinity,
+                                                  height: double.infinity,
                                                   fit: BoxFit.cover,
+                                                  errorBuilder:
+                                                      (
+                                                        context,
+                                                        error,
+                                                        stackTrace,
+                                                      ) => const Center(
+                                                        child: Icon(
+                                                          Icons.broken_image,
+                                                          color: Colors.grey,
+                                                          size: 40,
+                                                        ),
+                                                      ),
                                                 ),
                                         ),
                                       ),
@@ -422,7 +577,7 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
                                       top: 12,
                                       right: 60,
                                       child: InkWell(
-                                        onTap: _pickLicenseImage,
+                                        onTap: _showImageSourceSelector,
                                         child: Container(
                                           padding: const EdgeInsets.all(8),
                                           decoration: const BoxDecoration(
@@ -449,7 +604,7 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      'แตะ อัปโหลดใบขับขี่\n(แนะนำให้ถ่ายแนวนอน)',
+                                      'แตะ ถ่ายรูปหรืออัปโหลดใบขับขี่\n(แนะนำให้ถ่ายแนวนอน)',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontFamily: 'Kanit',

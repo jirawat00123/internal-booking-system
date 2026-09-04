@@ -6,6 +6,7 @@ import 'Room_Completed.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class RoomConfirmScreen extends StatefulWidget {
   final MeetingRoom room;
@@ -98,10 +99,15 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                     ? 'https://192.168.88.25:3002'
                                     : 'https://192.168.88.25:3002';
 
+                                const storage = FlutterSecureStorage();
                                 final prefs =
                                     await SharedPreferences.getInstance();
                                 final String jwtToken =
-                                    prefs.getString('token') ?? '';
+                                    await storage.read(key: 'token') ??
+                                    await storage.read(key: 'jwt') ??
+                                    prefs.getString('token') ??
+                                    prefs.getString('jwt') ??
+                                    '';
 
                                 // 🟢 3. แปลงวันที่และเวลาให้เป็น DateTime เพื่อส่งให้ Prisma แบบ ISO-8601 (สำคัญมาก!)
                                 final dateParts = widget.formattedDate.split(
@@ -151,7 +157,7 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                             : widget.bookingTitle.trim(),
                                         "startDatetime": startDateTimeStr,
                                         "endDatetime": endDateTimeStr,
-                                        "participantCount":
+                                        "attendeeCount":
                                             widget.participantCount,
                                       }),
                                     )

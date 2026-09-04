@@ -6,7 +6,7 @@ const prisma = new PrismaClient();
 // =========================================================================
 exports.getRoomCalendar = async (req, res, next) => {
   try {
-    const { startDate, endDate, roomId, departmentId, status } = req.query;
+    const { startDate, endDate, roomId, location, departmentId, status } = req.query;
 
     // ต้องระบุช่วงเวลาเสมอ เพื่อไม่ให้ดึงข้อมูลทั้ง Database (Performance Optimization)
     if (!startDate || !endDate) {
@@ -24,6 +24,12 @@ exports.getRoomCalendar = async (req, res, next) => {
     };
 
     if (roomId) whereClause.roomId = parseInt(roomId);
+
+    if (location) {
+      whereClause.room = {
+        location: location
+      };
+    }
     
     if (status) {
       whereClause.status = status;

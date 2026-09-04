@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,8 +17,19 @@ class AuthService {
   static const String _employeeCodeKey = 'employee_code';
   static const String _hasPinKey = 'has_pin';
   static const String _pinResetRequiredKey = 'pin_reset_required';
+  static const String _fullNameKey = 'full_name';
 
   static const String baseUrl = 'https://192.168.88.25:3002';
+
+  /// แปลง Path รูปภาพให้เป็น Full URL ชี้ไปที่ Backend (Port 3002)
+  static String getImageUrl(String? path) {
+    if (path == null || path.trim().isEmpty) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      return path.replaceAll(':8443', ':3002');
+    }
+    final cleanPath = path.startsWith('/') ? path : '/$path';
+    return '$baseUrl$cleanPath';
+  }
 
   String? _accessToken;
   String? _userRole;
@@ -23,6 +37,8 @@ class AuthService {
   String? _employeeCode;
   bool? _hasPin;
   bool? _pinResetRequired;
+  String? _fullName;
+  Timer? _refreshTimer;
 
   Future<void> saveToken(String token) async {
     _accessToken = token;
@@ -61,32 +77,35 @@ class AuthService {
 
   /// ลบ Token เมื่อกด Logout หรือ Token หมดอายุ
   Future<void> deleteToken() async {
+    stopSilentRefresh();
     _accessToken = null;
     _userRole = null;
     _currentMode = null; // ลบ Mode ออกจาก Memory
     _employeeCode = null; // 🟢 ลบรหัสพนักงานออกจาก Memory
     _hasPin = null; // 🟢 ลบสถานะ PIN ออกจาก Memory
     _pinResetRequired = null; // 🟢 ลบ Flag รีเซ็ต PIN ออกจาก Memory
+    _fullName = null;
     try {
-      if (kIsWeb) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.remove(_tokenKey);
-        await prefs.remove('token');
-        await prefs.remove(_roleKey);
-        await prefs.remove(_modeKey);
-        await prefs.remove(_employeeCodeKey);
-        await prefs.remove('employeeCode');
-        await prefs.remove(_hasPinKey);
-        await prefs.remove(_pinResetRequiredKey);
-      } else {
-        await _storage.delete(key: _tokenKey);
-        await _storage.delete(key: 'token');
-        await _storage.delete(key: _roleKey);
-        await _storage.delete(key: _modeKey);
-        await _storage.delete(key: _employeeCodeKey);
-        await _storage.delete(key: 'employeeCode');
-        await _storage.delete(key: _hasPinKey);
-        await _storage.delete(key: _pinResetRequiredKey);
+      // 🟢 ล้าง SharedPreferences ทั้งบน Web และ Mobile เพื่อให้ชัวร์ว่าไม่มีค่าค้าง
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenKey);
+      await prefs.remove('token');
+      await prefs.remove(_roleKey);
+      await prefs.remove('role');
+      await prefs.remove(_modeKey);
+      await prefs.remove('current_mode');
+      await prefs.remove(_employeeCodeKey);
+      await prefs.remove('employeeCode');
+      await prefs.remove(_hasPinKey);
+      await prefs.remove(_pinResetRequiredKey);
+      await prefs.remove(_fullNameKey);
+      await prefs.remove('fullName');
+      await prefs.remove('pin'); // 🟢 เพิ่มการลบ PIN
+      await prefs.remove('username'); // 🟢 เพิ่มการลบ Username
+
+      if (!kIsWeb) {
+        // 🟢 ล้างข้อมูลทั้งหมดใน Secure Storage แบบ 100% ป้องกัน session เดิมหลงเหลือ
+        await _storage.deleteAll();
       }
     } catch (e) {
       debugPrint('⚠️ Storage delete error: $e');
@@ -94,7 +113,24 @@ class AuthService {
   }
 
   Future<void> logout() async {
-    await deleteToken();
+    try {
+      final token = await getToken();
+      if (token != null && token.isNotEmpty) {
+        await http
+            .post(
+              Uri.parse('$baseUrl/api/logout'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+            )
+            .timeout(const Duration(seconds: 3));
+      }
+    } catch (e) {
+      debugPrint('⚠️ Logout API Error: $e');
+    } finally {
+      await deleteToken();
+    }
   }
 
   Future<void> saveRole(String role) async {
@@ -254,5 +290,95 @@ class AuthService {
       _pinResetRequired = false;
     }
     return _pinResetRequired ?? false;
+  }
+
+  Future<void> saveFullName(String fullName) async {
+    _fullName = fullName;
+    try {
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_fullNameKey, fullName);
+        await prefs.setString('fullName', fullName);
+      } else {
+        await _storage.write(key: _fullNameKey, value: fullName);
+        await _storage.write(key: 'fullName', value: fullName);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Storage write error (FullName): $e');
+    }
+  }
+
+  Future<String?> getFullName() async {
+    if (_fullName != null && _fullName!.isNotEmpty) {
+      return _fullName;
+    }
+    try {
+      if (kIsWeb) {
+        final prefs = await SharedPreferences.getInstance();
+        _fullName ??= prefs.getString(_fullNameKey);
+        _fullName ??= prefs.getString('fullName');
+      } else {
+        _fullName ??= await _storage.read(key: _fullNameKey);
+        _fullName ??= await _storage.read(key: 'fullName');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Storage read error (FullName): $e');
+    }
+    return _fullName;
+  }
+
+  /// ยิง API ไปยัง /api/auth/refresh เพื่อขอ Token ใหม่
+  Future<bool> refreshToken() async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return false;
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/auth/refresh'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true && data['token'] != null) {
+          final newToken = data['token'] as String;
+          await saveToken(newToken);
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_tokenKey, newToken);
+          await prefs.setString('token', newToken);
+
+          debugPrint('🔄 Silent Refresh Token Success');
+          return true;
+        }
+      }
+      debugPrint('⚠️ Refresh Token Failed: ${response.statusCode}');
+      return false;
+    } catch (e) {
+      debugPrint('❌ Error during refreshToken: $e');
+      return false;
+    }
+  }
+
+  /// เริ่มระบบ Timer.periodic สั่งยิง Silent Refresh ทุกๆ 8 นาที
+  void startSilentRefresh() {
+    stopSilentRefresh();
+    _refreshTimer = Timer.periodic(const Duration(minutes: 8), (timer) async {
+      debugPrint('⏰ Triggering 8-minute Silent Refresh...');
+      final success = await refreshToken();
+      if (!success) {
+        debugPrint('⚠️ Silent refresh failed, stopping timer.');
+        stopSilentRefresh();
+      }
+    });
+  }
+
+  /// หยุด Timer เมื่อ Logout หรือลบ Token
+  void stopSilentRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
   }
 }

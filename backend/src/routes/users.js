@@ -27,6 +27,18 @@ router.get('/Department', async (req, res, next) => {
     }
 });
 
+// GET /api/users/search (ค้นหาผู้ใช้งานสำหรับ Autocomplete)
+router.get('/search', authenticateToken, (req, res, next) => {
+    const q = (req.query.q || req.query.search || req.query.keyword || '').toString().trim();
+    req.query.q = q;
+    req.query.search = q;
+    req.query.keyword = q;
+    if (!q) {
+        return res.status(200).json({ success: true, data: [] });
+    }
+    next();
+}, userController.searchUsers);
+
 // ==========================================
 // 🛡️ Admin User Management APIs (เฉพาะ ADMIN)
 // ==========================================
@@ -56,6 +68,10 @@ const handleResetPin = async (req, res) => {
   try {
     const userId = parseInt(req.params.id, 10);
 
+    if (!userId || isNaN(userId)) {
+      return res.status(400).json({ success: false, error: "รหัสผู้ใช้งานไม่ถูกต้อง" });
+    }
+
     const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
@@ -66,7 +82,15 @@ const handleResetPin = async (req, res) => {
         failedLoginAttempts: 0, // 🟢 เพิ่มการเคลียร์จำนวนครั้งที่เข้าสู่ระบบผิด
         lockedUntil: null       // 🟢 เพิ่มการปลดล็อคบัญชี
       },
-      include: { role: true, employee: true }
+      include: {
+        role: true,
+        employee: {
+          include: {
+            department: true,
+            position: { include: { department: true } }
+          }
+        }
+      }
     });
 
     // 🟢 เพิ่ม: บันทึก AuditLog เมื่อ Admin ทำการ Reset PIN

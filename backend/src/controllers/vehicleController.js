@@ -19,19 +19,99 @@ const safeDeleteFile = async (filePath) => {
     }
 };
 
+// Helper Function: สำหรับจัดการและย้ายไฟล์ไปยัง NAS / Target Directory
+const saveFileToNAS = (file, subFolder) => {
+    if (!file) return null;
+    const nasPath = path.normalize('/Internal Booking System/Internal Booking System/attachments');
+    const localFallbackPath = path.resolve(__dirname, '../../attachments');
+
+    let baseUploadDir = process.env.UPLOAD_DIR;
+    
+    // 🟢 ป้องกันกรณี UPLOAD_DIR เป็น Path สัมพัทธ์ หรือชี้ไปที่ uploads ภายใน backend
+    if (baseUploadDir && !path.isAbsolute(baseUploadDir)) {
+        baseUploadDir = path.resolve(__dirname, '../../', baseUploadDir);
+    }
+
+    if (!baseUploadDir || baseUploadDir.includes('uploads') || baseUploadDir.includes('backend')) {
+        try {
+            fs.accessSync(nasPath, fs.constants.R_OK | fs.constants.W_OK);
+            baseUploadDir = nasPath;
+        } catch (err) {
+            baseUploadDir = localFallbackPath;
+        }
+    }
+
+    // 🟢 บังคับเฉพาะไฟล์ พ.ร.บ. (documents) ให้เซฟลง attachments ตาม Path ที่ระบุเท่านั้น (ห้ามอยู่ใน backend)
+        if (subFolder === 'documents') {
+            try {
+                fs.accessSync(nasPath, fs.constants.R_OK | fs.constants.W_OK);
+                baseUploadDir = nasPath;
+            } catch (err) {
+                baseUploadDir = localFallbackPath;
+            }
+        }
+
+    const targetDir = path.join(baseUploadDir, 'vehicles', subFolder);
+
+    if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true, mode: 0o777 });
+    }
+
+    let filename = file.filename || (file.path ? path.basename(file.path) : null) || file.originalname || `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname || '')}`;
+
+    if (subFolder === 'documents') {
+        filename = filename.replace(/^(vehicle_|file_)/, 'act_');
+        if (!filename.startsWith('act_')) {
+            filename = 'act_' + filename;
+        }
+    } else if (subFolder === 'images') {
+        filename = filename.replace(/^(act_|file_)/, 'vehicle_');
+        if (!filename.startsWith('vehicle_')) {
+            filename = 'vehicle_' + filename;
+        }
+    }
+    file.filename = filename;
+
+    const destPath = path.join(targetDir, filename);
+
+    if (file.buffer) {
+        fs.writeFileSync(destPath, file.buffer);
+        try { fs.chmodSync(destPath, 0o777); } catch (e) {}
+    } else if (file.path) {
+        const normalizedSrc = path.normalize(file.path);
+        const normalizedDest = path.normalize(destPath);
+        if (normalizedSrc !== normalizedDest && fs.existsSync(normalizedSrc)) {
+            fs.copyFileSync(normalizedSrc, normalizedDest);
+            try { fs.chmodSync(normalizedDest, 0o777); } catch (e) {}
+            try { fs.unlinkSync(normalizedSrc); } catch (e) {}
+        } else if (fs.existsSync(normalizedDest)) {
+            try { fs.chmodSync(normalizedDest, 0o777); } catch (e) {}
+        }
+    }
+
+    return '/attachments/vehicles/' + subFolder + '/' + filename;
+};
+
 // 1. ดึงข้อมูลรถยนต์ทั้งหมด
 exports.getVehicles = async (req, res) => {
     try {
         console.log('[TRACE] vehicleController.getVehicles START');
+
+        // 🧪 ทดสอบ Query รถทั้งหมดใน DB โดยไม่ใส่ Filter เพื่อตรวจสอบข้อมูลดิบ
+        const testVehicles = await prisma.vehicle.findMany();
+        console.log('[DEBUG] All Vehicles in DB:', testVehicles);
+
         // 1. รับ Query Parameters
         const { search, status, page, limit } = req.query;
         
-        const pageNum = parseInt(page) || 1;
-        const limitNum = parseInt(limit) || 50; // ใส่ default ไว้กันแอปพังถ้าไม่ได้ส่งค่ามา
+        const pageNum = parseInt(page, 10) || 1;
+        const limitNum = parseInt(limit, 10) || 50;
         const skip = (pageNum - 1) * limitNum;
 
         // 2. สร้าง เงื่อนไขการกรอง (Filter)
-        const whereClause = { isDeleted: false };
+        const whereClause = {
+            isDeleted: false
+        };
 
         const allowedStatuses = ['AVAILABLE', 'IN_USE', 'MAINTENANCE', 'INACTIVE', 'RESERVED'];
         if (status) {
@@ -52,50 +132,58 @@ exports.getVehicles = async (req, res) => {
             ];
         }
 
-        // 4. Query Database (ดึงข้อมูลรถพร้อมเช็กคิวจองที่ยังไม่เสร็จสิ้นและข้อมูลเอกสาร)
-        console.log(`[TRACE] vehicleController.getVehicles BEFORE PRISMA (Local Path: ${__dirname})`);
-        const [totalItems, vehiclesList] = await Promise.all([
-            prisma.vehicle.count({ where: whereClause }),
-            prisma.vehicle.findMany({
-                where: whereClause,
-                include: {
-                    bookings: {
-                        where: {
-                            status: { in: ['APPROVED', 'IN_USE'] },
-                            endDatetime: { gt: new Date() } // เพิ่มเงื่อนไขให้ดึงเฉพาะคิวจองที่ยังไม่หมดเวลา
-                        }
-                    },
-                    documents: {
-                        include: {
-                            documentType: true
-                        }
-                    }
-                },
-                orderBy: { createdAt: 'desc' },
-                skip: skip,
-                take: limitNum,
-            })
-        ]);
+        console.log(`[TRACE] vehicleController.getVehicles BEFORE PRISMA`, { pageNum, limitNum, skip, whereClause });
 
-        // คำนวณสถานะการมีคิวจองในอนาคต (hasFutureBooking) สำหรับ UI และปรับ status ให้ตรงกับหน้าจองของ User
+        const totalItems = await prisma.vehicle.count({ where: whereClause });
+
+        // ตรวจสอบว่า skip เกินจำนวนข้อมูลที่มีหรือไม่ หากเกินให้รีเซ็ตกลับเป็น 0
+        const actualSkip = (skip >= totalItems && totalItems > 0) ? 0 : skip;
+
+        const vehiclesList = await prisma.vehicle.findMany({
+            where: whereClause,
+            include: {
+                documents: {
+                    include: {
+                        documentType: true
+                    }
+                }
+            },
+            orderBy: { id: 'asc' },
+            skip: (page || limit) ? actualSkip : undefined,
+            take: (page || limit) ? limitNum : undefined,
+        });
+
+        // จัดรูปแบบข้อมูล Master Data ของรถยนต์และเอกสาร พ.ร.บ. (ผูก Alias ให้ครอบคลุมทุก UI)
         const vehicles = vehiclesList.map(vehicle => {
-            const hasActiveBooking = vehicle.bookings && vehicle.bookings.length > 0;
-            const actDocument = vehicle.documents && vehicle.documents.find(d => d.documentType && d.documentType.name === 'พ.ร.บ.');
-            
-            // ปรับ status ถ้ามี active booking และสถานะปัจจุบันคือ AVAILABLE
-            let displayStatus = vehicle.status;
-            if (hasActiveBooking && vehicle.status === 'AVAILABLE') {
-                displayStatus = 'RESERVED';
-            }
+            const actDocument = vehicle.documents && vehicle.documents.find(d => d.documentType && (d.documentType.name?.includes('พ.ร.บ') || d.documentType.name?.includes('พรบ')));
+            const actUrl = actDocument ? actDocument.uploadUrl : null;
+            const computedName = vehicle.vehicleName || [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || vehicle.plateNumber || 'ไม่ระบุรุ่น';
+            const plate = vehicle.plateNumber || vehicle.plate_number || vehicle.licensePlate || 'ไม่ระบุทะเบียน';
+            const seatVal = vehicle.capacity || vehicle.seats || vehicle.seatCapacity || 4;
 
             return {
                 ...vehicle,
-                status: displayStatus, // อัปเดต status ให้ตรงกับความเป็นจริง
-                hasFutureBooking: hasActiveBooking,
+                name: computedName,
+                vehicleName: computedName,
+                title: computedName,
+                plateNumber: plate,
+                plate_number: plate,
+                licensePlate: plate,
+                capacity: seatVal,
+                seats: seatVal,
+                seatCapacity: seatVal,
+                status: vehicle.status || 'AVAILABLE',
                 actDocumentNumber: actDocument ? actDocument.documentNumber : null,
                 actIssueDate: actDocument ? actDocument.issueDate : null,
                 actExpiryDate: actDocument ? actDocument.expiryDate : null,
-                actUploadUrl: actDocument ? actDocument.uploadUrl : null
+                actUploadUrl: actUrl,
+                actDocumentUrl: actUrl,
+                actFilePath: actUrl,
+                act_file_path: actUrl,
+                actFile: actUrl,
+                act_file: actUrl,
+                actUrl: actUrl,
+                pororborUrl: actUrl
             };
         });
 
@@ -107,7 +195,7 @@ exports.getVehicles = async (req, res) => {
                 page: pageNum,
                 limit: limitNum,
                 total: totalItems,
-                totalPages: Math.ceil(totalItems / limitNum)
+                totalPages: Math.ceil(totalItems / limitNum) || 1
             }
         });
     } catch (error) {
@@ -122,9 +210,27 @@ exports.createVehicle = async (req, res) => {
     try {
         const { vehicleName, plateNumber, brand, model, seats, status, province, documentNumber, issueDate, expiryDate, actDocumentNumber, actIssueDate, actExpiryDate } = req.body;
 
-        // 🟢 รองรับทั้งกรณี Multer ส่งไฟล์รูป และไฟล์ พ.ร.บ.
-        const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
-        const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
+        // 🟢 รองรับทั้งกรณี Multer ส่งไฟล์รูป และไฟล์ พ.ร.บ. (รองรับทั้ง req.file, req.files แบบ Array และ Object)
+        let uploadedFile = null;
+        let actFile = null;
+
+        if (req.file) {
+            const singleFn = (req.file.fieldname || '').toLowerCase();
+            const isAct = singleFn.includes('act') || singleFn.includes('pororbor') || singleFn.includes('doc') || singleFn.includes('pdf') || ['actdocument', 'actfile', 'act_file', 'document', 'doc', 'pdf', 'pororborfile', 'actfilepath', 'act_file_path'].includes(singleFn) || req.file.mimetype === 'application/pdf' || (req.file.originalname || '').toLowerCase().endsWith('.pdf') || ((actDocumentNumber || actExpiryDate || actIssueDate || documentNumber || expiryDate) && !['image', 'uploadurl', 'upload_url', 'vehicle_image'].includes(singleFn));
+            if (isAct) {
+                actFile = req.file;
+            } else {
+                uploadedFile = req.file;
+            }
+        }
+
+        if (Array.isArray(req.files)) {
+            actFile = actFile || req.files.find(f => (f.fieldname || '').toLowerCase().includes('act') || (f.fieldname || '').toLowerCase().includes('pororbor') || (f.fieldname || '').toLowerCase().includes('doc') || ['actdocument', 'actfile', 'act_file', 'document', 'doc', 'pdf', 'pororborfile', 'actfilepath', 'act_file_path'].includes((f.fieldname || '').toLowerCase()) || f.mimetype === 'application/pdf' || (f.originalname || '').toLowerCase().endsWith('.pdf'));
+            uploadedFile = uploadedFile || req.files.find(f => f !== actFile && (['image', 'uploadurl', 'upload_url', 'vehicle_image'].includes((f.fieldname || '').toLowerCase()) || f.mimetype.startsWith('image/')));
+        } else if (req.files && typeof req.files === 'object') {
+            actFile = actFile || req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.act?.[0] || req.files.document?.[0] || req.files.doc?.[0] || req.files.pdf?.[0] || req.files.pororbor?.[0] || req.files.pororborFile?.[0] || req.files.actFilePath?.[0];
+            uploadedFile = uploadedFile || req.files.image?.[0] || req.files.uploadUrl?.[0] || req.files.vehicle_image?.[0] || req.files.file?.[0];
+        }
 
         if (!plateNumber || !brand || !model) {
             if (uploadedFile) await safeDeleteFile(uploadedFile.path);
@@ -159,15 +265,11 @@ exports.createVehicle = async (req, res) => {
         }
 
         let uploadUrl = uploadedFile
-            ? '/attachments/vehicles/images/' + uploadedFile.filename
+            ? saveFileToNAS(uploadedFile, 'images')
             : (req.body.uploadUrl || null);
 
-        if (
-            uploadUrl &&
-            uploadUrl.startsWith('/attachments/') &&
-            !uploadUrl.startsWith('/attachments/vehicles/images/')
-        ) {
-            uploadUrl = uploadUrl.replace('/attachments/', '/attachments/vehicles/images/');
+        if (uploadUrl) {
+            uploadUrl = '/attachments/vehicles/images/' + path.basename(uploadUrl);
         }
 
         const newVehicle = await prisma.vehicle.create({
@@ -210,9 +312,12 @@ exports.createVehicle = async (req, res) => {
             docExpiry = parsedDate;
         }
 
-        const actUploadUrl = actFile ? '/attachments/vehicles/images/' + actFile.filename : null;
+        let actUploadUrl = actFile ? saveFileToNAS(actFile, 'documents') : (req.body.actUploadUrl || req.body.actDocumentUrl || req.body.actFile || req.body.pororborUrl || null);
+        if (actUploadUrl) {
+            actUploadUrl = '/attachments/vehicles/documents/' + path.basename(actUploadUrl);
+        }
 
-        if (actFile || docNum || docIssue || docExpiry) {
+        if (actFile || actUploadUrl || docNum || docIssue || docExpiry) {
             const docType = await prisma.documentType.upsert({
                 where: { name: 'พ.ร.บ.' },
                 update: {},
@@ -252,13 +357,33 @@ exports.createVehicle = async (req, res) => {
             actDocumentNumber: docNum || null,
             actIssueDate: docIssue || null,
             actExpiryDate: docExpiry || null,
-            actUploadUrl: actUploadUrl || null
+            actUploadUrl: actUploadUrl || null,
+            actDocumentUrl: actUploadUrl || null,
+            actFilePath: actUploadUrl || null,
+            act_file_path: actUploadUrl || null,
+            actFile: actUploadUrl || null,
+            act_file: actUploadUrl || null,
+            actUrl: actUploadUrl || null,
+            pororborUrl: actUploadUrl || null
         };
 
         return res.status(201).json({ success: true, data: vehicleResponse, message: 'เพิ่มรถยนต์สำเร็จ' });
     } catch (error) {
-        const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
-        const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
+        let uploadedFile = null;
+        let actFile = null;
+        if (req.file) {
+            const singleFn = (req.file.fieldname || '').toLowerCase();
+            const isAct = singleFn.includes('act') || ['actdocument', 'actfile', 'act_file', 'document', 'doc', 'pdf'].includes(singleFn) || req.file.mimetype === 'application/pdf' || (req.file.originalname || '').toLowerCase().endsWith('.pdf');
+            if (isAct) actFile = req.file;
+            else uploadedFile = req.file;
+        }
+        if (Array.isArray(req.files)) {
+            actFile = actFile || req.files.find(f => (f.fieldname || '').toLowerCase().includes('act') || ['actdocument', 'actfile', 'act_file', 'document', 'doc', 'pdf'].includes((f.fieldname || '').toLowerCase()) || f.mimetype === 'application/pdf' || (f.originalname || '').toLowerCase().endsWith('.pdf'));
+            uploadedFile = uploadedFile || req.files.find(f => f !== actFile && (['image', 'uploadurl', 'upload_url', 'vehicle_image'].includes((f.fieldname || '').toLowerCase()) || f.mimetype.startsWith('image/')));
+        } else if (req.files && typeof req.files === 'object') {
+            actFile = actFile || req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.act?.[0] || req.files.document?.[0] || req.files.doc?.[0] || req.files.pdf?.[0];
+            uploadedFile = uploadedFile || req.files.image?.[0] || req.files.uploadUrl?.[0] || req.files.vehicle_image?.[0] || req.files.file?.[0];
+        }
         if (uploadedFile) await safeDeleteFile(uploadedFile.path);
         if (actFile) await safeDeleteFile(actFile.path);
         console.error("Create Vehicle Error:", error);
@@ -289,13 +414,26 @@ exports.getVehicleById = async (req, res) => {
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ในระบบ" });
         }
 
-        const actDocument = vehicle.documents && vehicle.documents.find(d => d.documentType && d.documentType.name === 'พ.ร.บ.');
+        const actDocument = vehicle.documents && vehicle.documents.find(d => d.documentType && (d.documentType.name?.includes('พ.ร.บ') || d.documentType.name?.includes('พรบ')));
+        const actUrl = actDocument ? actDocument.uploadUrl : null;
+        
+        // คำนวณชื่อรถยนต์ (กรณีไม่มี vehicleName จะใช้ Brand + Model หรือ ทะเบียนรถแทน) ให้สอดคล้องกับ getVehicles
+        const computedName = vehicle.vehicleName || [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || vehicle.plateNumber || null;
+
         const vehicleData = {
             ...vehicle,
+            vehicleName: computedName,
             actDocumentNumber: actDocument ? actDocument.documentNumber : null,
             actIssueDate: actDocument ? actDocument.issueDate : null,
             actExpiryDate: actDocument ? actDocument.expiryDate : null,
-            actUploadUrl: actDocument ? actDocument.uploadUrl : null
+            actUploadUrl: actUrl,
+            actDocumentUrl: actUrl,
+            actFilePath: actUrl,
+            act_file_path: actUrl,
+            actFile: actUrl,
+            act_file: actUrl,
+            actUrl: actUrl,
+            pororborUrl: actUrl
         };
 
         return res.status(200).json({ success: true, data: vehicleData });
@@ -311,9 +449,27 @@ exports.updateVehicle = async (req, res) => {
         const vehicleId = parseInt(req.params.id, 10);
         const { vehicleName, plateNumber, brand, model, seats, status, province, documentNumber, issueDate, expiryDate, actDocumentNumber, actIssueDate, actExpiryDate } = req.body;
 
-        // 🟢 รองรับทั้งกรณี Multer ส่งไฟล์รูป และไฟล์ พ.ร.บ.
-        const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
-        const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
+        // 🟢 รองรับทั้งกรณี Multer ส่งไฟล์รูป และไฟล์ พ.ร.บ. (รองรับทั้ง req.file, req.files แบบ Array และ Object)
+        let uploadedFile = null;
+        let actFile = null;
+
+        if (req.file) {
+            const singleFn = (req.file.fieldname || '').toLowerCase();
+            const isAct = singleFn.includes('act') || singleFn.includes('pororbor') || singleFn.includes('doc') || singleFn.includes('pdf') || ['actdocument', 'actfile', 'act_file', 'document', 'doc', 'pdf', 'pororborfile', 'actfilepath', 'act_file_path'].includes(singleFn) || req.file.mimetype === 'application/pdf' || (req.file.originalname || '').toLowerCase().endsWith('.pdf') || ((actDocumentNumber || actExpiryDate || actIssueDate || documentNumber || expiryDate) && !['image', 'uploadurl', 'upload_url', 'vehicle_image'].includes(singleFn));
+            if (isAct) {
+                actFile = req.file;
+            } else {
+                uploadedFile = req.file;
+            }
+        }
+
+        if (Array.isArray(req.files)) {
+            actFile = actFile || req.files.find(f => (f.fieldname || '').toLowerCase().includes('act') || (f.fieldname || '').toLowerCase().includes('pororbor') || (f.fieldname || '').toLowerCase().includes('doc') || ['actdocument', 'actfile', 'act_file', 'document', 'doc', 'pdf', 'pororborfile', 'actfilepath', 'act_file_path'].includes((f.fieldname || '').toLowerCase()) || f.mimetype === 'application/pdf' || (f.originalname || '').toLowerCase().endsWith('.pdf'));
+            uploadedFile = uploadedFile || req.files.find(f => f !== actFile && (['image', 'uploadurl', 'upload_url', 'vehicle_image'].includes((f.fieldname || '').toLowerCase()) || f.mimetype.startsWith('image/')));
+        } else if (req.files && typeof req.files === 'object') {
+            actFile = actFile || req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.act?.[0] || req.files.document?.[0] || req.files.doc?.[0] || req.files.pdf?.[0] || req.files.pororbor?.[0] || req.files.pororborFile?.[0] || req.files.actFilePath?.[0];
+            uploadedFile = uploadedFile || req.files.image?.[0] || req.files.uploadUrl?.[0] || req.files.vehicle_image?.[0] || req.files.file?.[0];
+        }
 
         if (isNaN(vehicleId)) {
             if (uploadedFile) await safeDeleteFile(uploadedFile.path);
@@ -359,29 +515,31 @@ exports.updateVehicle = async (req, res) => {
 
         let newUploadUrl = existingVehicle.uploadUrl;
         if (uploadedFile) {
-            // ประกอบ Web URL Path โดยใช้ filename เพื่อให้พร้อมสำหรับ Frontend นำไปใช้งาน
-            newUploadUrl = '/attachments/vehicles/images/' + uploadedFile.filename;
+            // ประกอบ Web URL Path โดยใช้ filename และเซฟไฟล์ลง NAS
+            newUploadUrl = saveFileToNAS(uploadedFile, 'images');
             if (existingVehicle.uploadUrl) {
-                const oldFilePath = path.join(
-                    __dirname,
-                    '..',
-                    '..',
-                    existingVehicle.uploadUrl.replace(/^\/attachments\//, 'attachments/')
-                );
+                const nasPath = path.normalize('/Internal Booking System/Internal Booking System/attachments');
+                const localFallbackPath = path.resolve(__dirname, '../../attachments');
+                let baseUploadDir = process.env.UPLOAD_DIR;
+                
+                if (baseUploadDir && !path.isAbsolute(baseUploadDir)) {
+                    baseUploadDir = path.resolve(__dirname, '../../', baseUploadDir);
+                }
+                
+                if (!baseUploadDir || baseUploadDir.includes('uploads') || baseUploadDir.includes('backend')) {
+                    try {
+                        fs.accessSync(nasPath, fs.constants.R_OK | fs.constants.W_OK);
+                        baseUploadDir = nasPath;
+                    } catch (err) {
+                        baseUploadDir = localFallbackPath;
+                    }
+                }
+                const relativePath = existingVehicle.uploadUrl.replace(/^\/(attachments|uploads)\/?/, '');
+                const oldFilePath = path.join(baseUploadDir, relativePath);
                 await safeDeleteFile(oldFilePath);
             }
         } else if (req.body.uploadUrl) {
-            newUploadUrl = req.body.uploadUrl; // รองรับกรณีส่ง path มาตรงๆ
-
-            if (
-                newUploadUrl.startsWith('/attachments/') &&
-                !newUploadUrl.startsWith('/attachments/vehicles/images/')
-            ) {
-                newUploadUrl = newUploadUrl.replace(
-                    '/attachments/',
-                    '/attachments/vehicles/images/'
-                );
-            }
+            newUploadUrl = '/attachments/vehicles/images/' + path.basename(req.body.uploadUrl);
         }
 
         const updatedVehicle = await prisma.vehicle.update({
@@ -425,46 +583,116 @@ exports.updateVehicle = async (req, res) => {
             docExpiry = parsedDate;
         }
 
-        let actUploadUrl = actFile ? '/attachments/vehicles/images/' + actFile.filename : undefined;
-
-        if (actFile || docNum !== undefined || docIssue !== undefined || docExpiry !== undefined) {
-            // 🟢 เพิ่ม Log นี้เข้าไป เพื่อบังคับให้ไฟล์มีการอัปเดต และเคลียร์บัคตัว F เก่าที่ค้างใน Docker
+        if (actFile || req.body.actUploadUrl || req.body.actDocumentUrl || req.body.actFile || req.body.pororborUrl || docNum !== undefined || docIssue !== undefined || docExpiry !== undefined) {
             console.log(`[DEBUG] updateVehicle: Processing document for Vehicle ID: ${vehicleId}`);
-            
-            const docType = await prisma.documentType.upsert({
-                where: { name: 'พ.ร.บ.' },
-                update: {},
-                create: { name: 'พ.ร.บ.' }
-            });
 
-            const existingDoc = await prisma.vehicleDocument.findFirst({
-                where: {
-                    vehicleId: vehicleId,
-                    documentTypeId: docType.id
+            try {
+                console.log('[DOCUMENT DEBUG] STEP 1 - document detected');
+                console.log('[DOCUMENT DEBUG] req.file:', actFile);
+                console.log('[DOCUMENT DEBUG] originalname =', actFile?.originalname);
+                console.log('[DOCUMENT DEBUG] filename =', actFile?.filename);
+                console.log('[DOCUMENT DEBUG] path =', actFile?.path);
+                console.log('[DOCUMENT DEBUG] destination =', actFile?.destination);
+                console.log('[DOCUMENT DEBUG] mimetype =', actFile?.mimetype);
+                console.log('[DOCUMENT DEBUG] size =', actFile?.size);
+
+                console.log('[DOCUMENT DEBUG] STEP 2 - before saving document');
+
+                console.log('[DOCUMENT DEBUG] STEP 3 - before saveFileToNAS');
+                console.log('[DOCUMENT DEBUG] saveFileToNAS input:', actFile ? (actFile.originalname || actFile.filename) : null);
+
+                let actUploadUrl = actFile ? saveFileToNAS(actFile, 'documents') : (req.body.actUploadUrl || req.body.actDocumentUrl || req.body.actFile || req.body.pororborUrl || undefined);
+                if (actUploadUrl) {
+                    actUploadUrl = '/attachments/vehicles/documents/' + path.basename(actUploadUrl);
                 }
-            });
 
-            if (existingDoc) {
-                await prisma.vehicleDocument.update({
-                    where: { id: existingDoc.id },
-                    data: {
-                        documentNumber: docNum !== undefined ? docNum : existingDoc.documentNumber,
-                        issueDate: docIssue !== undefined ? docIssue : existingDoc.issueDate,
-                        expiryDate: docExpiry !== undefined ? docExpiry : existingDoc.expiryDate,
-                        uploadUrl: actUploadUrl !== undefined ? actUploadUrl : existingDoc.uploadUrl
-                    }
+                console.log('[DOCUMENT DEBUG] STEP 4 - after saveFileToNAS');
+                console.log('[DOCUMENT DEBUG] saveFileToNAS result:', actUploadUrl);
+
+                const nasPath = path.normalize('/Internal Booking System/Internal Booking System/attachments');
+                const localFallbackPath = path.resolve(__dirname, '../../attachments');
+                let baseUploadDir = process.env.UPLOAD_DIR;
+                try {
+                    fs.accessSync(nasPath, fs.constants.R_OK | fs.constants.W_OK);
+                    baseUploadDir = nasPath;
+                } catch (err) {
+                    baseUploadDir = localFallbackPath;
+                }
+
+                const docType = await prisma.documentType.upsert({
+                    where: { name: 'พ.ร.บ.' },
+                    update: {},
+                    create: { name: 'พ.ร.บ.' }
                 });
-            } else {
-                await prisma.vehicleDocument.create({
-                    data: {
+
+                const existingDoc = await prisma.vehicleDocument.findFirst({
+                    where: {
                         vehicleId: vehicleId,
-                        documentTypeId: docType.id,
-                        documentNumber: docNum || null,
-                        issueDate: docIssue || null,
-                        expiryDate: docExpiry || null,
-                        uploadUrl: actUploadUrl || null
+                        documentTypeId: docType.id
                     }
                 });
+
+                console.log('[DOCUMENT DEBUG] STEP 5 - before VehicleDocument create/update');
+                let savedDocument = null;
+
+                if (existingDoc) {
+                    if (actUploadUrl && existingDoc.uploadUrl) {
+                        try {
+                            fs.accessSync(nasPath, fs.constants.R_OK | fs.constants.W_OK);
+                            baseUploadDir = nasPath;
+                        } catch (err) {
+                            baseUploadDir = localFallbackPath;
+                        }
+
+                        const relativePath = existingDoc.uploadUrl.replace(/^\/(attachments|uploads)\/?/, '');
+                        const oldActPath = path.join(baseUploadDir, relativePath);
+                        await safeDeleteFile(oldActPath);
+                    }
+
+                    let finalActUploadUrl = actUploadUrl !== undefined ? actUploadUrl : existingDoc.uploadUrl;
+                    if (finalActUploadUrl) {
+                        finalActUploadUrl = '/attachments/vehicles/documents/' + path.basename(finalActUploadUrl);
+                    }
+
+                    savedDocument = await prisma.vehicleDocument.update({
+                        where: { id: existingDoc.id },
+                        data: {
+                            documentNumber: docNum !== undefined ? docNum : existingDoc.documentNumber,
+                            issueDate: docIssue !== undefined ? docIssue : existingDoc.issueDate,
+                            expiryDate: docExpiry !== undefined ? docExpiry : existingDoc.expiryDate,
+                            uploadUrl: finalActUploadUrl
+                        }
+                    });
+                } else {
+                    savedDocument = await prisma.vehicleDocument.create({
+                        data: {
+                            vehicleId: vehicleId,
+                            documentTypeId: docType.id,
+                            documentNumber: docNum || null,
+                            issueDate: docIssue || null,
+                            expiryDate: docExpiry || null,
+                            uploadUrl: actUploadUrl || null
+                        }
+                    });
+                }
+
+                console.log('[DOCUMENT DEBUG] STEP 6 - after VehicleDocument create/update');
+                console.log('[DOCUMENT DEBUG] VehicleDocument saved =', savedDocument);
+
+                if (savedDocument?.uploadUrl) {
+                    const relativePath = savedDocument.uploadUrl.replace(/^\/(attachments|uploads)\/?/, '');
+                    const fullPhysicalPath = path.join(baseUploadDir, relativePath);
+                    const fileExists = fs.existsSync(fullPhysicalPath);
+                    console.log('[DOCUMENT DEBUG] physical file exists:', fileExists);
+                    console.log('[DOCUMENT DEBUG] physical path:', fullPhysicalPath);
+                }
+
+                console.log('[DOCUMENT DEBUG] STEP 7 - updateVehicle completed');
+            } catch (error) {
+                console.error('[DOCUMENT ERROR] Failed to process vehicle document');
+                console.error(error);
+                console.error(error?.stack);
+                throw error;
             }
         }
 
@@ -487,22 +715,46 @@ exports.updateVehicle = async (req, res) => {
         const actDocument = await prisma.vehicleDocument.findFirst({
             where: {
                 vehicleId: vehicleId,
-                documentType: { name: 'พ.ร.บ.' }
+                documentType: {
+                    name: { in: ['พ.ร.บ.', 'พรบ.', 'พรบ'] }
+                }
             }
         });
+
+        const actUrl = actDocument ? actDocument.uploadUrl : null;
 
         const vehicleResponse = {
             ...updatedVehicle,
             actDocumentNumber: actDocument ? actDocument.documentNumber : null,
             actIssueDate: actDocument ? actDocument.issueDate : null,
             actExpiryDate: actDocument ? actDocument.expiryDate : null,
-            actUploadUrl: actDocument ? actDocument.uploadUrl : null
+            actUploadUrl: actUrl,
+            actDocumentUrl: actUrl,
+            actFilePath: actUrl,
+            act_file_path: actUrl,
+            actFile: actUrl,
+            act_file: actUrl,
+            actUrl: actUrl,
+            pororborUrl: actUrl
         };
 
         return res.status(200).json({ success: true, data: vehicleResponse, message: "แก้ไขข้อมูลรถสำเร็จ" });
     } catch (error) {
-        const uploadedFile = req.file || (req.files && req.files.image && req.files.image[0]);
-        const actFile = req.files && (req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.document?.[0]);
+        let uploadedFile = null;
+        let actFile = null;
+        if (req.file) {
+            const singleFn = (req.file.fieldname || '').toLowerCase();
+            const isAct = singleFn.includes('act') || ['actdocument', 'actfile', 'act_file', 'document', 'doc', 'pdf'].includes(singleFn) || req.file.mimetype === 'application/pdf' || (req.file.originalname || '').toLowerCase().endsWith('.pdf');
+            if (isAct) actFile = req.file;
+            else uploadedFile = req.file;
+        }
+        if (Array.isArray(req.files)) {
+            actFile = actFile || req.files.find(f => (f.fieldname || '').toLowerCase().includes('act') || ['actdocument', 'actfile', 'act_file', 'document', 'doc', 'pdf'].includes((f.fieldname || '').toLowerCase()) || f.mimetype === 'application/pdf' || (f.originalname || '').toLowerCase().endsWith('.pdf'));
+            uploadedFile = uploadedFile || req.files.find(f => f !== actFile && (['image', 'uploadurl', 'upload_url', 'vehicle_image'].includes((f.fieldname || '').toLowerCase()) || f.mimetype.startsWith('image/')));
+        } else if (req.files && typeof req.files === 'object') {
+            actFile = actFile || req.files.actDocument?.[0] || req.files.actFile?.[0] || req.files.act_file?.[0] || req.files.act?.[0] || req.files.document?.[0] || req.files.doc?.[0] || req.files.pdf?.[0];
+            uploadedFile = uploadedFile || req.files.image?.[0] || req.files.uploadUrl?.[0] || req.files.vehicle_image?.[0] || req.files.file?.[0];
+        }
         if (uploadedFile) await safeDeleteFile(uploadedFile.path);
         if (actFile) await safeDeleteFile(actFile.path);
         console.error("Update Vehicle Error:", error);
@@ -531,6 +783,20 @@ exports.deleteVehicle = async (req, res) => {
             }
         });
 
+        // 🟢 ทำการยกเลิกคิวจองในอนาคตอัตโนมัติ เพื่อไม่ให้ค้างในระบบ
+        if (futureBookings.length > 0) {
+            await prisma.vehicleBooking.updateMany({
+                where: {
+                    vehicleId: vehicleId,
+                    endDatetime: { gt: new Date() },
+                    status: { notIn: ['CANCELLED', 'REJECTED'] }
+                },
+                data: { status: 'CANCELLED' }
+            });
+        }
+
+        // 🟢 ปิดการบล็อก 409 Conflict เพื่อให้ Admin สามารถ Soft Delete ได้ทันที
+        /*
         if (futureBookings.length > 0) {
             return res.status(409).json({ 
                 success: false, 
@@ -538,6 +804,7 @@ exports.deleteVehicle = async (req, res) => {
                 futureBookingsCount: futureBookings.length
             });
         }
+        */
 
         await prisma.vehicle.update({
             where: { id: vehicleId },

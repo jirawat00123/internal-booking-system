@@ -22,16 +22,29 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
   bool isObscured = true;
   bool isLoading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // 🟢 บังคับเคลียร์ค่า State ของ PIN ทุกครั้งที่เปิดหน้าจอนี้ใหม่
+    // เพื่อป้องกัน PIN เดิมค้างไปใช้กับ Employee Code อื่นเมื่อสลับผู้ใช้งาน
+    pin = "";
+    isObscured = true;
+    isLoading = false;
+  }
+
   void _addPin(String number) {
-    if (pin.length < 6) {
+    if (pin.length < 6 && !isLoading) {
       setState(() {
         pin += number;
       });
+      if (pin.length == 6) {
+        _verifyPin(); // 🟢 ให้ _verifyPin ไปจัดการตั้งค่า isLoading ด้วยตัวเอง
+      }
     }
   }
 
   void _removePin() {
-    if (pin.isNotEmpty) {
+    if (pin.isNotEmpty && !isLoading) {
       setState(() {
         pin = pin.substring(0, pin.length - 1);
       });
@@ -56,6 +69,9 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
 
   // 🚀 ฟังก์ชันยิง API สำหรับแอดมิน (ฉบับ Production Ready & Single Session Compliant)
   Future<void> _verifyPin() async {
+    if (isLoading)
+      return; // 🟢 ป้องกันการยิง API ซ้อนกันหากปุ่มถูกกดรัวในเสี้ยววินาที
+
     setState(() {
       isLoading = true;
     });
@@ -64,30 +80,18 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       // 🟢 1. เลือก Base URL จาก AuthService
       final url = Uri.parse('${AuthService.baseUrl}/api/login-pin');
 
-      // 🟢 2. อ่าน SharedPreferences, Token และ EmployeeCode จาก AuthService
+      // 🟢 2. อ่าน SharedPreferences และ Token จาก AuthService
       final prefs = await SharedPreferences.getInstance();
       final String? existingToken = prefs.getString('token');
-      final String? employeeCode =
-          await AuthService.instance.getEmployeeCode() ??
-          prefs.getString('employeeCode') ??
-          prefs.getString('employee_code');
 
-      debugPrint(
-        '📱 [Flutter] กำลังส่งรหัส $pin (รหัสพนักงาน: $employeeCode) ไปหาหลังบ้าน ($url)...',
-      );
+      debugPrint('📱 [Flutter] กำลังส่งรหัส $pin ไปหาหลังบ้าน ($url)...');
 
-      // 🟢 3. ตรวจสอบว่ามี Token ในเซสชันก่อนยิง API
-
-      // 🟢 4. ยิง API ยืนยัน PIN (แนบ employeeCode ไปยัง Backend เพื่อแก้ไขปัญหา employeeCode = undefined)
+      // 🟢 4. ยิง API ยืนยัน PIN สำหรับ Admin (ส่งเฉพาะ pin และ expectedRole ไม่ใช้ employeeCode ค้างในเครื่อง)
       final response = await http
           .post(
             url,
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({
-              'employeeCode': employeeCode,
-              'pin': pin,
-              'expectedRole': 'ADMIN', // 🟢 ระบุ expectedRole เข้มงวด
-            }),
+            body: jsonEncode({'pin': pin, 'expectedRole': 'ADMIN'}),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -139,14 +143,27 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
               }
             }
 
+            // 🟢 สั่งเปิดใช้งาน Silent Refresh Timer หลังเข้าสู่ระบบสำเร็จ
+            AuthService.instance.startSilentRefresh();
+
             if (!mounted) return;
-            Navigator.pushReplacement(
+
+            // 🟢 ปลดล็อกสถานะโหลดและเคลียร์รหัส PIN ก่อนเปลี่ยนหน้า
+            setState(() {
+              isLoading = false;
+              pin = "";
+            });
+
+            // 🟢 เปลี่ยนจาก pushReplacement เป็น pushAndRemoveUntil เพื่อล้างหน้า Login ออกจาก Memory 100%
+            Navigator.pushAndRemoveUntil(
               context,
               MaterialPageRoute(builder: (context) => const AdminGroupPage()),
+              (route) => false,
             );
           } else {
             setState(() {
               isLoading = false;
+              pin = ""; // 🟢 เคลียร์ PIN เมื่อ Role ผิด
             });
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -186,6 +203,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       } else {
         setState(() {
           isLoading = false;
+          pin = ""; // 🟢 เคลียร์ PIN เมื่อเกิด Error
         });
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -204,6 +222,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
       debugPrint("API Error: $error");
       setState(() {
         isLoading = false;
+        pin = ""; // 🟢 เคลียร์ PIN เมื่อเกิด Exception
       });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -223,6 +242,8 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
     if (mounted) {
       setState(() {
         isLoading = false;
+        pin =
+            ""; // 🟢 สั่งเคลียร์ตัวแปร pin ทันทีเมื่อเกิด Error ใดๆ ป้องกัน PIN เดิมค้าง
       });
       _showErrorDialog();
     }
@@ -403,6 +424,7 @@ class _Admin_pinPageState extends State<Admin_pinPage> {
                                 ? null
                                 : () {
                                     if (pin.length == 6) {
+                                      // 🟢 เอา setState(isLoading = true) ตรงนี้ออก เพื่อไม่ให้ไปบล็อกเงื่อนไขใน _verifyPin
                                       _verifyPin();
                                     } else {
                                       ScaffoldMessenger.of(

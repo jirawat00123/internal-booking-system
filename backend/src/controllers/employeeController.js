@@ -72,7 +72,7 @@ exports.createEmployeeWithUser = async (req, res) => {
   const { employeeCode, fullName, departmentId, positionId, roleId, active } = req.body;
 
   // --- 1. Validation เบื้องต้น ---
-  if (!fullName || !departmentId || !positionId || !roleId || !employeeCode) {
+  if (!fullName || !departmentId || !roleId || !employeeCode) {
     return res.status(400).json({ success: false, error: 'กรุณาส่งข้อมูลให้ครบถ้วน' });
   }
 
@@ -81,11 +81,15 @@ exports.createEmployeeWithUser = async (req, res) => {
     const dept = await prisma.department.findUnique({ where: { id: parseInt(departmentId, 10) } });
     if (!dept) return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลแผนกนี้ในระบบ' });
 
-    const pos = await prisma.position.findUnique({ where: { id: parseInt(positionId, 10) } });
-    if (!pos) return res.status(400).json({ success: false, error: 'ไม่พบตำแหน่งนี้ในระบบ' });
-    
-    if (pos.departmentId !== parseInt(departmentId, 10)) {
-      return res.status(400).json({ success: false, error: 'ตำแหน่งนี้ไม่ได้อยู่ในแผนกที่เลือก' });
+    const isValidPosition = positionId && positionId !== 'null' && positionId !== 'undefined' && positionId !== '';
+
+    if (isValidPosition) {
+      const pos = await prisma.position.findUnique({ where: { id: parseInt(positionId, 10) } });
+      if (!pos) return res.status(400).json({ success: false, error: 'ไม่พบตำแหน่งนี้ในระบบ' });
+      
+      if (pos.departmentId !== parseInt(departmentId, 10)) {
+        return res.status(400).json({ success: false, error: 'ตำแหน่งนี้ไม่ได้อยู่ในแผนกที่เลือก' });
+      }
     }
 
     const role = await prisma.role.findUnique({ where: { id: parseInt(roleId, 10) } });
@@ -101,7 +105,7 @@ exports.createEmployeeWithUser = async (req, res) => {
           employeeCode: employeeCode.trim(),
           fullName: fullName.trim(),
           departmentId: parseInt(departmentId, 10),
-          positionId: parseInt(positionId, 10),
+          positionId: isValidPosition ? parseInt(positionId, 10) : null,
           isActive: isActiveStatus,
         }
       });
@@ -137,5 +141,130 @@ exports.createEmployeeWithUser = async (req, res) => {
       return res.status(400).json({ success: false, error: 'รหัสพนักงานนี้มีในระบบแล้ว' });
     }
     res.status(500).json({ success: false, error: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล' });
+  }
+};
+
+// 6. PUT /api/employees/:id (อัปเดตข้อมูลพนักงานและ User ใน Transaction เดียว)
+exports.updateEmployee = async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.id, 10);
+    if (isNaN(employeeId)) {
+      return res.status(400).json({ success: false, error: 'รหัสพนักงานไม่ถูกต้อง' });
+    }
+
+    const { employeeCode, fullName, positionId, departmentId, isActive, roleId, active } = req.body;
+
+    const existingEmployee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      include: { users: true }
+    });
+
+    if (!existingEmployee) {
+      return res.status(404).json({ success: false, error: 'ไม่พบข้อมูลพนักงานที่ต้องการอัปเดต' });
+    }
+
+    const updatedData = await prisma.$transaction(async (prismaClient) => {
+      const parsedDeptId = departmentId ? parseInt(departmentId, 10) : undefined;
+      const isValidPosition = positionId && positionId !== 'null' && positionId !== 'undefined' && positionId !== '';
+      const parsedPosId = positionId !== undefined ? (isValidPosition ? parseInt(positionId, 10) : null) : undefined;
+
+      const empUpdate = await prismaClient.employee.update({
+        where: { id: employeeId },
+        data: {
+          ...(employeeCode && { employeeCode: employeeCode.trim() }),
+          ...(fullName && { fullName: fullName.trim() }),
+          ...(parsedDeptId && { departmentId: parsedDeptId }),
+          ...(parsedPosId !== undefined && { positionId: parsedPosId }),
+          ...(isActive !== undefined && { isActive: Boolean(isActive) }),
+        }
+      });
+
+      const parsedRoleId = roleId ? parseInt(roleId, 10) : undefined;
+      const userActiveStatus = active !== undefined ? Boolean(active) : (isActive !== undefined ? Boolean(isActive) : undefined);
+
+      if (existingEmployee.users.length > 0) {
+        await prismaClient.user.updateMany({
+          where: { employeeId: employeeId },
+          data: {
+            ...(parsedRoleId && { roleId: parsedRoleId }),
+            ...(userActiveStatus !== undefined && { 
+              active: userActiveStatus,
+              ...(userActiveStatus ? { failedLoginAttempts: 0, lockedUntil: null } : { currentSessionId: null })
+            })
+          }
+        });
+      } else if (parsedRoleId) {
+        await prismaClient.user.create({
+          data: {
+            employeeId: employeeId,
+            roleId: parsedRoleId,
+            active: userActiveStatus ?? true
+          }
+        });
+      }
+
+      return empUpdate;
+    });
+
+    return res.status(200).json({ 
+      success: true, 
+      message: 'อัปเดตข้อมูลพนักงานสำเร็จ', 
+      data: updatedData 
+    });
+
+  } catch (error) {
+    console.error('Update Employee Error:', error);
+    if (error.code === 'P2002') {
+      return res.status(409).json({ success: false, error: 'รหัสพนักงานนี้ถูกใช้งานในระบบแล้ว' });
+    }
+    return res.status(500).json({ success: false, error: 'ระบบหลังบ้านขัดข้อง ไม่สามารถอัปเดตข้อมูลได้' });
+  }
+};
+
+// 7. GET /api/employees (ดึงข้อมูลพนักงานทั้งหมด พร้อมตัวกรองแผนก และคำค้นหา)
+exports.getEmployees = async (req, res) => {
+  try {
+    const { departmentId, search } = req.query;
+
+    const where = {
+      users: {
+        none: {
+          isDeleted: true
+        }
+      }
+    };
+
+    if (departmentId && departmentId !== 'null' && departmentId !== 'undefined' && departmentId !== 'all') {
+      where.departmentId = parseInt(departmentId, 10);
+    }
+
+    if (search) {
+      where.OR = [
+        { fullName: { contains: search, mode: 'insensitive' } },
+        { employeeCode: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const employees = await prisma.employee.findMany({
+      where,
+      include: {
+        department: true,
+        position: true,
+        users: {
+          where: {
+            isDeleted: false
+          },
+          include: {
+            role: true,
+          },
+        },
+      },
+      orderBy: { id: 'asc' },
+    });
+
+    return res.status(200).json({ success: true, data: employees });
+  } catch (error) {
+    console.error('Error fetching employees:', error);
+    return res.status(500).json({ success: false, error: 'ไม่สามารถดึงข้อมูลพนักงานได้' });
   }
 };

@@ -108,7 +108,6 @@ const changePin = async (req, res) => {
 
     // 3. Hash PIN ใหม่
     const hashedNewPin = await hashPin(newPin);
-    const newSessionId = uuidv4();
 
     // 4. บันทึกข้อมูลและ Force Logout
     await prisma.user.update({
@@ -116,7 +115,7 @@ const changePin = async (req, res) => {
       data: {
         pin: hashedNewPin,
         pinChangedAt: new Date(),
-        currentSessionId: newSessionId,
+        currentSessionId: null, // 🟢 ตั้งค่าเป็น null เพื่อล้างเซสชันและบังคับให้ออกจากระบบจริง ป้องกัน Error 409 เมื่อพยายาม Login ใหม่
         pinResetRequired: false,
         failedLoginAttempts: 0, // 🟢 เพิ่มการเคลียร์จำนวนครั้งที่เข้าสู่ระบบผิด
         lockedUntil: null       // 🟢 เพิ่มการปลดล็อคบัญชี
@@ -300,6 +299,7 @@ const login = async (req, res) => {
         where: { 
           pin: { not: null },
           active: true,
+          isDeleted: false,
           role: roleCondition
         },
         include: {
@@ -334,8 +334,8 @@ const login = async (req, res) => {
       }
     }
 
-    if ((employee && !employee.active) || !user.active) {
-      return res.status(403).json({ success: false, error: "บัญชีนี้ถูกระงับการใช้งาน" });
+    if (user.isDeleted || !user.active || (employee && (employee.isActive === false || employee.active === false))) {
+      return res.status(403).json({ success: false, error: "บัญชีนี้ถูกระงับหรือถูกลบออกจากระบบ" });
     }
 
     if (user.lockedUntil && user.lockedUntil > new Date()) {
@@ -385,6 +385,18 @@ const login = async (req, res) => {
       }
     }
 
+    // 🔴 ป้องกันการเข้าสู่ระบบซ้ำ: หากมี currentSessionId ค้างอยู่ และยังไม่หมดอายุ 10 นาที
+    const TEN_MINUTES_IN_MS = 10 * 60 * 1000;
+    const isSessionExpired = user.lastLoginAt && (new Date() - new Date(user.lastLoginAt) > TEN_MINUTES_IN_MS);
+
+    if (user.currentSessionId && !isSessionExpired) {
+      return res.status(409).json({ 
+        success: false, 
+        error: "SESSION_ALREADY_ACTIVE",
+        message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน" 
+      });
+    }
+
     const newSessionId = uuidv4(); 
     const userPermissions = getPermissionsByRole(effectiveRole);
 
@@ -398,13 +410,14 @@ const login = async (req, res) => {
     const token = jwt.sign(
       tokenPayload, 
       process.env.JWT_SECRET,
-      { expiresIn: '1d' }
+      { expiresIn: '10m' }
     );
 
     await prisma.user.update({
       where: { id: user.id },
       data: {
         currentSessionId: newSessionId,
+        lastLoginAt: new Date(),
         failedLoginAttempts: 0,
         lockedUntil: null
       }
@@ -424,16 +437,19 @@ const login = async (req, res) => {
       console.error("❌ AuditLog Error [LOGIN_SYSTEM]:", err.message);
     });
 
+    const userFullName = employee?.fullName || '';
+
     return res.status(200).json({
       success: true,
       message: "เข้าสู่ระบบสำเร็จ",
       token,
+      fullName: userFullName,
       permissions: userPermissions,
       role: effectiveRole, // ส่ง role ออกมาตรงนี้ด้วย เพื่อให้ Flutter อ่านค่าได้ง่ายขึ้น
       user: {
         id: user.id,
-        employeeCode: employee?.employeeCode || user.employeeCode,
-        fullName: employee?.fullName || user.fullName,
+        employeeCode: employee?.employeeCode || '',
+        fullName: userFullName,
         role: effectiveRole,
         hasPin: !!(user.pin && user.pinInitialized && !user.pinResetRequired),
         pinInitialized: user.pinInitialized ?? false,
@@ -447,10 +463,90 @@ const login = async (req, res) => {
     return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการเข้าสู่ระบบ" });
   }
 };
+// ==========================================
+// API 5: ออกจากระบบ (Logout)
+// ==========================================
+const logout = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    // เคลียร์ currentSessionId ให้กลับเป็น null เพื่อให้อุปกรณ์อื่นสามารถ Login ได้
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        currentSessionId: null
+      }
+    });
+
+    // 🟢 เพิ่มการบันทึก AuditLog เพื่อให้ตรวจสอบประวัติการออกจากระบบ/เคลียร์ Session ได้
+    await prisma.auditLog.create({
+      data: {
+        action: "LOGOUT_SYSTEM",
+        module: "AUTH",
+        entityId: parseInt(userId, 10),
+        entityType: "USER",
+        userId: parseInt(userId, 10),
+        details: "ออกจากระบบและเคลียร์ Active Session สำเร็จ"
+      }
+    }).catch(err => console.error("AuditLog Error [LOGOUT_SYSTEM]:", err.message));
+
+    return res.status(200).json({
+      success: true,
+      message: "ออกจากระบบสำเร็จ"
+    });
+  } catch (error) {
+    console.error("[Logout Error]:", error);
+    return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการออกจากระบบ" });
+  }
+};
+
+// ==========================================
+// API 6: ต่ออายุ Token (Refresh Token)
+// ==========================================
+const refreshToken = async (req, res) => {
+  try {
+    const { userId, sessionId } = req.user;
+    
+    const user = await prisma.user.findUnique({ 
+      where: { id: userId },
+      include: { employee: true, role: true }
+    });
+
+    if (!user || user.currentSessionId !== sessionId) {
+      return res.status(401).json({ success: false, message: 'Session ถ่ายโอนหรือถูกยกเลิกแล้ว' });
+    }
+
+    const effectiveRole = user.role?.name ? user.role.name.toUpperCase() : 'USER';
+    
+    const newToken = jwt.sign(
+      { 
+        userId: user.id, 
+        employeeCode: user.employee?.employeeCode || user.employeeCode,
+        role: effectiveRole, 
+        sessionId 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '10m' }
+    );
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() }
+    });
+
+    return res.json({ success: true, token: newToken });
+  } catch (error) {
+    console.error("[Refresh Token Error]:", error);
+    return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการต่ออายุ Token" });
+  }
+};
+
 module.exports = {
   login,
   loginPin: login,
   setupPin,
   changePin,
-  resetUserPin
+  resetUserPin,
+  logout,
+  refreshToken
 };

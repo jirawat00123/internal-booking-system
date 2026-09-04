@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 // 💡 1. คลาสโมเดลสำหรับเก็บสิทธิ์การกระทำของ Booking (Dumb UI Pattern)
@@ -43,6 +44,29 @@ class VehicleModel {
   final DateTime? actIssueDate;
   final DateTime? actExpiryDate;
   final String? actUploadUrl;
+  final String? actDocumentUrl;
+  final String? pororborUrl;
+
+  String? get fullImageUrl {
+    if (uploadUrl == null || uploadUrl!.isEmpty) return null;
+    if (uploadUrl!.startsWith('http://') || uploadUrl!.startsWith('https://')) {
+      return uploadUrl;
+    }
+    const String baseUrl = 'https://192.168.88.25:3002';
+    return uploadUrl!.startsWith('/')
+        ? '$baseUrl$uploadUrl'
+        : '$baseUrl/$uploadUrl';
+  }
+
+  String? get fullActUrl {
+    final rawUrl = actDocumentUrl ?? actUploadUrl ?? pororborUrl;
+    if (rawUrl == null || rawUrl.isEmpty) return null;
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      return rawUrl;
+    }
+    const String baseUrl = 'https://192.168.88.25:3002';
+    return rawUrl.startsWith('/') ? '$baseUrl$rawUrl' : '$baseUrl/$rawUrl';
+  }
 
   VehicleModel({
     required this.id,
@@ -63,6 +87,8 @@ class VehicleModel {
     this.actIssueDate,
     this.actExpiryDate,
     this.actUploadUrl,
+    this.actDocumentUrl,
+    this.pororborUrl,
   });
 
   VehicleModel copyWith({
@@ -84,6 +110,8 @@ class VehicleModel {
     DateTime? actIssueDate,
     DateTime? actExpiryDate,
     String? actUploadUrl,
+    String? actDocumentUrl,
+    String? pororborUrl,
   }) {
     return VehicleModel(
       id: id ?? this.id,
@@ -104,6 +132,8 @@ class VehicleModel {
       actIssueDate: actIssueDate ?? this.actIssueDate,
       actExpiryDate: actExpiryDate ?? this.actExpiryDate,
       actUploadUrl: actUploadUrl ?? this.actUploadUrl,
+      actDocumentUrl: actDocumentUrl ?? this.actDocumentUrl,
+      pororborUrl: pororborUrl ?? this.pororborUrl,
     );
   }
 
@@ -121,59 +151,152 @@ class VehicleModel {
             doc is Map &&
             doc['documentType'] != null &&
             (doc['documentType']['name'] == 'พ.ร.บ.' ||
-                doc['documentType']['name'] == 'ACT'),
+                doc['documentType']['name'] == 'ACT' ||
+                doc['documentType']['name'] == 'พรบ.' ||
+                doc['documentType']['name'] == 'พรบ'),
         orElse: () => null,
       );
 
       if (actDoc != null) {
         actDocNum = actDoc['documentNumber'] ?? actDoc['document_number'];
-        actIssueDate = 
+        actIssueDate =
             actDoc['issueDate'] != null || actDoc['issue_date'] != null
-            ? DateTime.tryParse(actDoc['issueDate'] ?? actDoc['issue_date'])
+            ? DateTime.tryParse(
+                (actDoc['issueDate'] ?? actDoc['issue_date']).toString(),
+              )
             : null;
         actExpDate =
             actDoc['expiryDate'] != null || actDoc['expiry_date'] != null
-            ? DateTime.tryParse(actDoc['expiryDate'] ?? actDoc['expiry_date'])
+            ? DateTime.tryParse(
+                (actDoc['expiryDate'] ?? actDoc['expiry_date']).toString(),
+              )
             : null;
-        actUrl = actDoc['uploadUrl'] ?? actDoc['upload_url'];
+        actUrl =
+            actDoc['uploadUrl'] ??
+            actDoc['upload_url'] ??
+            actDoc['filePath'] ??
+            actDoc['file_path'] ??
+            actDoc['url'] ??
+            actDoc['act_upload_url'] ??
+            actDoc['actUploadUrl'];
       }
     }
 
     return VehicleModel(
-      id: json['id'],
+      id: json['id'] is int
+          ? json['id']
+          : int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       plateNumber:
           json['plateNumber'] ??
           json['license_plate'] ??
-          '', // รองรับทั้ง camelCase และ snake_case
-      province: json['province'],
-      brand: json['brand'] ?? '',
-      model: json['model'] ?? '',
-      seats: json['seats'] ?? 4,
-      status: json['status'] ?? 'AVAILABLE',
-      uploadUrl: json['uploadUrl'] ?? json['upload_url'],
-      isDeleted: json['isDeleted'] ?? json['is_deleted'] ?? false,
-      type: json['type'] ?? 'รถยนต์',
-      vehicleName: json['vehicleName'] ?? json['vehicle_name'] ?? '',
+          json['plate_number'] ??
+          '',
+      province: json['province']?.toString(),
+      brand: json['brand']?.toString() ?? '',
+      model: json['model']?.toString() ?? '',
+      seats: json['seats'] is int
+          ? json['seats']
+          : int.tryParse(json['seats']?.toString() ?? '4') ?? 4,
+      status: json['status']?.toString() ?? 'AVAILABLE',
+      uploadUrl:
+          json['uploadUrl'] ??
+          json['upload_url'] ??
+          json['imageUrl'] ??
+          json['image_url'] ??
+          json['image'],
+      isDeleted: json['isDeleted'] == true || json['is_deleted'] == true,
+      type: json['type']?.toString() ?? 'รถยนต์',
+      vehicleName:
+          (json['vehicleName'] != null &&
+              json['vehicleName'].toString().trim().isNotEmpty)
+          ? json['vehicleName'].toString()
+          : (json['vehicle_name'] != null &&
+                json['vehicle_name'].toString().trim().isNotEmpty)
+          ? json['vehicle_name'].toString()
+          : '${json['brand'] ?? ''} ${json['model'] ?? ''}'.trim(),
       createdAt: json['createdAt'] != null
-          ? DateTime.tryParse(json['createdAt'])
-          : null,
+          ? DateTime.tryParse(json['createdAt'].toString())
+          : (json['created_at'] != null
+                ? DateTime.tryParse(json['created_at'].toString())
+                : null),
       updatedAt: json['updatedAt'] != null
-          ? DateTime.tryParse(json['updatedAt'])
-          : null,
+          ? DateTime.tryParse(json['updatedAt'].toString())
+          : (json['updated_at'] != null
+                ? DateTime.tryParse(json['updated_at'].toString())
+                : null),
       actDocumentNumber:
-          actDocNum ?? json['actDocumentNumber'] ?? json['documentNumber'],
+          actDocNum ??
+          json['actDocumentNumber']?.toString() ??
+          json['documentNumber']?.toString(),
       actIssueDate:
           actIssueDate ??
           (json['actIssueDate'] != null || json['issueDate'] != null
-              ? DateTime.tryParse(json['actIssueDate'] ?? json['issueDate'])
+              ? DateTime.tryParse(
+                  (json['actIssueDate'] ?? json['issueDate']).toString(),
+                )
               : null),
       actExpiryDate:
           actExpDate ??
           (json['actExpiryDate'] != null || json['expiryDate'] != null
-              ? DateTime.tryParse(json['actExpiryDate'] ?? json['expiryDate'])
+              ? DateTime.tryParse(
+                  (json['actExpiryDate'] ?? json['expiryDate']).toString(),
+                )
               : null),
-      actUploadUrl: actUrl ?? json['actUploadUrl'] ?? json['act_upload_url'],
+      actUploadUrl:
+          actUrl ??
+          json['actUploadUrl'] ??
+          json['act_upload_url'] ??
+          json['act_file_path'] ??
+          json['actFilePath'],
+      actDocumentUrl:
+          actUrl ??
+          json['actDocumentUrl'] ??
+          json['actFilePath'] ??
+          json['act_file_path'] ??
+          json['actFile'] ??
+          json['act_file'] ??
+          json['actUrl'] ??
+          json['actUploadUrl'] ??
+          json['act_upload_url'] ??
+          json['pororborUrl'],
+      pororborUrl:
+          actUrl ??
+          json['pororborUrl'] ??
+          json['actDocumentUrl'] ??
+          json['actFilePath'] ??
+          json['act_file_path'] ??
+          json['actFile'] ??
+          json['act_file'] ??
+          json['actUrl'] ??
+          json['actUploadUrl'] ??
+          json['act_upload_url'],
     );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'plateNumber': plateNumber,
+      'province': province,
+      'brand': brand,
+      'model': model,
+      'seats': seats,
+      'status': status,
+      'uploadUrl': uploadUrl,
+      'isDeleted': isDeleted,
+      'type': type,
+      'vehicleName': vehicleName,
+      'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
+      'hasFutureBooking': hasFutureBooking,
+      'actDocumentNumber': actDocumentNumber,
+      'actIssueDate': actIssueDate?.toIso8601String(),
+      'actExpiryDate': actExpiryDate?.toIso8601String(),
+      'actUploadUrl': actUploadUrl,
+      'actDocumentUrl': actDocumentUrl,
+      'actFilePath': actDocumentUrl,
+      'pororborUrl': pororborUrl ?? actDocumentUrl,
+    };
   }
 }
 
@@ -191,8 +314,13 @@ class VehicleBookingModel {
   final String purpose;
   final String rawStatus; // 🟢 รับค่าตรงจาก Backend ไม่ใช้การคำนวณซ้ำซ้อน
   final int passengers;
+  final List<String> passengerNames;
   final VehicleModel? vehicle; // 🟢 เก็บ Object ข้อมูลรถที่แนบมาด้วย
   final BookingPermissions permissions; // 🟢 สิทธิ์จาก Backend
+  final DateTime?
+  createdAt; // 🟢 เพิ่ม createdAt สำหรับจัดเรียงและตรวจสอบประวัติ
+  final List<String>? checkOutImages; // 🟢 เก็บรูปถ่ายตอนปล่อยรถ
+  final List<String>? checkInImages; // 🟢 เก็บรูปถ่ายตอนรับรถเข้า
 
   VehicleBookingModel({
     required this.id,
@@ -205,8 +333,12 @@ class VehicleBookingModel {
     required this.purpose,
     this.rawStatus = 'PENDING',
     this.passengers = 1,
+    this.passengerNames = const [],
     this.vehicle,
     BookingPermissions? permissions,
+    this.createdAt,
+    this.checkOutImages,
+    this.checkInImages,
   }) : permissions = permissions ?? BookingPermissions();
 
   // 🟢 แสดงข้อความสถานะภาษาไทยตามค่าจาก Backend
@@ -237,6 +369,36 @@ class VehicleBookingModel {
         ? employeeObj['fullName'] ?? employeeObj['full_name'] ?? 'ผู้ใช้งาน'
         : 'ผู้ใช้งาน';
 
+    List<String> parsedPassengerNames = [];
+    if (json['passengerDetails'] is List) {
+      parsedPassengerNames = (json['passengerDetails'] as List)
+          .map(
+            (item) => item is Map
+                ? (item['passengerName']?.toString() ??
+                      item['name']?.toString() ??
+                      '')
+                : item.toString(),
+          )
+          .where((n) => n.isNotEmpty)
+          .toList();
+    } else if (json['passengerNames'] is List) {
+      parsedPassengerNames = (json['passengerNames'] as List)
+          .map((item) => item.toString())
+          .where((n) => n.isNotEmpty)
+          .toList();
+    } else if (json['passengerNames'] is String &&
+        (json['passengerNames'] as String).isNotEmpty) {
+      try {
+        final decoded = jsonDecode(json['passengerNames']);
+        if (decoded is List) {
+          parsedPassengerNames = decoded
+              .map((e) => e.toString())
+              .where((n) => n.isNotEmpty)
+              .toList();
+        }
+      } catch (_) {}
+    }
+
     return VehicleBookingModel(
       id: json['id'],
       vehicleId: json['vehicleId'] ?? json['vehicle_id'],
@@ -258,10 +420,26 @@ class VehicleBookingModel {
       purpose: json['purpose'] ?? '',
       rawStatus: json['status'] ?? 'PENDING',
       passengers: json['passengers'] ?? 1,
+      passengerNames: parsedPassengerNames,
       vehicle: json['vehicle'] != null
           ? VehicleModel.fromJson(json['vehicle'])
           : null,
       permissions: BookingPermissions.fromJson(json['permissions']),
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'])
+          : (json['created_at'] != null
+                ? DateTime.tryParse(json['created_at'])
+                : null),
+      checkOutImages: json['checkOutImages'] != null
+          ? List<String>.from(json['checkOutImages'])
+          : (json['check_out_images'] != null
+                ? List<String>.from(json['check_out_images'])
+                : null),
+      checkInImages: json['checkInImages'] != null
+          ? List<String>.from(json['checkInImages'])
+          : (json['check_in_images'] != null
+                ? List<String>.from(json['check_in_images'])
+                : null),
     );
   }
 }

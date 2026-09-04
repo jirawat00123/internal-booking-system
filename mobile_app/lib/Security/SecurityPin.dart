@@ -20,15 +20,22 @@ class _Security_PinpageState extends State<Security_Pinpage> {
   bool isLoading = false;
 
   void _addPin(String number) {
-    if (pin.length < 6) {
+    if (pin.length < 6 && !isLoading) {
       setState(() {
         pin += number;
+        if (pin.length == 6) {
+          isLoading =
+              true; // 🟢 ล็อกสถานะ isLoading ทันที ป้องกันการกดเบิ้ล (Double Tap Guard)
+        }
       });
+      if (pin.length == 6) {
+        _verifyPin(); // 🟢 ยิง API อัตโนมัติเมื่อครบ 6 หลัก
+      }
     }
   }
 
   void _removePin() {
-    if (pin.isNotEmpty) {
+    if (pin.isNotEmpty && !isLoading) {
       setState(() {
         pin = pin.substring(0, pin.length - 1);
       });
@@ -57,9 +64,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
   // 🚀 ฟังก์ชันยิง API พร้อมเครื่องดักฟัง
   // 🚀 ฟังก์ชันยิง API พร้อมเครื่องดักฟัง (พิมพ์ Log)
   Future<void> _verifyPin() async {
-    setState(() {
-      isLoading = true;
-    });
+    // 🟢 ลบการเช็ก isLoading ตรงนี้ออกไป เพราะเราจัดการ Double Tap Guard ที่ _addPin และที่ปุ่มกดแล้ว
 
     try {
       // 🟢 ดึง SharedPreferences เตรียมไว้สำหรับบันทึกข้อมูล (นำการดึง employeeCode ออกตาม Flow PIN-Only)
@@ -122,17 +127,22 @@ class _Security_PinpageState extends State<Security_Pinpage> {
             }
           }
 
+          // 🟢 สั่งเปิดใช้งาน Silent Refresh Timer หลังเข้าสู่ระบบสำเร็จ
+          AuthService.instance.startSilentRefresh();
+
           if (!mounted) return;
 
-          // 🟢 2. รหัสถูก สิทธิ์ถูกต้อง จึงค่อยเปลี่ยนหน้า
-          Navigator.pushReplacement(
+          // 🟢 2. รหัสถูก สิทธิ์ถูกต้อง จึงค่อยเปลี่ยนหน้า (ล้าง Stack ออกจาก Memory 100%)
+          Navigator.pushAndRemoveUntil(
             context,
             MaterialPageRoute(builder: (context) => const SecurityGroupPage()),
+            (route) => false,
           );
         } else {
           // 🛑 รหัสถูก แต่สิทธิ์ไม่ใช่ รปภ.
           setState(() {
             isLoading = false;
+            pin = ""; // 🟢 เคลียร์ PIN เมื่อ Role ผิด
           });
           _showErrorDialog();
         }
@@ -160,6 +170,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
         // 🛑 รหัสผิด (เช่น 401 หรืออื่นๆ)
         setState(() {
           isLoading = false;
+          pin = ""; // 🟢 เคลียร์ PIN เมื่อเกิด Error
         });
         _showErrorDialog();
       }
@@ -171,6 +182,7 @@ class _Security_PinpageState extends State<Security_Pinpage> {
       if (mounted) {
         setState(() {
           isLoading = false;
+          pin = ""; // 🟢 เคลียร์ PIN เมื่อเกิด Exception
         });
         _showErrorDialog();
       }
@@ -370,6 +382,9 @@ class _Security_PinpageState extends State<Security_Pinpage> {
                                 ? null
                                 : () {
                                     if (pin.length == 6) {
+                                      setState(() {
+                                        isLoading = true; // 🟢 ล็อกปุ่มกดซ้ำ
+                                      });
                                       _verifyPin();
                                     } else {
                                       ScaffoldMessenger.of(
