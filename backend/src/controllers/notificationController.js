@@ -1,5 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 
 // 🟢 1. ดึงรายการ Notification พร้อมจำนวน Unread (Badge Counter)
 exports.getNotifications = async (req, res) => {

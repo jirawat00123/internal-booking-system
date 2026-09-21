@@ -22,7 +22,7 @@ router.post('/login', async (req, res) => {
   console.log("[LOGIN] req.headers =", req.headers);
   console.log("[LOGIN] req.body =", req.body);
 
-  const { employeeCode, pin } = req.body; 
+  const { employeeCode, pin, force } = req.body; 
 
   try {
     // 1. ตรวจสอบรหัสพนักงาน
@@ -57,64 +57,66 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // 🔴 ป้องกันการ Login ซ้ำ (Single Active Session)
-    const TEN_MINUTES_IN_MS = 10 * 60 * 1000;
-    const isSessionExpired = userAccount.lastLoginAt && (new Date() - new Date(userAccount.lastLoginAt) > TEN_MINUTES_IN_MS);
+    const role = userAccount.role ? userAccount.role.name : 'USER';
 
-    if (userAccount.currentSessionId && !isSessionExpired) {
-      return res.status(409).json({ 
-        success: false, 
-        error: "SESSION_ALREADY_ACTIVE",
-        message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน" 
+    // 2. 🛡️ เช็กสถานะ PIN และตรวจสอบความถูกต้อง
+    const hasPinInput = pin !== undefined && pin !== null && String(pin).trim() !== '';
+    const isPinSetupDone = userAccount.pinInitialized || !!userAccount.pin;
+
+    // 🟢 ถ้าผู้ใช้ต้องตั้งค่า PIN ใหม่ หรือยังไม่ได้ตั้งค่า PIN ให้แจ้งเตือนโดยไม่สร้าง Session
+    if (userAccount.pinResetRequired || !isPinSetupDone) {
+      return res.status(200).json({
+        success: true,
+        message: "กรุณาตั้งค่ารหัส PIN ใหม่",
+        pinInitialized: false,
+        pinResetRequired: true
       });
     }
 
-    const role = userAccount.role ? userAccount.role.name : 'USER';
+    // 🟢 ถ้ายังไม่ได้ส่ง PIN มาใน Request (การเรียกเช็กสถานะก่อนกรอก PIN) ให้ตอบกลับโดยไม่สร้าง Session
+    if (!hasPinInput) {
+      return res.status(200).json({
+        success: true,
+        message: "กรุณากรอกรหัส PIN เพื่อยืนยันตัวตน",
+        pinInitialized: true,
+        pinResetRequired: false
+      });
+    }
 
-    // 2. 🛡️ เช็ก PIN: บังคับตรวจเฉพาะ Role ระดับสูง หรือเมื่อมีการส่ง PIN มาใน Request Body
-    const isSecurityRole = ['ADMIN', 'SECURITY', 'GUARD'].includes(role);
-    const hasPinInput = pin !== undefined && pin !== null && String(pin).trim() !== '';
+    // 🟢 ตรวจสอบความถูกต้องของ PIN
+    const isPinValid = await verifyPin(userAccount.pin, String(pin).trim());
+    if (!isPinValid) {
+      console.log("[PIN-LOGIN] Login Failed: 401 Unauthorized");
 
-    // 🔥 FIX: ข้ามการตรวจสอบ PIN หากผู้ใช้งานรายนี้อยู่ในสภาวะที่ถูกบังคับให้ตั้งค่า PIN ใหม่ (Reset State)
-    const requirePinCheck = (isSecurityRole || hasPinInput) && !userAccount.pinResetRequired;
+      const isLockExpired = userAccount.lockedUntil && userAccount.lockedUntil <= new Date();
+      const attempts = (isLockExpired ? 0 : (userAccount.failedLoginAttempts || 0)) + 1;
+      let updateData = { failedLoginAttempts: attempts };
 
-    if (requirePinCheck) {
-      if (!pin) {
-        console.log("[LOGIN] Validation Error: Missing required PIN field for role:", role);
-        return res.status(400).json({ success: false, error: `กรุณากรอกรหัส PIN เพื่อยืนยันตัวตน` });
+      if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        updateData.lockedUntil = new Date(Date.now() + LOCK_TIME_MINUTES * 60000);
       }
 
-      console.log("[PIN-LOGIN] Input PIN:", String(pin).trim());
-      console.log("[PIN-LOGIN] Has Hash in DB:", !!userAccount.pin);
+      await prisma.user.update({
+        where: { id: userAccount.id },
+        data: updateData
+      });
 
-      const isPinValid = await verifyPin(userAccount.pin, String(pin).trim());
-      
-      console.log("[PIN-LOGIN] Verify Result:", isPinValid);
-
-      if (!isPinValid) {
-        console.log("[PIN-LOGIN] Login Failed: 401 Unauthorized");
-
-        // 🟢 หากหมดเวลาอายัดบัญชีแล้ว ให้เริ่มนับจำนวนครั้งที่ใส่ผิดใหม่จาก 0
-        const isLockExpired = userAccount.lockedUntil && userAccount.lockedUntil <= new Date();
-        const attempts = (isLockExpired ? 0 : (userAccount.failedLoginAttempts || 0)) + 1;
-        let updateData = { failedLoginAttempts: attempts };
-
-        if (attempts >= MAX_LOGIN_ATTEMPTS) {
-          updateData.lockedUntil = new Date(Date.now() + LOCK_TIME_MINUTES * 60000);
-        }
-
-        await prisma.user.update({
-          where: { id: userAccount.id },
-          data: updateData
-        });
-
-        if (attempts >= MAX_LOGIN_ATTEMPTS) {
-          return res.status(401).json({ success: false, error: `คุณใส่ PIN ผิดเกิน ${MAX_LOGIN_ATTEMPTS} ครั้ง บัญชีถูกระงับ ${LOCK_TIME_MINUTES} นาที` });
-        }
-        return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง" });
+      if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        return res.status(401).json({ success: false, error: `คุณใส่ PIN ผิดเกิน ${MAX_LOGIN_ATTEMPTS} ครั้ง บัญชีถูกระงับ ${LOCK_TIME_MINUTES} นาที` });
       }
+      return res.status(401).json({ success: false, error: "รหัส PIN ไม่ถูกต้อง" });
+    }
 
-      console.log("[PIN-LOGIN] Login Success");
+    console.log("[PIN-LOGIN] Login Success");
+
+    // 🟢 ตรวจสอบเซสชันที่ค้างอยู่ (ถ้ามีเซสชันเดิม และไม่มีการส่ง force=true ให้ตอบ 409 Conflict กลับไป)
+    const isForceLogin = force === true || force === 'true';
+    if (userAccount.currentSessionId && !isForceLogin) {
+      return res.status(409).json({
+        success: false,
+        error: "SESSION_ALREADY_ACTIVE",
+        message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน"
+      });
     }
 
     // 3. 🎟️ ออก Session และ JWT Token เมื่อผ่านการตรวจสอบ
@@ -140,7 +142,7 @@ router.post('/login', async (req, res) => {
         sessionId: newSessionId 
       }, 
       secretKey, 
-      { expiresIn: '10m' }
+      { expiresIn: '30m' }
     );
     
 // 🟢 [แก้ไขใหม่] บันทึก AuditLog ให้แสดงรูปแบบเหมือนเส้น /login-pin
@@ -184,7 +186,7 @@ router.post('/login', async (req, res) => {
 // ==========================================
 router.post('/login-pin', async (req, res) => {
   try {
-    const { pin, expectedRole, employeeCode } = req.body;
+    const { pin, expectedRole, employeeCode, force } = req.body;
 
     console.log("========== [LOGIN-PIN DEBUG] ==========");
     console.log("[LOGIN-PIN] employeeCode =", employeeCode);
@@ -202,8 +204,9 @@ router.post('/login-pin', async (req, res) => {
     let actualEmployeeCode = "";
     let assignedRole = "USER";
     let assignedDept = "ไม่ระบุแผนก";
+    let matchedUser = null;
 
-    if (employeeCode) {
+        if (employeeCode) {
         // 🔐 กรณีส่ง employeeCode มาด้วย ให้ค้นหาจากรหัสพนักงานก่อน
         const employee = await prisma.employee.findUnique({
           where: { employeeCode: String(employeeCode).trim() },
@@ -214,25 +217,13 @@ router.post('/login-pin', async (req, res) => {
         });
 
         if (!employee || !employee.users || employee.users.length === 0) {
-          return res.status(404).json({ success: false, message: 'ไม่พบรหัสพนักงานนี้ในระบบ' });
-        }
+              return res.status(404).json({ success: false, message: 'ไม่พบรหัสพนักงานนี้ในระบบ' });
+            }
 
-        const matchedUser = employee.users[0];
+            matchedUser = employee.users[0];
 
         if (!matchedUser.active || (matchedUser.lockedUntil && matchedUser.lockedUntil > new Date())) {
           return res.status(403).json({ success: false, message: 'บัญชีถูกระงับการใช้งานชั่วคราว' });
-        }
-
-        // 🔴 ป้องกันการ Login ซ้ำ (Single Active Session)
-        const TEN_MINUTES_IN_MS = 10 * 60 * 1000;
-        const isSessionExpired = matchedUser.lastLoginAt && (new Date() - new Date(matchedUser.lastLoginAt) > TEN_MINUTES_IN_MS);
-
-        if (matchedUser.currentSessionId && !isSessionExpired) {
-          return res.status(409).json({ 
-            success: false, 
-            error: "SESSION_ALREADY_ACTIVE",
-            message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน" 
-          });
         }
 
         if (!matchedUser.pin || !(await verifyPin(matchedUser.pin, inputPin))) {
@@ -274,27 +265,27 @@ router.post('/login-pin', async (req, res) => {
           }
         }
     } else {
-        // 🔐 กรณีไม่ส่ง employeeCode มา ให้ค้นหา User จาก PIN โดยตรง
-        const activeUsers = await prisma.user.findMany({
-          where: {
-            active: true,
-            pin: { not: null }
-          },
-          include: {
-            role: true,
-            employee: {
+            // 🔐 กรณีไม่ส่ง employeeCode มา ให้ค้นหา User จาก PIN โดยตรง
+            const activeUsers = await prisma.user.findMany({
+              where: {
+                active: true,
+                pin: { not: null }
+              },
               include: {
-                position: {
+                role: true,
+                employee: {
                   include: {
-                    department: true
+                    position: {
+                      include: {
+                        department: true
+                      }
+                    }
                   }
                 }
               }
-            }
-          }
-        });
+            });
 
-        let matchedUser = null;
+            matchedUser = null;
 
         for (const user of activeUsers) {
           if (user.lockedUntil && user.lockedUntil > new Date()) {
@@ -302,6 +293,17 @@ router.post('/login-pin', async (req, res) => {
           }
 
           if (user.pin && (await verifyPin(user.pin, inputPin))) {
+            const userRole = (user.role?.name || user.roles || 'USER').toUpperCase();
+            if (expectedRole) {
+              const expected = expectedRole.toUpperCase();
+              if (expected === 'SECURITY' || expected === 'GUARD') {
+                if (userRole !== 'SECURITY' && userRole !== 'GUARD') {
+                  continue;
+                }
+              } else if (expected !== userRole) {
+                continue;
+              }
+            }
             matchedUser = user;
             break;
           }
@@ -311,15 +313,6 @@ router.post('/login-pin', async (req, res) => {
           return res.status(401).json({
             success: false,
             message: 'รหัส PIN ไม่ถูกต้อง หรือบัญชีถูกระงับ'
-          });
-        }
-
-        // 🔴 ป้องกันการ Login ซ้ำ (Single Active Session)
-        if (matchedUser.currentSessionId) {
-          return res.status(409).json({ 
-            success: false, 
-            error: "SESSION_ALREADY_ACTIVE",
-            message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน" 
           });
         }
 
@@ -363,6 +356,16 @@ router.post('/login-pin', async (req, res) => {
           matchedUser.employee?.employeeCode || "";
     }
 
+    // 🟢 ตรวจสอบเซสชันที่ค้างอยู่ (ถ้ามีเซสชันเดิม และไม่มีการส่ง force=true ให้ตอบ 409 Conflict กลับไป)
+    const isForceLogin = force === true || force === 'true';
+    if (matchedUser?.currentSessionId && !isForceLogin) {
+      return res.status(409).json({
+        success: false,
+        error: "SESSION_ALREADY_ACTIVE",
+        message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน"
+      });
+    }
+
     const newSessionId = crypto.randomUUID();
 
     // ✅ อัปเดตข้อมูล Session และเคลียร์ค่าการล็อก
@@ -402,7 +405,7 @@ router.post('/login-pin', async (req, res) => {
         sessionId: newSessionId 
       }, 
       secretKey, 
-      { expiresIn: '10m' }
+      { expiresIn: '30m' }
     );
     
     return res.status(200).json({ success: true, message: 'เข้าสู่ระบบด้วย PIN สำเร็จ', token: token, role: assignedRole });
@@ -498,30 +501,8 @@ const isGuard = (req, res, next) => {
 // ==========================================
 // 🚪 API 5: Logout
 // ==========================================
-router.post('/logout', authenticateToken, async (req, res) => {
-  try {
-    await prisma.user.update({
-      where: { id: req.user.userId },
-      data: { currentSessionId: null } // 🟢 เคลียร์ Active Session ให้เป็น null
-    });
-
-    // 🟢 เพิ่มการบันทึก AuditLog เพื่อให้ทราบประวัติการออกจากระบบและล้าง Session 
-    await prisma.auditLog.create({
-      data: {
-        action: "LOGOUT_SYSTEM",
-        module: "AUTH",
-        entityId: parseInt(req.user.userId, 10),
-        entityType: "USER",
-        userId: parseInt(req.user.userId, 10),
-        details: "ออกจากระบบและเคลียร์ Active Session สำเร็จ"
-      }
-    }).catch(err => console.error("AuditLog Error [LOGOUT_SYSTEM]:", err.message));
-
-    return res.status(200).json({ success: true, message: "ออกจากระบบสำเร็จ" });
-  } catch (error) {
-    return res.status(500).json({ success: false, error: "ระบบไม่สามารถออกจากระบบได้" });
-  }
-});
+// 🟢 ถอด authenticateToken ออก และชี้ไปที่ authController.logout เพื่อให้ล้าง Session ได้แม้ Token หมดอายุแล้ว
+router.post(['/logout', '/auth/logout'], authController.logout);
 
 // ==========================================
 // 🔐 API 6 & 7: PIN Management
@@ -533,7 +514,7 @@ router.post('/admin/users/:id/reset-pin', authenticateToken, isAdmin, authContro
 // ==========================================
 // 🔄 API 8: Refresh Token
 // ==========================================
-router.post('/refresh', authenticateToken, authController.refreshToken);
+router.post(['/refresh', '/auth/refresh'], authenticateToken, authController.refreshToken);
 
 router.isAdmin = isAdmin;
 router.isGuard = isGuard;

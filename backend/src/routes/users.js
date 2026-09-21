@@ -43,15 +43,15 @@ router.get('/search', authenticateToken, (req, res, next) => {
 // 🛡️ Admin User Management APIs (เฉพาะ ADMIN)
 // ==========================================
 
-// ดักจับทุก Route หลังจากบรรทัดนี้ ต้องผ่าน Auth และเป็น Role 'ADMIN' เท่านั้น
-router.use(authenticateToken, requireRole(['ADMIN']));
+// ดักจับทุก Route หลังจากบรรทัดนี้ ต้องผ่าน Auth ก่อน
+router.use(authenticateToken);
 
 // 📋 CRUD User Management (เรียกผ่าน Controller ตามหลัก MVC)
-router.get('/', userController.getAllUsers);           // ค้นหา/แสดงรายชื่อ
-router.get('/:id', userController.getUserById);        // 🟢 เพิ่ม: ดึงข้อมูลผู้ใช้งานตาม ID (ตาม Checklist)
-router.post('/', userController.createUser);           // สร้างบัญชีใหม่
-router.put('/:id', userController.updateUser);         // แก้ไข Role / เปิด-ปิดบัญชี
-router.delete('/:id', userController.deleteUser);      // ลบบัญชี
+router.get('/', requireRole(['ADMIN', 'USER']), userController.getAllUsers);           // ค้นหา/แสดงรายชื่อ
+router.get('/:id', requireRole(['ADMIN', 'USER']), userController.getUserById);        // 🟢 เพิ่ม: ดึงข้อมูลผู้ใช้งานตาม ID (ตาม Checklist)
+router.post('/', requireRole(['ADMIN']), userController.createUser);           // สร้างบัญชีใหม่
+router.put('/:id', requireRole(['ADMIN']), userController.updateUser);         // แก้ไข Role / เปิด-ปิดบัญชี
+router.delete('/:id', requireRole(['ADMIN']), userController.deleteUser);      // ลบบัญชี
 
 // ==========================================
 // 🔑 Reset PIN Management
@@ -120,8 +120,8 @@ const handleResetPin = async (req, res) => {
 };
 
 // Route สำหรับ Reset PIN (รองรับทั้ง PUT และ POST)
-router.put('/:id/reset-pin', handleResetPin);
-router.post('/:id/reset-pin', handleResetPin);
-router.post('/admin/users/:id/reset-pin', handleResetPin);
+router.put('/:id/reset-pin', requireRole(['ADMIN']), handleResetPin);
+router.post('/:id/reset-pin', requireRole(['ADMIN']), handleResetPin);
+router.post('/admin/users/:id/reset-pin', requireRole(['ADMIN']), handleResetPin);
 
 module.exports = router;

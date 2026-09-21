@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:image_picker/image_picker.dart';
 import 'adduser_successpage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,6 +17,13 @@ class _AddUserPageState extends State<AddUserPage> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController empCodeController = TextEditingController();
 
+  DateTime? _issueDate;
+  DateTime? _expiryDate;
+
+  Uint8List? _driverLicenseBytes;
+  String? _driverLicenseFileName;
+  final ImagePicker _picker = ImagePicker();
+
   final String baseUrl = 'https://192.168.88.25:3002/api';
 
   List<dynamic> departments = [];
@@ -23,6 +32,7 @@ class _AddUserPageState extends State<AddUserPage> {
   int? selectedDepartmentId;
   int? selectedRoleId;
   bool selectedStatus = true;
+  bool isDriver = false;
 
   bool isLoadingData = true;
   bool isSaving = false;
@@ -78,6 +88,45 @@ class _AddUserPageState extends State<AddUserPage> {
     }
   }
 
+  Future<void> _pickImage() async {
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+    );
+    if (pickedFile != null) {
+      final bytes = await pickedFile.readAsBytes();
+      setState(() {
+        _driverLicenseBytes = bytes;
+        _driverLicenseFileName = pickedFile.name;
+      });
+    }
+  }
+
+  void _showImagePreviewDialog(BuildContext context) {
+    if (_driverLicenseBytes == null) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            InteractiveViewer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.memory(_driverLicenseBytes!),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showConfirmDialog(BuildContext context) {
     if (selectedDepartmentId == null ||
         selectedRoleId == null ||
@@ -86,6 +135,18 @@ class _AddUserPageState extends State<AddUserPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('กรุณากรอกข้อมูลให้ครบถ้วน'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (_issueDate != null &&
+        _expiryDate != null &&
+        _expiryDate!.isBefore(_issueDate!)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('วันหมดอายุต้องไม่อยู่ก่อนวันออกบัตร'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -205,23 +266,67 @@ class _AddUserPageState extends State<AddUserPage> {
   Future<void> _saveEmployeeData() async {
     setState(() => isSaving = true);
     try {
-      final bodyData = jsonEncode({
-        'employeeCode': empCodeController.text.trim(),
-        'fullName': nameController.text.trim(),
-        'departmentId': selectedDepartmentId != null
-            ? int.parse(selectedDepartmentId.toString())
-            : null,
-        'roleId': selectedRoleId != null
-            ? int.parse(selectedRoleId.toString())
-            : null,
-        'active': selectedStatus,
-      });
-
-      final response = await http.post(
+      var request = http.MultipartRequest(
+        'POST',
         Uri.parse('$baseUrl/employees'),
-        headers: {'Content-Type': 'application/json'},
-        body: bodyData,
       );
+
+      request.fields['employeeCode'] = empCodeController.text.trim();
+      request.fields['fullName'] = nameController.text.trim();
+
+      if (selectedDepartmentId != null) {
+        request.fields['departmentId'] = selectedDepartmentId.toString();
+      }
+      if (selectedRoleId != null) {
+        request.fields['roleId'] = selectedRoleId.toString();
+      }
+
+      request.fields['active'] = selectedStatus.toString();
+      request.fields['isDriver'] = isDriver.toString();
+
+      if (_issueDate != null) {
+        final issueDateLocal = DateTime(
+          _issueDate!.year,
+          _issueDate!.month,
+          _issueDate!.day,
+          12,
+          0,
+          0,
+        );
+        final issueStr = issueDateLocal.toIso8601String();
+        request.fields['driverLicenseIssueDate'] = issueStr;
+        request.fields['driver_license_issue_date'] = issueStr;
+        request.fields['driverLicenseIssue'] = issueStr;
+        request.fields['issueDate'] = issueStr;
+      }
+      if (_expiryDate != null) {
+        final expiryDateLocal = DateTime(
+          _expiryDate!.year,
+          _expiryDate!.month,
+          _expiryDate!.day,
+          12,
+          0,
+          0,
+        );
+        final expiryStr = expiryDateLocal.toIso8601String();
+        request.fields['driverLicenseExpiryDate'] = expiryStr;
+        request.fields['driver_license_expiry_date'] = expiryStr;
+        request.fields['driverLicenseExpiry'] = expiryStr;
+        request.fields['expiryDate'] = expiryStr;
+      }
+
+      if (_driverLicenseBytes != null) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'driverLicenseImage',
+            _driverLicenseBytes!,
+            filename: _driverLicenseFileName ?? 'license.jpg',
+          ),
+        );
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         if (mounted) {
@@ -584,6 +689,216 @@ class _AddUserPageState extends State<AddUserPage> {
                             ],
                             onChanged: (newValue) =>
                                 setState(() => selectedStatus = newValue!),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'พนักงานขับรถ (Is Driver)',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Switch(
+                                value: isDriver,
+                                activeColor: const Color(0xFF009CB4),
+                                onChanged: (value) {
+                                  setState(() {
+                                    isDriver = value;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8.0),
+                            child: Divider(
+                              color: Color(0xFFD0D9E6),
+                              thickness: 1,
+                            ),
+                          ),
+                          const Text(
+                            'ข้อมูลใบอนุญาตขับขี่ (ตัวเลือกเพิ่มเติม)',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF009CB4),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'วันออกบัตร',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    InkWell(
+                                      onTap: () async {
+                                        final date = await showDatePicker(
+                                          context: context,
+                                          initialDate:
+                                              _issueDate ?? DateTime.now(),
+                                          firstDate: DateTime(2000),
+                                          lastDate: DateTime(2100),
+                                        );
+                                        if (date != null) {
+                                          setState(() => _issueDate = date);
+                                        }
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 14,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _issueDate != null
+                                              ? "${_issueDate!.day.toString().padLeft(2, '0')}/${_issueDate!.month.toString().padLeft(2, '0')}/${_issueDate!.year}"
+                                              : "เลือกวันที่",
+                                          style: TextStyle(
+                                            color: _issueDate != null
+                                                ? Colors.black
+                                                : Colors.grey.shade400,
+                                            fontSize: 14,
+                                            fontFamily: 'Kanit',
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'วันหมดอายุ',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    InkWell(
+                                      onTap: () async {
+                                        final date = await showDatePicker(
+                                          context: context,
+                                          initialDate:
+                                              _expiryDate ?? DateTime.now(),
+                                          firstDate: DateTime(2000),
+                                          lastDate: DateTime(2100),
+                                        );
+                                        if (date != null) {
+                                          setState(() => _expiryDate = date);
+                                        }
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 14,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          border: Border.all(
+                                            color: Colors.grey.shade300,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          _expiryDate != null
+                                              ? "${_expiryDate!.day.toString().padLeft(2, '0')}/${_expiryDate!.month.toString().padLeft(2, '0')}/${_expiryDate!.year}"
+                                              : "เลือกวันที่",
+                                          style: TextStyle(
+                                            color: _expiryDate != null
+                                                ? Colors.black
+                                                : Colors.grey.shade400,
+                                            fontSize: 14,
+                                            fontFamily: 'Kanit',
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'รูปภาพใบอนุญาตขับขี่',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          InkWell(
+                            onTap: _pickImage,
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(10),
+                                color: Colors.grey.shade50,
+                              ),
+                              child: Column(
+                                children: [
+                                  if (_driverLicenseBytes != null) ...[
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.memory(
+                                        _driverLicenseBytes!,
+                                        height: 150,
+                                        width: double.infinity,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    const Text(
+                                      'เปลี่ยนรูปภาพ',
+                                      style: TextStyle(
+                                        color: Color(0xFF009CB4),
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    const Icon(
+                                      Icons.add_photo_alternate_outlined,
+                                      size: 40,
+                                      color: Colors.grey,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      'กดเพื่อเลือกรูปภาพ',
+                                      style: TextStyle(color: Colors.grey),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),

@@ -99,15 +99,44 @@ class _RoomConfirmScreenState extends State<RoomConfirmScreen> {
                                     ? 'https://192.168.88.25:3002'
                                     : 'https://192.168.88.25:3002';
 
-                                const storage = FlutterSecureStorage();
                                 final prefs =
                                     await SharedPreferences.getInstance();
-                                final String jwtToken =
-                                    await storage.read(key: 'token') ??
-                                    await storage.read(key: 'jwt') ??
+                                String jwtToken =
                                     prefs.getString('token') ??
                                     prefs.getString('jwt') ??
                                     '';
+
+                                // กรณีใช้ SecureStorage ให้ครอบ try-catch ป้องกัน Web โยน Exception
+                                if (jwtToken.isEmpty) {
+                                  try {
+                                    const storage = FlutterSecureStorage();
+                                    jwtToken =
+                                        await storage.read(key: 'token') ??
+                                        await storage.read(key: 'jwt') ??
+                                        '';
+                                  } catch (e) {
+                                    debugPrint('SecureStorage Error: $e');
+                                  }
+                                }
+
+                                // ดักไว้เลยว่าถ้า Token ยังคงว่างเปล่า ห้ามส่ง API เด็ดขาด
+                                if (jwtToken.isEmpty) {
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'ไม่พบข้อมูลการล็อกอิน (Token สูญหาย) กรุณาออกจากระบบแล้วล็อกอินใหม่',
+                                          style: TextStyle(fontFamily: 'Kanit'),
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    setState(() {
+                                      isSubmitting = false;
+                                    });
+                                  }
+                                  return; // หยุดการทำงาน ไม่ต้องไปถึงขั้นตอนยิง API
+                                }
 
                                 // 🟢 3. แปลงวันที่และเวลาให้เป็น DateTime เพื่อส่งให้ Prisma แบบ ISO-8601 (สำคัญมาก!)
                                 final dateParts = widget.formattedDate.split(

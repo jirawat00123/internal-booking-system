@@ -31,6 +31,7 @@ class BookingHistoryModel {
   final String plateNumber;
   final String destination;
   final String driverType;
+  final String? companyDriver; // 🟢 เพิ่มตัวแปรเก็บชื่อพนักงานขับรถ
   final String? pororborUrl;
   final String? driverLicenseUrl;
   final String purpose;
@@ -58,6 +59,7 @@ class BookingHistoryModel {
     this.plateNumber = '-',
     this.destination = '-',
     this.driverType = '-',
+    this.companyDriver,
     this.pororborUrl,
     this.driverLicenseUrl,
     this.purpose = '-',
@@ -89,17 +91,31 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
   Future<void> _loadUserInfo() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // 🟢 ดึงค่าแบบเผื่อไว้หลายๆ Key ที่อาจใช้เซฟจากหน้า Login
+    String loadedRole =
+        prefs.getString('role') ??
+        prefs.getString('userRole') ??
+        prefs.getString('user_role') ??
+        'USER';
+
     int loadedUserId = 0;
-    if (prefs.containsKey('userId')) {
-      dynamic idVal = prefs.get('userId');
+    dynamic idVal =
+        prefs.get('userId') ?? prefs.get('id') ?? prefs.get('user_id');
+
+    if (idVal != null) {
       if (idVal is int) {
         loadedUserId = idVal;
-      } else if (idVal is String) {
-        loadedUserId = int.tryParse(idVal) ?? 0;
+      } else {
+        loadedUserId = int.tryParse(idVal.toString()) ?? 0;
       }
     }
+
+    // 🟢 เช็คใน Console ว่าระบบมองเห็นเราเป็น Role และ ID อะไร
+    debugPrint('🛠️ [Load UserInfo] Role: $loadedRole | ID: $loadedUserId');
+
     setState(() {
-      userRole = prefs.getString('role') ?? 'USER';
+      userRole = loadedRole;
       currentUserId = loadedUserId;
       if (userRole == 'GUARD') {
         selectedTab = 'จองรถ';
@@ -127,7 +143,30 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       'พ.ย.',
       'ธ.ค.',
     ];
-    return '${date.day.toString().padLeft(2, '0')} ${thaiMonths[date.month - 1]} ${date.year + 543}';
+    final yearBE = date.year > 2500 ? date.year : date.year + 543;
+    return '${date.day.toString().padLeft(2, '0')} ${thaiMonths[date.month - 1]} $yearBE';
+  }
+
+  DateTime _parseApiDate(dynamic dateVal) {
+    if (dateVal == null) return DateTime.now();
+    try {
+      DateTime dt = DateTime.parse(dateVal.toString()).toLocal();
+      if (dt.year > 2500) {
+        dt = DateTime(
+          dt.year - 543,
+          dt.month,
+          dt.day,
+          dt.hour,
+          dt.minute,
+          dt.second,
+          dt.millisecond,
+          dt.microsecond,
+        );
+      }
+      return dt;
+    } catch (_) {
+      return DateTime.now();
+    }
   }
 
   String _formatTime(TimeOfDay time) {
@@ -219,8 +258,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
       if (responses[0].statusCode == 200) {
         final data = jsonDecode(responses[0].body);
         for (var item in (data['bookings'] ?? [])) {
-          DateTime start = DateTime.parse(item['startDatetime']).toLocal();
-          DateTime end = DateTime.parse(item['endDatetime']).toLocal();
+          DateTime start = _parseApiDate(item['startDatetime']);
+          DateTime end = _parseApiDate(item['endDatetime']);
 
           String rawStatus = item['status'] ?? 'Reserved';
           if (rawStatus.toLowerCase() == 'pending') rawStatus = 'Reserved';
@@ -284,7 +323,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               endDate: _formatThaiDate(end),
               rawDate: start,
               createdAt: item['createdAt'] != null
-                  ? DateTime.parse(item['createdAt']).toLocal()
+                  ? _parseApiDate(item['createdAt'])
                   : start,
               startTime: TimeOfDay(hour: start.hour, minute: start.minute),
               endTime: TimeOfDay(hour: end.hour, minute: end.minute),
@@ -315,14 +354,10 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             debugPrint('🔍 DEBUG JSON moo1234: ${jsonEncode(item['vehicle'])}');
           }
 
-          DateTime start = DateTime.parse(
-            item['startDatetime'] ??
-                item['startDate'] ??
-                DateTime.now().toString(),
-          ).toLocal();
-          DateTime end = DateTime.parse(
-            item['endDatetime'] ?? item['endDate'] ?? DateTime.now().toString(),
-          ).toLocal();
+          DateTime start = _parseApiDate(
+            item['startDatetime'] ?? item['startDate'],
+          );
+          DateTime end = _parseApiDate(item['endDatetime'] ?? item['endDate']);
 
           String rawStatus = item['status'] ?? 'Reserved';
           if (rawStatus.toLowerCase() == 'pending' ||
@@ -342,8 +377,15 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
             rawStatus = 'Cancelled';
 
           String userName = 'ไม่ระบุชื่อ';
-          if (item['user'] != null) {
-            userName = item['user']['employee']?['fullName'] ?? 'ไม่ระบุชื่อ';
+          if (item['userName'] != null &&
+              item['userName'].toString().trim().isNotEmpty) {
+            userName = item['userName'].toString().trim();
+          } else if (item['user'] != null) {
+            userName =
+                item['user']['employee']?['fullName'] ??
+                item['user']['firstName'] ??
+                item['user']['name'] ??
+                'ไม่ระบุชื่อ';
           }
 
           List<String> parsedPassengerNames = [];
@@ -471,6 +513,44 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
           // 🟢 Filter: ข้ามคิวที่เป็น Cancelled ไปเลย ไม่ต้องเอาใส่ลิสต์
           if (rawStatus == 'Cancelled') continue;
 
+          // 🟢 แปลงข้อมูล companyDriver จาก Backend (รองรับทั้ง Object, Nested Employee และ String)
+          String? parsedCompanyDriver;
+          if (item['companyDriver'] != null) {
+            if (item['companyDriver'] is Map) {
+              final cd = item['companyDriver'];
+              parsedCompanyDriver =
+                  cd['employee']?['fullName'] ??
+                  cd['fullName'] ??
+                  cd['full_name'] ??
+                  cd['name'] ??
+                  cd.toString();
+            } else {
+              parsedCompanyDriver = item['companyDriver'].toString();
+            }
+          } else if (item['companyDriverName'] != null) {
+            parsedCompanyDriver = item['companyDriverName'].toString();
+          }
+
+          // กรณีเลือกประเภทคนขับเป็น "บริษัท" แต่ยังไม่มีการมอบหมายคนขับในระบบ
+          if ((item['driverType'] == 'บริษัท' ||
+                  item['driverType'] == 'COMPANY_DRIVER') &&
+              (parsedCompanyDriver == null || parsedCompanyDriver.isEmpty)) {
+            parsedCompanyDriver = 'รอผู้ดูแลจัดสรรพนักงานขับรถ';
+          }
+
+          // 🟢 พิมพ์ Log ตรวจสอบค่าใบขับขี่และคีย์ที่มีทั้งหมดใน response
+          final debugLicense =
+              item['driverLicenseUrl'] ??
+              item['driver_license_url'] ??
+              item['driverLicensePath'] ??
+              item['driver_license_path'] ??
+              item['driverLicense'] ??
+              item['user']?['driverLicenseUrl'] ??
+              item['user']?['employee']?['driverLicenseUrl'];
+          debugPrint(
+            '🚗 [FETCH LOG] Booking ID: ${item['id']} | driverLicenseUrl found: $debugLicense | item keys: ${item.keys.toList()}',
+          );
+
           fetchedList.add(
             BookingHistoryModel(
               id: item['id'].toString(),
@@ -481,9 +561,9 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               endDate: _formatThaiDate(end),
               rawDate: start,
               createdAt: item['createdAt'] != null
-                  ? DateTime.parse(item['createdAt']).toLocal()
+                  ? _parseApiDate(item['createdAt'])
                   : (item['created_at'] != null
-                        ? DateTime.parse(item['created_at']).toLocal()
+                        ? _parseApiDate(item['created_at'])
                         : start),
               startTime: TimeOfDay(hour: start.hour, minute: start.minute),
               endTime: TimeOfDay(hour: end.hour, minute: end.minute),
@@ -503,12 +583,16 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
               plateNumber: item['vehicle']?['plateNumber'] ?? '-',
               destination: item['destination'] ?? '-',
               driverType: item['driverType'] ?? 'ขับขี่เอง',
+              companyDriver: parsedCompanyDriver,
               purpose: item['purpose'] ?? '-',
               driverLicenseUrl:
                   item['driverLicenseUrl'] ??
                   item['driver_license_url'] ??
                   item['driverLicensePath'] ??
-                  item['driver_license_path'],
+                  item['driver_license_path'] ??
+                  item['driverLicense'] ??
+                  item['user']?['driverLicenseUrl'] ??
+                  item['user']?['employee']?['driverLicenseUrl'],
               pororborUrl: () {
                 // 🟢 1. ตรวจสอบจาก Root level ของ item ก่อน
                 final rootKeys = [
@@ -1090,7 +1174,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                   ),
                                   if (booking.passengerNames.isNotEmpty)
                                     Text(
-                                      'ผู้โดยสาร: ${booking.passengerNames.join(', ')}',
+                                      'ผู้โดยสาร: ${booking.passengerNames.asMap().entries.map((e) {
+                                        if ((booking.driverType == 'ขับขี่เอง' || booking.driverType == 'SELF_DRIVE') && e.key == 0) {
+                                          return 'ผู้ขับขี่: ${e.value}';
+                                        }
+                                        return e.value;
+                                      }).join(', ')}',
                                       style: const TextStyle(
                                         fontSize: 12,
                                         color: Colors.grey,
@@ -1156,9 +1245,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                   ),
                   const Spacer(),
                   Text(
-                    booking.type == 'จองรถ'
-                        ? '${_formatTime(booking.startTime)} น.'
-                        : '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
+                    '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
@@ -1173,7 +1260,18 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
 
             Builder(
               builder: (context) {
+                // 🟢 ใช้ .trim() และ .contains() ป้องกันปัญหาช่องว่าง หรือกรณีเป็น SUPERADMIN
+                bool isAdmin = userRole.trim().toUpperCase().contains('ADMIN');
                 bool isOwner = booking.userId == currentUserId;
+                bool canManage = isAdmin || isOwner;
+
+                if (!canManage) {
+                  // 🟢 ถ้าปุ่มยังโดนซ่อน ให้ดู Console บรรทัดนี้ จะรู้ทันทีว่าค่าไหนผิดเพี้ยน
+                  debugPrint(
+                    '🚫 [Hide] คิว: ${booking.resourceName} | isAdmin: $isAdmin (Role: $userRole) | isOwner: $isOwner (MyID: $currentUserId vs BookerID: ${booking.userId})',
+                  );
+                  return const SizedBox();
+                }
 
                 if (status == 'Reserved') {
                   return Column(
@@ -1204,36 +1302,31 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               ),
                             ),
                           ),
-
-                          if (isOwner) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () =>
-                                    _updateStatus(booking, 'Cancelled'),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(
-                                    color: Colors.redAccent,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 12,
-                                  ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () =>
+                                  _updateStatus(booking, 'Cancelled'),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.redAccent),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: const Text(
-                                  'ยกเลิกคิว',
-                                  style: TextStyle(
-                                    color: Colors.redAccent,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                    fontFamily: 'Kanit',
-                                  ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                              ),
+                              child: const Text(
+                                'ยกเลิกคิว',
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  fontFamily: 'Kanit',
                                 ),
                               ),
                             ),
-                          ],
+                          ),
                         ],
                       ),
                       if (booking.type == 'จองรถ') ...[
@@ -1283,9 +1376,8 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-
-                      if (booking.type == 'ห้องประชุม' && isOwner)
+                      if (booking.type == 'ห้องประชุม') ...[
+                        const SizedBox(height: 12),
                         SizedBox(
                           width: double.infinity,
                           height: 44,
@@ -1310,6 +1402,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                             ),
                           ),
                         ),
+                      ],
                     ],
                   );
                 } else {
@@ -1349,6 +1442,11 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
   // =========================================================
   void _showDetailsPopup(BuildContext context, BookingHistoryModel booking) {
     final actUrl = booking.pororborUrl;
+    debugPrint(
+      '🔎 [POPUP LOG] Booking ID: ${booking.id} | Resource: ${booking.resourceName}',
+    );
+    debugPrint('🔎 [POPUP LOG] pororborUrl: $actUrl');
+    debugPrint('🔎 [POPUP LOG] driverLicenseUrl: ${booking.driverLicenseUrl}');
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -1479,9 +1577,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                         const SizedBox(height: 12),
                         _buildPopupDetailRow(
                           'เวลา',
-                          booking.type == 'จองรถ'
-                              ? '${_formatTime(booking.startTime)} น.'
-                              : '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
+                          '${_formatTime(booking.startTime)} - ${_formatTime(booking.endTime)} น.',
                         ),
                         const SizedBox(height: 12),
                         _buildPopupDetailRow('ผู้ทำรายการ', booking.bookerName),
@@ -1532,7 +1628,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                                             : 6,
                                       ),
                                       child: Text(
-                                        '${e.key + 1}. ${e.value}',
+                                        (booking.driverType == 'ขับขี่เอง' ||
+                                                    booking.driverType ==
+                                                        'SELF_DRIVE') &&
+                                                e.key == 0
+                                            ? 'ผู้ขับขี่: ${e.value}'
+                                            : 'ผู้โดยสาร ${e.key + 1}: ${e.value}',
                                         style: const TextStyle(
                                           fontSize: 13,
                                           fontFamily: 'Kanit',
@@ -1590,40 +1691,12 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               booking.driverType,
                             ),
                           ],
-                          if (booking.driverLicenseUrl != null &&
-                              booking.driverLicenseUrl!.isNotEmpty) ...[
+                          if (booking.companyDriver != null &&
+                              booking.companyDriver!.isNotEmpty) ...[
                             const SizedBox(height: 12),
-                            const Text(
-                              'รูปใบขับขี่ :',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey,
-                                fontFamily: 'Kanit',
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.network(
-                                _buildFullUrl(booking.driverLicenseUrl!),
-                                width: double.infinity,
-                                height: 160,
-                                fit: BoxFit.cover,
-                                errorBuilder: (c, e, s) => Container(
-                                  height: 100,
-                                  color: Colors.grey.shade200,
-                                  child: const Center(
-                                    child: Text(
-                                      'ไม่สามารถโหลดรูปใบขับขี่ได้',
-                                      style: TextStyle(
-                                        fontFamily: 'Kanit',
-                                        fontSize: 12,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
+                            _buildPopupDetailRow(
+                              'พนักงานขับรถ',
+                              booking.companyDriver!,
                             ),
                           ],
                         ],
@@ -1651,7 +1724,7 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                               ),
                               const SizedBox(width: 8),
                               const Text(
-                                'เอกสารประจำรถ (พรบ.)',
+                                'เอกสารประกอบ',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: Color(0xFF8B5CF6),
@@ -1668,49 +1741,85 @@ class _BookingHistoryScreenState extends State<BookingHistoryScreen> {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          actUrl != null && actUrl.isNotEmpty
-                              ? SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: () => _openPororbor(actUrl),
-                                    icon: const Icon(
-                                      Icons.picture_as_pdf,
-                                      size: 18,
-                                      color: Colors.white,
-                                    ),
-                                    label: const Text(
-                                      'ดูเอกสาร พรบ.',
-                                      style: TextStyle(
-                                        fontFamily: 'Kanit',
-                                        fontSize: 14,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF009CB4),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      elevation: 0,
-                                    ),
-                                  ),
-                                )
-                              : const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.symmetric(
-                                      vertical: 8.0,
-                                    ),
-                                    child: Text(
-                                      'ไม่มีเอกสารแนบ',
-                                      style: TextStyle(
-                                        fontFamily: 'Kanit',
-                                        fontSize: 12,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
+                          if (actUrl != null && actUrl.isNotEmpty) ...[
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () => _openPororbor(actUrl),
+                                icon: const Icon(
+                                  Icons.picture_as_pdf,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  'ดูเอกสาร พรบ.',
+                                  style: TextStyle(
+                                    fontFamily: 'Kanit',
+                                    fontSize: 14,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
                                   ),
                                 ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF009CB4),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  elevation: 0,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (booking.driverLicenseUrl != null &&
+                              booking.driverLicenseUrl!.isNotEmpty) ...[
+                            if (actUrl != null && actUrl.isNotEmpty)
+                              const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () =>
+                                    _openPororbor(booking.driverLicenseUrl),
+                                icon: const Icon(
+                                  Icons.badge_outlined,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                                label: const Text(
+                                  'ดูใบขับขี่ผู้ขับ',
+                                  style: TextStyle(
+                                    fontFamily: 'Kanit',
+                                    fontSize: 14,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.teal,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  elevation: 0,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if ((actUrl == null || actUrl.isEmpty) &&
+                              (booking.driverLicenseUrl == null ||
+                                  booking.driverLicenseUrl!.isEmpty)) ...[
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8.0),
+                                child: Text(
+                                  'ไม่มีเอกสารแนบ',
+                                  style: TextStyle(
+                                    fontFamily: 'Kanit',
+                                    fontSize: 12,
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

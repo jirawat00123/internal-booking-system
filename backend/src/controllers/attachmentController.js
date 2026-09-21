@@ -3,6 +3,8 @@ const attachmentService = require('../services/attachmentService');
 // 🟢 นำเข้า PrismaClient สำหรับบันทึก AuditLog
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 
 /**
  * Handle File Upload

@@ -572,128 +572,32 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
           const Divider(color: Color(0xFFE2E8F0)),
           const SizedBox(height: 16),
 
-          const Text(
-            'วันที่',
-            style: TextStyle(
-              color: Color(0xFF9BB1BD),
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'Kanit',
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
+          _buildDateTimePickerTile(
+            label: 'วันที่',
+            value: _formatDate(selectedDate),
+            icon: Icons.calendar_today_rounded,
             onTap: () => _selectDate(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _formatDate(selectedDate),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.black87,
-                      fontFamily: 'Kanit',
-                    ),
-                  ),
-                  const Icon(
-                    Icons.calendar_month,
-                    color: Colors.black87,
-                    size: 22,
-                  ),
-                ],
-              ),
-            ),
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'ตั้งแต่เวลา',
-                      style: TextStyle(
-                        color: Color(0xFF9BB1BD),
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'Kanit',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _selectTime(context, true),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _formatTime(startTime),
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                child: _buildDateTimePickerTile(
+                  label: 'ตั้งแต่เวลา',
+                  value: _formatTime(startTime),
+                  icon: Icons.access_time_rounded,
+                  onTap: () => _selectTime(context, true),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'ถึงเวลา',
-                      style: TextStyle(
-                        color: Color(0xFF9BB1BD),
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'Kanit',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _selectTime(context, false),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          border: Border.all(color: Colors.grey.shade300),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          _formatTime(endTime),
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                child: _buildDateTimePickerTile(
+                  label: 'ถึงเวลา',
+                  value: _formatTime(endTime),
+                  icon: Icons.access_time_rounded,
+                  onTap: () => _selectTime(context, false),
                 ),
               ),
             ],
@@ -803,6 +707,75 @@ class _RoomBookingAScreenState extends State<RoomBookingAScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDateTimePickerTile({
+    required String label,
+    required String value,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFF475569),
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Kanit',
+          ),
+        ),
+        const SizedBox(height: 8),
+        Material(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(12),
+            highlightColor: const Color(0xFF00A8CC).withOpacity(0.05),
+            splashColor: const Color(0xFF00A8CC).withOpacity(0.1),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF00A8CC).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, size: 18, color: const Color(0xFF00A8CC)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      value,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF0F172A),
+                        fontFamily: 'Kanit',
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 20,
+                    color: Color(0xFF94A3B8),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

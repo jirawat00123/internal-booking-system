@@ -1,6 +1,8 @@
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 const socketService = require('./socketService');
 
 class CronService {
@@ -55,6 +57,22 @@ class CronService {
             await tx.vehicleBooking.update({ where: { id: booking.id }, data: { status: 'COMPLETED' } });
             await tx.vehicle.update({ where: { id: booking.vehicleId }, data: { status: 'AVAILABLE' } });
           }
+
+          // ==========================================
+          // 3. เคลียร์ Session ผี (Ghost Session) ที่หมดอายุ (เกิน 15 นาที)
+          // ==========================================
+          const sessionTimeoutMinutes = 15;
+          const expiredTime = new Date(now.getTime() - sessionTimeoutMinutes * 60000);
+          
+          await tx.user.updateMany({
+            where: {
+              currentSessionId: { not: null },
+              lastLoginAt: { lt: expiredTime }
+            },
+            data: {
+              currentSessionId: null
+            }
+          });
         });
 
       } catch (error) {

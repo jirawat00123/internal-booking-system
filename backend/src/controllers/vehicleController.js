@@ -783,20 +783,6 @@ exports.deleteVehicle = async (req, res) => {
             }
         });
 
-        // 🟢 ทำการยกเลิกคิวจองในอนาคตอัตโนมัติ เพื่อไม่ให้ค้างในระบบ
-        if (futureBookings.length > 0) {
-            await prisma.vehicleBooking.updateMany({
-                where: {
-                    vehicleId: vehicleId,
-                    endDatetime: { gt: new Date() },
-                    status: { notIn: ['CANCELLED', 'REJECTED'] }
-                },
-                data: { status: 'CANCELLED' }
-            });
-        }
-
-        // 🟢 ปิดการบล็อก 409 Conflict เพื่อให้ Admin สามารถ Soft Delete ได้ทันที
-        /*
         if (futureBookings.length > 0) {
             return res.status(409).json({ 
                 success: false, 
@@ -804,7 +790,6 @@ exports.deleteVehicle = async (req, res) => {
                 futureBookingsCount: futureBookings.length
             });
         }
-        */
 
         await prisma.vehicle.update({
             where: { id: vehicleId },
@@ -856,14 +841,12 @@ exports.updateVehicleStatus = async (req, res) => {
             return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ที่ต้องการเปลี่ยนสถานะ" });
         }
 
-        // 🟢 2. Business Logic: ปิดการบล็อก 409 เพื่อให้ Admin สามารถเปลี่ยนสถานะรถฉุกเฉิน (เช่น รถเสียต้องเข้า MAINTENANCE) ได้ทันทีแม้จะมีคิวจองล่วงหน้าอยู่
-        /*
         if (normalizedStatus === 'MAINTENANCE' || normalizedStatus === 'INACTIVE') {
             const futureBookings = await prisma.vehicleBooking.findMany({
                 where: {
                     vehicleId: vehicleId,
                     endDatetime: { gt: new Date() },
-                    status: { notIn: ['CANCELLED', 'REJECTED'] }
+                    status: { notIn: ['CANCELLED', 'REJECTED', 'COMPLETED'] }
                 }
             });
 
@@ -874,7 +857,6 @@ exports.updateVehicleStatus = async (req, res) => {
                 });
             }
         }
-        */
 
         const updatedVehicle = await prisma.vehicle.update({
             where: { id: vehicleId },

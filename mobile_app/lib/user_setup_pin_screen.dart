@@ -124,6 +124,8 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
   // 🔄 ยิง API บันทึก PIN จริงไปยัง Backend
   // 🔄 ยิง API บันทึก PIN จริงไปยัง Backend
   Future<void> _handleSubmit() async {
+    if (isLoading) return;
+
     if (pin.length != 6) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -255,215 +257,226 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFF00529B),
-              image: DecorationImage(
-                image: AssetImage('assets/images/bgmmk.png'),
-                fit: BoxFit.cover,
+      body: AbsorbPointer(
+        absorbing: isLoading, // 🟢 บล็อก Touch Event ทั้งหน้าจอขณะโหลด
+        child: Stack(
+          children: [
+            Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFF00529B),
+                image: DecorationImage(
+                  image: AssetImage('assets/images/bgmmk.png'),
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
-          ),
-          SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 8.0,
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(
-                          Icons.arrow_back_ios_new,
-                          color: Colors.white,
-                        ),
-                        onPressed: () {
-                          if (isConfirming) {
-                            setState(() {
-                              isConfirming = false;
-                              pin = "";
-                              firstPin = "";
-                            });
-                          } else {
-                            Navigator.pop(context);
-                          }
-                        },
-                      ),
-                      const Expanded(
-                        child: Text(
-                          'จัดการผู้ใช้งาน',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'Kanit',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 48),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(
-                      left: 16.0,
-                      right: 16.0,
-                      bottom: 16.0,
-                    ),
+            SafeArea(
+              child: Column(
+                children: [
+                  Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 24.0,
-                      vertical: 24.0,
+                      horizontal: 16.0,
+                      vertical: 8.0,
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: Column(
+                    child: Row(
                       children: [
-                        const SizedBox(height: 16),
-                        Text(
-                          isConfirming
-                              ? 'กรุณายืนยันรหัส PIN อีกครั้ง'
-                              : 'ตั้งค่ารหัส PIN สำหรับใช้งานครั้งแรก',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF003E77),
-                            fontFamily: 'Kanit',
+                        IconButton(
+                          icon: const Icon(
+                            Icons.arrow_back_ios_new,
+                            color: Colors.white,
                           ),
+                          onPressed: () {
+                            if (isConfirming) {
+                              setState(() {
+                                isConfirming = false;
+                                pin = "";
+                                firstPin = "";
+                              });
+                            } else {
+                              Navigator.pop(context);
+                            }
+                          },
                         ),
-                        const SizedBox(height: 30),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(6, (index) {
-                            bool isFilled = index < pin.length;
-                            return Container(
-                              width: 45,
-                              height: 55,
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: isFilled
-                                      ? const Color(0xFF00529B)
-                                      : Colors.grey.shade400,
-                                  width: 1.5,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  isFilled
-                                      ? (isObscured ? '●' : pin[index])
-                                      : '',
-                                  style: TextStyle(
-                                    fontSize: isObscured ? 20 : 24,
-                                    color: const Color(0xFF00529B),
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 20),
-                        GestureDetector(
-                          onTap: () => setState(() => isObscured = !isObscured),
-                          child: Icon(
-                            isObscured
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined,
-                            color: Colors.blueAccent.withOpacity(0.5),
-                            size: 28,
-                          ),
-                        ),
-                        const Spacer(flex: 1),
-                        _buildNumpadRow(['1', '2', '3']),
-                        _buildNumpadRow(['4', '5', '6']),
-                        _buildNumpadRow(['7', '8', '9']),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            const SizedBox(width: 60, height: 60),
-                            _buildNumButton('0'),
-                            SizedBox(
-                              width: 60,
-                              height: 60,
-                              child: IconButton(
-                                onPressed: _removePin,
-                                icon: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: Colors.blueAccent.withOpacity(0.5),
-                                    ),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.close,
-                                    size: 20,
-                                    color: Colors.blueAccent,
-                                  ),
-                                ),
-                              ),
+                        const Expanded(
+                          child: Text(
+                            'จัดการผู้ใช้งาน',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Kanit',
                             ),
-                          ],
-                        ),
-                        const Spacer(flex: 2),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: isLoading ? null : _handleSubmit,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0096C7),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: isLoading
-                                ? const SizedBox(
-                                    height: 24,
-                                    width: 24,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text(
-                                    'บันทึกและเข้าสู่ระบบ',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.bold,
-                                      fontFamily: 'Kanit',
-                                    ),
-                                  ),
                           ),
                         ),
-                        const SizedBox(height: 24),
-                        const Text(
-                          'MENAM MECHANIKA © 2026',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+                        const SizedBox(width: 48),
                       ],
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(
+                        left: 16.0,
+                        right: 16.0,
+                        bottom: 16.0,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24.0,
+                        vertical: 24.0,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 16),
+                          Text(
+                            isConfirming
+                                ? 'กรุณายืนยันรหัส PIN อีกครั้ง'
+                                : 'ตั้งค่ารหัส PIN สำหรับใช้งานครั้งแรก',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF003E77),
+                              fontFamily: 'Kanit',
+                            ),
+                          ),
+                          const SizedBox(height: 30),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: List.generate(6, (index) {
+                              bool isFilled = index < pin.length;
+                              return Container(
+                                width: 45,
+                                height: 55,
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: isFilled
+                                        ? const Color(0xFF00529B)
+                                        : Colors.grey.shade400,
+                                    width: 1.5,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    isFilled
+                                        ? (isObscured ? '●' : pin[index])
+                                        : '',
+                                    style: TextStyle(
+                                      fontSize: isObscured ? 20 : 24,
+                                      color: const Color(0xFF00529B),
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }),
+                          ),
+                          const SizedBox(height: 20),
+                          GestureDetector(
+                            onTap: () =>
+                                setState(() => isObscured = !isObscured),
+                            child: Icon(
+                              isObscured
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
+                              color: Colors.blueAccent.withOpacity(0.5),
+                              size: 28,
+                            ),
+                          ),
+                          const Spacer(flex: 1),
+                          _buildNumpadRow(['1', '2', '3']),
+                          _buildNumpadRow(['4', '5', '6']),
+                          _buildNumpadRow(['7', '8', '9']),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              const SizedBox(width: 60, height: 60),
+                              _buildNumButton('0'),
+                              SizedBox(
+                                width: 60,
+                                height: 60,
+                                child: IconButton(
+                                  // 🟢 จ่ายค่า null เพื่อ Disable ปุ่มลบทันที
+                                  onPressed: isLoading ? null : _removePin,
+                                  icon: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      border: Border.all(
+                                        color: isLoading
+                                            ? Colors.grey.withOpacity(0.5)
+                                            : Colors.blueAccent.withOpacity(
+                                                0.5,
+                                              ),
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.close,
+                                      size: 20,
+                                      color: isLoading
+                                          ? Colors.grey
+                                          : Colors.blueAccent,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Spacer(flex: 2),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed: isLoading ? null : _handleSubmit,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0096C7),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: isLoading
+                                  ? const SizedBox(
+                                      height: 24,
+                                      width: 24,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'บันทึกและเข้าสู่ระบบ',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontFamily: 'Kanit',
+                                      ),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          const Text(
+                            'MENAM MECHANIKA © 2026',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -483,14 +496,16 @@ class _UserSetupPinScreenState extends State<UserSetupPinScreen> {
       width: 60,
       height: 60,
       child: TextButton(
-        onPressed: () => _addPin(number),
+        // 🟢 จ่ายค่า null เพื่อ Disable ปุ่มทันทีเมื่อ isLoading เป็น true
+        onPressed: isLoading ? null : () => _addPin(number),
         style: TextButton.styleFrom(shape: const CircleBorder()),
         child: Text(
           number,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w600,
-            color: Colors.black87,
+            // 🟢 ลดความเข้มของสีตัวเลขลงเล็กน้อยเมื่อปุ่มโดน Disable
+            color: isLoading ? Colors.black26 : Colors.black87,
           ),
         ),
       ),

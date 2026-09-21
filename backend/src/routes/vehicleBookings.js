@@ -3,9 +3,9 @@ const express = require('express');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const multer = require('multer');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
 const uploadMiddleware = require('../middlewares/uploadMiddleware');
 
 // 🟢 นำเข้า Controller สำหรับจัดการการจองรถยนต์
@@ -18,7 +18,9 @@ const {
   requestEarlyRelease,
   respondEarlyRelease,
   requestEarlyReturn,
-  respondEarlyReturn
+  respondEarlyReturn,
+  assignDriver,
+  assignCompanyDriver
 } = vehicleBookingController || {};
 
 // Helper ป้องกัน Server Crash กรณี Controller ฟังก์ชันใดฟังก์ชันหนึ่งเป็น undefined
@@ -49,23 +51,10 @@ router.post('/', authenticateToken, uploadMiddleware.any(), async (req, res) => 
   const requestFiles = req.files || (req.file ? [req.file] : []);
 
   try {
-    const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, returnDate, purpose, driverType, driverLicenseUrl } = req.body;
+    const { vehicleId, destination, passengerCount, passengers, startDatetime, endDatetime, returnDate, purpose, driverType, driverEmployeeId } = req.body;
     
     // 💡 รองรับทั้ง key แบบเก่า (endDatetime) และแบบใหม่ (returnDate) จาก Frontend
     const finalReturnDate = returnDate || endDatetime;
-
-    const licenseFile = Array.isArray(requestFiles) && requestFiles.length > 0
-      ? (requestFiles.find(f => ['driverLicenseUrl', 'driverLicense', 'licenseImage', 'license', 'image', 'file', 'attachment', 'attachments'].includes(f.fieldname)) || requestFiles[0]) 
-      : null;
-
-    const normalizeLicensePath = (filePath) => {
-      if (!filePath) return null;
-      const clean = String(filePath).replace(/\\/g, '/');
-      const idx = clean.indexOf('uploads/');
-      return idx !== -1 ? '/' + clean.substring(idx) : (clean.startsWith('/') ? clean : '/' + clean);
-    };
-
-    const finalDriverLicenseUrl = licenseFile ? normalizeLicensePath(licenseFile.path) : (driverLicenseUrl || null);
 
 // 🛑 1. ตรวจสอบข้อมูลเบื้องต้น
     if (!vehicleId || !startDatetime || !finalReturnDate) {
@@ -90,27 +79,16 @@ router.post('/', authenticateToken, uploadMiddleware.any(), async (req, res) => 
       return res.status(400).json({ success: false, error: "รูปแบบวันที่และเวลาไม่ถูกต้อง" });
     }
 
-    if (returnInput < startInput) {
+    if (returnInput <= startInput) {
       deleteGarbageFile(requestFiles);
       return res.status(400).json({
         success: false,
-        error: "วันที่และเวลาคืนรถต้องไม่น้อยกว่าวันเวลาเริ่มใช้งาน กรุณาตรวจสอบอีกครั้ง"
+        error: "วันที่และเวลาคืนรถต้องมากกว่าวันเวลาเริ่มใช้งาน กรุณาตรวจสอบอีกครั้ง"
       });
     }
 
-    // 🌟 Business Rule: ปรับ Expected Return Date ให้เป็นเวลาสิ้นวัน (23:59:59.999) 
-    // เพื่อครอบคลุมการจองตลอดทั้งวันที่ผู้ใช้เลือก (ระบบชนวัน ไม่ใช่ชนเวลา)
-    const expectedReturnDate = new Date(returnInput);
-    expectedReturnDate.setHours(23, 59, 59, 999);
-
-    // 🛑 1.1 ตรวจสอบความถูกต้องของวันเวลา
-    if (expectedReturnDate <= startInput) {
-      deleteGarbageFile(requestFiles);
-      return res.status(400).json({
-        success: false,
-        error: "วันที่คืนรถต้องมากกว่าหรือเป็นวันเดียวกับวันที่เริ่มใช้งาน กรุณาตรวจสอบอีกครั้ง"
-      });
-    }
+    console.log(`[VEHICLE-END-DATETIME][RAW]\nreturnInput=${finalReturnDate}`);
+    console.log(`[VEHICLE-END-DATETIME][PARSED]\nparsed=${returnInput}\niso=${returnInput.toISOString()}`);
 
     // 💡 รองรับทั้ง key แบบเก่าและใหม่ที่ Flutter ส่งมา
     let parsedPassengers = parseInt(passengers || passengerCount || 1, 10);
@@ -177,32 +155,90 @@ router.post('/', authenticateToken, uploadMiddleware.any(), async (req, res) => 
       if (!vehicle) throw new Error('NOT_FOUND');
       if (['MAINTENANCE', 'UNAVAILABLE', 'DISABLED'].includes(vehicle.status)) throw new Error('NOT_AVAILABLE');
 
-      // 3.2 ตรวจสอบคิวรถทับซ้อน (Collision Detection: ยึดเวลาสิ้นวันเป็นหลัก)
+      // 3.2 ตรวจสอบคิวรถทับซ้อน (Collision Detection: ยึดเวลาสิ้นสุดจริงของผู้ใช้)
       const overlappingVehicle = await tx.vehicleBooking.findFirst({
         where: {
           vehicleId: parsedVehicleId,
           status: { notIn: ["CANCELLED", "COMPLETED", "REJECTED"] },
-          startDatetime: { lt: expectedReturnDate },
+          startDatetime: { lt: returnInput },
           endDatetime: { gt: startInput }
         }
       });
 
       if (overlappingVehicle) throw new Error('OVERLAP');
       
-      const createdBooking = await tx.vehicleBooking.create({
-        data: {
-          vehicleId: parsedVehicleId,
-          userId: finalUserId,
-          destination: destination || 'ไม่ระบุเป้าหมาย',
-          passengers: parsedPassengers,
-          startDatetime: startInput,
-          endDatetime: expectedReturnDate, // บันทึกเวลาที่ปัดเป็น 23:59:59 ลง Database
-          purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
-          driverType: driverType || 'ขับขี่เอง',
-          driverLicenseUrl: finalDriverLicenseUrl,
-          status: 'PENDING'
-        }
-      });
+      // Normalization: ปรับ driverType ให้เป็น Standard (SELF_DRIVE / COMPANY_DRIVER)
+      let normalizedDriverType = 'SELF_DRIVE';
+      if (driverType === 'บริษัท' || driverType === 'COMPANY_DRIVER' || driverType === 'COMPANY') {
+        normalizedDriverType = 'COMPANY_DRIVER';
+      }
+      
+      // แปลง driverEmployeeId เป็นตัวเลข (ถ้ามี)
+      const parsedDriverEmployeeId = driverEmployeeId && !isNaN(parseInt(driverEmployeeId, 10)) ? parseInt(driverEmployeeId, 10) : null;
+      let finalDriverEmployeeId = parsedDriverEmployeeId;
+
+              // 🛑 3.3 ตรวจสอบผู้ขับขี่สำหรับกรณี SELF_DRIVE (ต้องเป็นพนักงาน, Active, มีใบขับขี่, และอยู่ใน Passenger List)
+              if (normalizedDriverType === 'SELF_DRIVE' && finalDriverEmployeeId) {
+                const driverEmployee = await tx.employee.findUnique({
+                  where: { id: finalDriverEmployeeId }
+                });
+
+                if (!driverEmployee) {
+                  throw new Error('DRIVER_NOT_FOUND');
+                }
+
+                if (!driverEmployee.isActive) {
+                  throw new Error('DRIVER_INACTIVE');
+                }
+
+                if (!driverEmployee.isDriver) {
+                  throw new Error('NOT_REGISTERED_DRIVER');
+                }
+
+                const today = new Date();
+                if (driverEmployee.driverLicenseExpiryDate && new Date(driverEmployee.driverLicenseExpiryDate) < today) {
+                  throw new Error('LICENSE_EXPIRED');
+                }
+
+                const driverNames = [
+                  driverEmployee.fullName,
+                  String(driverEmployee.id)
+                ].filter(Boolean).map(s => String(s).trim().toLowerCase());
+
+                const isDriverInPassengers = passengerList.some(p => {
+                  if (typeof p === 'object' && p !== null) {
+                    const pEmpId = p.employeeId;
+                    const pName = String(p.fullName || p.passengerName || p.name || '').trim().toLowerCase();
+                    return (pEmpId && parseInt(pEmpId, 10) === finalDriverEmployeeId) ||
+                           (pName && driverNames.includes(pName));
+                  }
+                  const pStr = String(p).trim().toLowerCase();
+                  return driverNames.includes(pStr);
+                });
+
+                if (!isDriverInPassengers) {
+                  throw new Error('DRIVER_NOT_IN_PASSENGERS');
+                }
+              }
+
+              console.log(`[VEHICLE-END-DATETIME][BEFORE-PRISMA]\nendDatetime=${returnInput}\niso=${returnInput.toISOString()}`);
+
+              const createdBooking = await tx.vehicleBooking.create({
+                data: {
+                  vehicleId: parsedVehicleId,
+                  userId: finalUserId,
+                  destination: destination || 'ไม่ระบุเป้าหมาย',
+                  passengers: parsedPassengers,
+                  startDatetime: startInput,
+                  endDatetime: returnInput,
+                  purpose: purpose || 'ใช้งานรถยนต์ของบริษัท',
+                  driverType: normalizedDriverType,
+                  driverEmployeeId: finalDriverEmployeeId,
+                  status: 'PENDING'
+                }
+              });
+
+              console.log(`[VEHICLE-END-DATETIME][DB-RESULT]\nendDatetime=${createdBooking.endDatetime}\niso=${createdBooking.endDatetime ? new Date(createdBooking.endDatetime).toISOString() : ''}`);
 
       // 👥 บันทึกรายชื่อผู้โดยสารลงตาราง vehicle_booking_passengers
       if (Array.isArray(passengerList) && passengerList.length > 0) {
@@ -232,7 +268,7 @@ router.post('/', authenticateToken, uploadMiddleware.any(), async (req, res) => 
     });
 
     // 📎 4. บันทึกข้อมูลไฟล์แนบ (ถ้ามีการอัปโหลด)
-    const uploadedFile = licenseFile || (requestFiles.length > 0 ? requestFiles[0] : null);
+    const uploadedFile = requestFiles.length > 0 ? requestFiles[0] : null;
     if (uploadedFile) {
       try {
         const userObj = await prisma.user.findUnique({
@@ -246,23 +282,17 @@ router.post('/', authenticateToken, uploadMiddleware.any(), async (req, res) => 
         const newFileName = `booking_${newBooking.id}_${cleanUserName}_${timestamp}${fileExt}`;
 
         const uploadBaseDir = process.env.UPLOAD_DIR || path.resolve(__dirname, '../../../attachments');
-        const licenseDir = path.join(uploadBaseDir, 'vehicles/license_driver');
+        const attachmentDir = path.join(uploadBaseDir, 'vehicles/attachments');
 
-        if (!fs.existsSync(licenseDir)) {
-          fs.mkdirSync(licenseDir, { recursive: true, mode: 0o777 });
+        if (!fs.existsSync(attachmentDir)) {
+          fs.mkdirSync(attachmentDir, { recursive: true, mode: 0o777 });
         }
 
-        const destPath = path.join(licenseDir, newFileName);
+        const destPath = path.join(attachmentDir, newFileName);
         fs.copyFileSync(uploadedFile.path, destPath);
         try { fs.chmodSync(destPath, 0o777); } catch (e) {}
 
         const relativePath = `/attachments/vehicles/license_driver/${newFileName}`;
-
-        await prisma.vehicleBooking.update({
-          where: { id: newBooking.id },
-          data: { driverLicenseUrl: relativePath }
-        });
-        newBooking.driverLicenseUrl = relativePath;
 
         await prisma.attachment.create({
           data: {
@@ -293,6 +323,11 @@ router.post('/', authenticateToken, uploadMiddleware.any(), async (req, res) => 
     if (error.message === 'OVERLAP') return res.status(409).json({ success: false, error: "รถคันนี้มีการจองในช่วงเวลาดังกล่าวแล้ว กรุณาเลือกช่วงเวลาอื่น" });
     if (error.message === 'NOT_FOUND') return res.status(404).json({ success: false, error: "ไม่พบข้อมูลรถยนต์ในระบบ" });
     if (error.message === 'NOT_AVAILABLE') return res.status(400).json({ success: false, error: "รถคันนี้ไม่ว่างพร้อมใช้งาน (อาจถูกล็อกคิวไปแล้ว)" });
+    if (error.message === 'DRIVER_NOT_FOUND') return res.status(404).json({ success: false, error: "ไม่พบข้อมูลผู้ขับขี่ในระบบ" });
+    if (error.message === 'DRIVER_INACTIVE') return res.status(400).json({ success: false, error: "พนักงานขับรถพ้นสภาพหรือถูกระงับการใช้งาน" });
+    if (error.message === 'NOT_REGISTERED_DRIVER') return res.status(400).json({ success: false, error: "พนักงานที่ระบุไม่ได้ลงทะเบียนเป็นผู้ขับขี่" });
+    if (error.message === 'LICENSE_EXPIRED') return res.status(400).json({ success: false, error: "ใบขับขี่ของผู้ขับขี่หมดอายุแล้ว" });
+    if (error.message === 'DRIVER_NOT_IN_PASSENGERS') return res.status(400).json({ success: false, error: "ผู้ขับขี่ต้องเป็นบุคคลที่อยู่ในรายชื่อผู้โดยสารของการจองนี้เท่านั้น" });
 
     return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการประมวลผล", developerMessage: error.message });
   }
@@ -672,23 +707,76 @@ router.post('/:id/approve', authenticateToken, requireRole(['ADMIN']), safeHandl
 router.post('/:id/reject', authenticateToken, requireRole(['ADMIN']), safeHandler(rejectVehicleBooking, 'rejectVehicleBooking'));
 
 // ==========================================
+// 🧑‍✈️ จัดสรร/เปลี่ยนพนักงานขับรถ (PUT /:id/assign-driver)
+// ==========================================
+router.put('/:id/assign-driver', authenticateToken, requireRole(['ADMIN']), uploadMiddleware.any(), safeHandler(vehicleBookingController.assignCompanyDriver, 'assignCompanyDriver'));
+
+router.post('/:id/assign-driver', authenticateToken, requireRole(['ADMIN']), uploadMiddleware.any(), safeHandler(vehicleBookingController.assignCompanyDriver, 'assignCompanyDriver'));
+
+// ==========================================
 // 🟢 ส่งคำขอรับรถก่อนเวลาให้ผู้จอง (POST /:id/early-request)
 // ==========================================
-router.post('/:id/early-request', authenticateToken, safeHandler(requestEarlyRelease || vehicleBookingController.requestEarlyRelease, 'requestEarlyRelease'));
+router.post('/:id/early-request', authenticateToken, safeHandler(vehicleBookingController.requestEarlyRelease, 'requestEarlyRelease'));
 
 // ==========================================
 // 🟢 ผู้จองตอบรับหรือปฏิเสธคำขอรับรถก่อนเวลา (POST /:id/early-respond)
 // ==========================================
-router.post('/:id/early-respond', authenticateToken, safeHandler(respondEarlyRelease || vehicleBookingController.respondEarlyRelease, 'respondEarlyRelease'));
+router.post('/:id/early-respond', authenticateToken, safeHandler(vehicleBookingController.respondEarlyRelease, 'respondEarlyRelease'));
 
 // ==========================================
 // 🟢 ส่งคำขอคืนรถก่อนเวลาให้ผู้จอง (POST /:id/early-return-request)
 // ==========================================
-router.post('/:id/early-return-request', authenticateToken, safeHandler(requestEarlyReturn || vehicleBookingController.requestEarlyReturn, 'requestEarlyReturn'));
+router.post('/:id/early-return-request', authenticateToken, safeHandler(vehicleBookingController.requestEarlyReturn, 'requestEarlyReturn'));
 
 // ==========================================
 // 🟢 ผู้จองตอบรับหรือปฏิเสธคำขอคืนรถก่อนเวลา (POST /:id/early-return-respond)
 // ==========================================
-router.post('/:id/early-return-respond', authenticateToken, safeHandler(respondEarlyReturn || vehicleBookingController.respondEarlyReturn, 'respondEarlyReturn'));
+router.post('/:id/early-return-respond', authenticateToken, safeHandler(vehicleBookingController.respondEarlyReturn, 'respondEarlyReturn'));
+
+// ==========================================
+// 🪪 ตรวจสอบข้อมูลผู้ขับขี่และใบขับขี่ (GET /driver-license-check/:employeeId)
+// ==========================================
+router.get('/driver-license-check/:employeeId', authenticateToken, async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.employeeId, 10);
+    if (isNaN(employeeId)) {
+      return res.status(400).json({ success: false, error: "รหัสพนักงานไม่ถูกต้อง" });
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: {
+        id: true,
+        employeeCode: true,
+        fullName: true,
+        isActive: true,
+        isDriver: true,
+        driverLicenseIssueDate: true,
+        driverLicenseExpiryDate: true,
+        driverLicenseUrl: true
+      }
+    });
+
+    if (!employee) {
+      return res.status(404).json({ success: false, error: "ไม่พบข้อมูลพนักงาน" });
+    }
+
+    const today = new Date();
+    const isLicenseExpired = employee.driverLicenseExpiryDate ? new Date(employee.driverLicenseExpiryDate) < today : false;
+    const canDrive = employee.isActive && employee.isDriver && !isLicenseExpired;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...employee,
+        isLicenseExpired,
+        canDrive
+      }
+    });
+  } catch (error) {
+    console.error("🔴 Check Driver License Error:", error);
+    return res.status(500).json({ success: false, error: "เกิดข้อผิดพลาดในการตรวจสอบข้อมูลใบขับขี่" });
+  }
+});
 
 module.exports = router;

@@ -2,6 +2,9 @@ const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const router = express.Router();
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
+const upload = require('../middlewares/uploadMiddleware');
 
 // ==========================================
 // 🏢 1. ข้อมูล Master Data (Departments, Positions, Roles)
@@ -78,10 +81,10 @@ router.get('/employees/generate-code', async (req, res) => {
   }
 });
 
-// GET /api/employees - ดึงพนักงานทั้งหมด
+// GET /api/employees - ดึงพนักงานทั้งหมด (ส่งคืนข้อมูลใบขับขี่ด้วย)
 router.get('/employees', async (req, res) => {
   try {
-    const { departmentId } = req.query;
+    const { departmentId, isDriver } = req.query;
     const whereClause = {};
 
     if (departmentId && departmentId !== 'undefined' && departmentId !== 'null' && departmentId !== 'all' && departmentId !== '') {
@@ -92,6 +95,10 @@ router.get('/employees', async (req, res) => {
           { position: { departmentId: parsedId } }
         ];
       }
+    }
+
+    if (isDriver !== undefined && isDriver !== 'undefined' && isDriver !== 'null' && isDriver !== '') {
+      whereClause.isDriver = isDriver === 'true';
     }
 
     const employees = await prisma.employee.findMany({
@@ -115,7 +122,11 @@ router.get('/employees', async (req, res) => {
         positionName: emp.position?.positionName || "ไม่ระบุตำแหน่ง",
         role: userAcc?.role?.name || "USER",
         active: userAcc?.active ?? true,
-        userId: userAcc?.id ?? null
+        userId: userAcc?.id ?? null,
+        isDriver: emp.isDriver ?? false,
+        driverLicenseIssueDate: emp.driverLicenseIssueDate,
+        driverLicenseExpiryDate: emp.driverLicenseExpiryDate,
+        driverLicenseUrl: emp.driverLicenseUrl
       };
     });
 
@@ -128,12 +139,14 @@ router.get('/employees', async (req, res) => {
 
 // 🟢 [เพิ่มใหม่] POST /api/employees - สร้างพนักงานใหม่และ User (Transaction)
 // POST /api/employees - สร้างพนักงานใหม่และ User (Transaction)
-router.post('/employees', async (req, res) => {
+router.post('/employees', upload.single('driverLicenseFile'), async (req, res) => {
   // 1. รับค่าจาก req.body ทั้งหมด (ห้าม Hardcode)
-  const { employeeCode, fullName, departmentId, positionId, roleId, active } = req.body;
+  const { employeeCode, fullName, departmentId, positionId, roleId, active, isDriver, driverLicenseIssueDate, driverLicenseExpiryDate, driverLicenseExpiry } = req.body;
+  const expiryDate = driverLicenseExpiryDate || driverLicenseExpiry;
 
   // 2. Validation: ตรวจสอบข้อมูลเบื้องต้น (ไม่ต้องบังคับ positionId)
   if (!employeeCode || !fullName || !departmentId || !roleId) {
+    if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
     return res.status(400).json({ success: false, error: 'กรุณาส่งข้อมูลให้ครบถ้วน (employeeCode, fullName, departmentId, roleId)' });
   }
 
@@ -144,13 +157,21 @@ router.post('/employees', async (req, res) => {
       ? parseInt(positionId, 10) 
       : null;
     const parsedRoleId = parseInt(roleId, 10);
-    // แปลงค่า active ให้เป็น Boolean (ถ้าไม่ได้ส่งมาให้ default เป็น true)
-    const isActiveStatus = active !== undefined ? Boolean(active) : true;
+    
+    // แปลงค่า Boolean จาก Multipart Form Data
+    const parseBool = (val, defaultVal) => {
+      if (val === undefined || val === null || val === '') return defaultVal;
+      return val === true || val === 'true';
+    };
+    
+    const isActiveStatus = parseBool(active, true);
+    const isDriverStatus = parseBool(isDriver, false);
 
     // 3. API Validation: ตรวจสอบความถูกต้องของข้อมูลในฐานข้อมูลจริง (PostgreSQL)
     // 3.1 เช็กว่า Department มีอยู่จริง
     const deptExists = await prisma.department.findUnique({ where: { id: parsedDeptId } });
     if (!deptExists) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลแผนก (Department) นี้ในระบบ' });
     }
 
@@ -158,11 +179,13 @@ router.post('/employees', async (req, res) => {
     if (parsedPosId) {
       const posExists = await prisma.position.findUnique({ where: { id: parsedPosId } });
       if (!posExists) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลตำแหน่ง (Position) นี้ในระบบ' });
       }
 
       // 3.3 เช็กว่า Position อยู่ใน Department นั้นจริง
       if (posExists.departmentId !== parsedDeptId) {
+        if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         return res.status(400).json({ success: false, error: 'ตำแหน่งที่เลือกไม่ได้สังกัดอยู่ในแผนกที่ระบุ' });
       }
     }
@@ -170,7 +193,24 @@ router.post('/employees', async (req, res) => {
     // 3.4 เช็กว่า Role มีอยู่จริง
     const roleExists = await prisma.role.findUnique({ where: { id: parsedRoleId } });
     if (!roleExists) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(400).json({ success: false, error: 'ไม่พบข้อมูลสิทธิ์การใช้งาน (Role) นี้ในระบบ' });
+    }
+
+    // ย้ายไฟล์ใบขับขี่จาก temp ไปยังโฟลเดอร์ NAS
+    let driverLicensePath = null;
+    if (req.file) {
+      const nasDir = path.join(__dirname, '../../attachments/users/licensedriver');
+      if (!fs.existsSync(nasDir)) {
+        fs.mkdirSync(nasDir, { recursive: true });
+      }
+      const ext = path.extname(req.file.originalname);
+      const sanitizedFullName = fullName.trim().replace(/[^\w\u0E00-\u0E7F]/g, '_');
+      const fileName = `license_${sanitizedFullName}_${Date.now()}${ext}`;
+      const destinationPath = path.join(nasDir, fileName);
+
+      fs.renameSync(req.file.path, destinationPath);
+      driverLicensePath = `/attachments/users/licensedriver/${fileName}`;
     }
 
     // 4. สร้างข้อมูลลง PostgreSQL ด้วย Prisma Transaction
@@ -183,6 +223,10 @@ router.post('/employees', async (req, res) => {
           department: { connect: { id: parsedDeptId } },
           ...(parsedPosId ? { position: { connect: { id: parsedPosId } } } : {}),
           isActive: isActiveStatus,
+          isDriver: isDriverStatus,
+          driverLicenseIssueDate: driverLicenseIssueDate ? new Date(driverLicenseIssueDate) : null,
+          driverLicenseExpiryDate: expiryDate ? new Date(expiryDate) : null,
+          driverLicenseUrl: driverLicensePath,
         }
       });
 
@@ -207,6 +251,9 @@ router.post('/employees', async (req, res) => {
     });
 
   } catch (error) {
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     console.error('POST /api/employees Error:', error);
     
     // ดักจับ Error กรณี employeeCode ซ้ำ (Unique Constraint)
@@ -219,14 +266,16 @@ router.post('/employees', async (req, res) => {
 });
 
 // PUT /api/employees/:id - อัปเดตข้อมูลพนักงาน
-router.put('/employees/:id', async (req, res) => {
+router.put('/employees/:id', upload.single('driverLicenseFile'), async (req, res) => {
   try {
     const employeeId = parseInt(req.params.id, 10);
     if (isNaN(employeeId)) {
       return res.status(400).json({ success: false, error: "รหัสพนักงานไม่ถูกต้อง" });
     }
 
-    const { employeeCode, fullName, positionId, departmentId, isActive, roleId, active } = req.body;
+    const { employeeCode, fullName, positionId, departmentId, isActive, roleId, active, isDriver, driverLicenseIssueDate, driver_license_issue_date, driverLicenseExpiryDate, driverLicenseExpiry, driver_license_expiry_date } = req.body;
+    const issueDate = driverLicenseIssueDate || driver_license_issue_date;
+    const expiryDate = driverLicenseExpiryDate || driverLicenseExpiry || driver_license_expiry_date;
 
     const existingEmployee = await prisma.employee.findUnique({
       where: { id: employeeId },
@@ -234,7 +283,30 @@ router.put('/employees/:id', async (req, res) => {
     });
 
     if (!existingEmployee) {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       return res.status(404).json({ success: false, error: "ไม่พบข้อมูลพนักงานที่ต้องการอัปเดต" });
+    }
+
+    let newDriverLicensePath = undefined;
+    if (req.file) {
+      const nasDir = path.join(__dirname, '../../attachments/users/licensedriver');
+      if (!fs.existsSync(nasDir)) {
+        fs.mkdirSync(nasDir, { recursive: true });
+      }
+      const ext = path.extname(req.file.originalname);
+      const targetName = (fullName ? fullName.trim() : existingEmployee.fullName).replace(/[^\w\u0E00-\u0E7F]/g, '_');
+      const fileName = `license_${targetName}_${Date.now()}${ext}`;
+      const destinationPath = path.join(nasDir, fileName);
+
+      fs.renameSync(req.file.path, destinationPath);
+      newDriverLicensePath = `/attachments/users/licensedriver/${fileName}`;
+
+      if (existingEmployee.driverLicenseUrl) {
+        const oldFilePath = path.join(__dirname, '../../', existingEmployee.driverLicenseUrl);
+        if (fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
+        }
+      }
     }
 
     const updatedData = await prisma.$transaction(async (tx) => {
@@ -246,12 +318,16 @@ router.put('/employees/:id', async (req, res) => {
           // ดักจับค่าว่างหรือ string 'null' ป้องกัน Error จาก Prisma Connect
           ...(positionId !== undefined && (positionId && positionId !== 'null' && positionId !== 'undefined' && positionId !== '' ? { position: { connect: { id: parseInt(positionId, 10) } } } : { position: { disconnect: true } })),
           ...(departmentId !== undefined && (departmentId ? { department: { connect: { id: parseInt(departmentId, 10) } } } : {})),
-          ...(isActive !== undefined && { isActive }),
+          ...(isActive !== undefined && { isActive: isActive === 'true' || isActive === true }),
+          ...(isDriver !== undefined && { isDriver: isDriver === 'true' || isDriver === true }),
+          ...(driverLicenseIssueDate !== undefined && { driverLicenseIssueDate: driverLicenseIssueDate ? new Date(driverLicenseIssueDate) : null }),
+          ...(expiryDate !== undefined && { driverLicenseExpiryDate: expiryDate ? new Date(expiryDate) : null }),
+          ...(newDriverLicensePath !== undefined && { driverLicenseUrl: newDriverLicensePath })
         }
       });
 
       const parsedRoleId = roleId ? parseInt(roleId, 10) : undefined;
-      const userActiveStatus = active !== undefined ? Boolean(active) : (isActive !== undefined ? Boolean(isActive) : undefined);
+      const userActiveStatus = active !== undefined ? (active === 'true' || active === true) : (isActive !== undefined ? (isActive === 'true' || isActive === true) : undefined);
 
       if (existingEmployee.users.length > 0) {
         await tx.user.updateMany({
@@ -284,11 +360,59 @@ router.put('/employees/:id', async (req, res) => {
     });
 
   } catch (error) {
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
     console.error("PUT /api/employees/:id Error:", error);
     if (error.code === 'P2002') {
       return res.status(409).json({ success: false, error: "รหัสพนักงานนี้ถูกใช้งานในระบบแล้ว" });
     }
     return res.status(500).json({ success: false, error: "ระบบหลังบ้านขัดข้อง ไม่สามารถอัปเดตข้อมูลได้" });
+  }
+});
+
+// GET /api/employees/:id - ดึงข้อมูลพนักงานรายคนด้วย employeeId รวมข้อมูลใบขับขี่
+router.get('/employees/:id', async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.id, 10);
+    if (isNaN(employeeId)) {
+      return res.status(400).json({ success: false, error: "รหัสพนักงานไม่ถูกต้อง" });
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      include: {
+        department: true,
+        position: { include: { department: true } },
+        users: { include: { role: true } }
+      }
+    });
+
+    if (!employee) {
+      return res.status(404).json({ success: false, error: "ไม่พบข้อมูลพนักงาน" });
+    }
+
+    const userAcc = employee.users && employee.users.length > 0 ? employee.users[0] : null;
+    const result = {
+      id: employee.id,
+      employeeCode: employee.employeeCode,
+      fullName: employee.fullName,
+      departmentId: employee.departmentId || employee.position?.departmentId,
+      departmentName: employee.department?.departmentName || employee.position?.department?.departmentName || "ไม่ระบุแผนก",
+      positionName: employee.position?.positionName || "ไม่ระบุตำแหน่ง",
+      role: userAcc?.role?.name || "USER",
+      active: userAcc?.active ?? true,
+      userId: userAcc?.id ?? null,
+      isDriver: employee.isDriver ?? false,
+      driverLicenseIssueDate: employee.driverLicenseIssueDate,
+      driverLicenseExpiryDate: employee.driverLicenseExpiryDate,
+      driverLicenseUrl: employee.driverLicenseUrl
+    };
+
+    return res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    console.error("GET /api/employees/:id Error:", error);
+    return res.status(500).json({ success: false, error: "ไม่สามารถดึงข้อมูลพนักงานได้" });
   }
 });
 

@@ -53,7 +53,8 @@ const setupPin = async (req, res) => {
         pinResetRequired: false,
         pinChangedAt: new Date(),
         failedLoginAttempts: 0, 
-        lockedUntil: null       
+        lockedUntil: null,
+        currentSessionId: null
       }
     });
 
@@ -85,8 +86,12 @@ const changePin = async (req, res) => {
     const userId = req.user.userId;
     const { oldPin, newPin } = req.body;
 
+    // แปลงให้เป็น String ป้องกันบั๊กเมื่อ PIN เป็น 000000 และถูกส่งมาเป็น Number (0)
+    const oldPinStr = oldPin !== undefined && oldPin !== null ? String(oldPin).trim() : '';
+    const newPinStr = newPin !== undefined && newPin !== null ? String(newPin).trim() : '';
+
     // 1. Validation Input
-    if (!oldPin || !/^\d{6}$/.test(oldPin) || !newPin || !/^\d{6}$/.test(newPin)) {
+    if (!oldPinStr || !/^\d{6}$/.test(oldPinStr) || !newPinStr || !/^\d{6}$/.test(newPinStr)) {
       return res.status(400).json({ success: false, error: "PIN ต้องเป็นตัวเลข 6 หลักเท่านั้น" });
     }
 
@@ -97,17 +102,17 @@ const changePin = async (req, res) => {
     }
 
     // 2. ตรวจสอบ PIN เดิม
-    const isOldPinValid = await verifyPin(user.pin, oldPin);
+    const isOldPinValid = await verifyPin(user.pin, oldPinStr);
     if (!isOldPinValid) {
       return res.status(401).json({ success: false, error: "รหัส PIN เดิมไม่ถูกต้อง" });
     }
 
-    if (oldPin === newPin) {
+    if (oldPinStr === newPinStr) {
       return res.status(400).json({ success: false, error: "รหัส PIN ใหม่ต้องไม่ซ้ำกับของเดิม" });
     }
 
     // 3. Hash PIN ใหม่
-    const hashedNewPin = await hashPin(newPin);
+    const hashedNewPin = await hashPin(newPinStr);
 
     // 4. บันทึกข้อมูลและ Force Logout
     await prisma.user.update({
@@ -236,12 +241,7 @@ const login = async (req, res) => {
   try {
     const { employeeCode, pin, expectedRole } = req.body;
 
-    if (!pin) {
-      return res.status(400).json({ 
-        success: false, 
-        error: "กรุณาระบุรหัส PIN" 
-      });
-    }
+    const pinStr = pin !== undefined && pin !== null ? String(pin).trim() : '';
 
     let user = null;
     let employee = null;
@@ -287,6 +287,13 @@ const login = async (req, res) => {
       }
     } else {
       // 🟢 กรณีไม่ระบุรหัสพนักงาน (Admin PIN-Only Login Flow: กรอก PIN อย่างเดียว)
+      if (!pinStr) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "กรุณาระบุรหัส PIN" 
+        });
+      }
+
       const targetRole = expectedRole ? expectedRole.toUpperCase() : 'ADMIN';
       
       // รองรับให้ค้นหาเจอทั้งคู่ หากเป้าหมายคือ SECURITY หรือ GUARD
@@ -310,7 +317,7 @@ const login = async (req, res) => {
 
       let lockedCandidate = null;
       for (const candidate of users) {
-        if (candidate.pin && await verifyPin(candidate.pin, pin.toString())) {
+        if (candidate.pin && await verifyPin(candidate.pin, pinStr)) {
           if (candidate.lockedUntil && candidate.lockedUntil > new Date()) {
             lockedCandidate = candidate;
             continue; // หาแอดมินคนอื่นที่ใช้ PIN นี้และไม่ถูกล็อคก่อน
@@ -346,6 +353,17 @@ const login = async (req, res) => {
       });
     }
 
+    // 🟢 เช็คจังหวะที่ 1: กรณีส่ง employeeCode มาเพื่อตรวจสอบสถานะ PIN (ยังไม่ได้กรอก PIN)
+    if (employeeCode && !pinStr) {
+      return res.status(200).json({
+        success: true,
+        message: "ตรวจสอบสถานะผู้ใช้งานสำเร็จ",
+        pinInitialized: user.pinInitialized ?? false,
+        pinResetRequired: user.pinResetRequired ?? false,
+        requireSetupPin: !user.pin || !user.pinInitialized || user.pinResetRequired
+      });
+    }
+
     if (!user.pin || !user.pinInitialized || user.pinResetRequired) {
       return res.status(403).json({ 
         success: false, 
@@ -360,7 +378,7 @@ const login = async (req, res) => {
         currentAttempts = 0; // เคลียร์จำนวนครั้งที่ผิดหากหมดเวลาล็อคแล้ว
       }
 
-      const isPinValid = await verifyPin(user.pin, pin.toString());
+      const isPinValid = await verifyPin(user.pin, pinStr);
       if (!isPinValid) {
         const attempts = currentAttempts + 1;
         let updateData = { 
@@ -385,18 +403,7 @@ const login = async (req, res) => {
       }
     }
 
-    // 🔴 ป้องกันการเข้าสู่ระบบซ้ำ: หากมี currentSessionId ค้างอยู่ และยังไม่หมดอายุ 10 นาที
-    const TEN_MINUTES_IN_MS = 10 * 60 * 1000;
-    const isSessionExpired = user.lastLoginAt && (new Date() - new Date(user.lastLoginAt) > TEN_MINUTES_IN_MS);
-
-    if (user.currentSessionId && !isSessionExpired) {
-      return res.status(409).json({ 
-        success: false, 
-        error: "SESSION_ALREADY_ACTIVE",
-        message: "บัญชีนี้กำลังใช้งานอยู่ กรุณาออกจากระบบจากอุปกรณ์เดิมก่อน" 
-      });
-    }
-
+    // 🟢 อนุญาตให้เข้าสู่ระบบใหม่ทับ Session เดิมได้เลย (Last Login Wins - เขียนทับ Session เดิมทันที)
     const newSessionId = uuidv4(); 
     const userPermissions = getPermissionsByRole(effectiveRole);
 
@@ -410,7 +417,7 @@ const login = async (req, res) => {
     const token = jwt.sign(
       tokenPayload, 
       process.env.JWT_SECRET,
-      { expiresIn: '10m' }
+      { expiresIn: '30m' }
     );
 
     await prisma.user.update({
@@ -468,11 +475,46 @@ const login = async (req, res) => {
 // ==========================================
 const logout = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    let userId = req.user?.userId || req.user?.id;
+
+    // 🟢 ตรวจสอบและดึง userId จาก Token โดยตรงแม้ Token ฝั่ง Client จะหมดอายุไปแล้ว
+    // ใช้ jwt.decode ถอดรหัสทันทีเพื่อป้องกัน Error จาก Token หมดอายุหรือ Secret Mismatch
+    if (!userId) {
+      const authHeader = req.headers['authorization'];
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        try {
+          const decoded = jwt.decode(token);
+          userId = decoded?.userId || decoded?.id;
+        } catch (decodeErr) {
+          console.error("Logout: Failed to decode token", decodeErr.message);
+        }
+      }
+    }
+
+    // 🟢 สำรองข้อมูล: รับ userId หรือ employeeCode จาก req.body เผื่อ Header/Token ไม่สมบูรณ์
+    if (!userId && req.body?.userId) {
+      userId = req.body.userId;
+    }
+
+    if (!userId && req.body?.employeeCode) {
+      const emp = await prisma.employee.findUnique({
+        where: { employeeCode: req.body.employeeCode },
+        include: { users: true }
+      });
+      if (emp && emp.users && emp.users.length > 0) {
+        userId = emp.users[0].id;
+      }
+    }
+
+    if (!userId) {
+      console.warn("⚠️ [Logout] ถูกปฏิเสธ: ไม่พบ userId (Frontend ไม่ได้ส่ง Token มาใน Header หรือ Token ไม่สมบูรณ์)");
+      return res.status(401).json({ success: false, error: "ไม่พบข้อมูลผู้ใช้งาน" });
+    }
     
     // เคลียร์ currentSessionId ให้กลับเป็น null เพื่อให้อุปกรณ์อื่นสามารถ Login ได้
     await prisma.user.update({
-      where: { id: userId },
+      where: { id: parseInt(userId, 10) },
       data: {
         currentSessionId: null
       }
@@ -488,7 +530,8 @@ const logout = async (req, res) => {
         userId: parseInt(userId, 10),
         details: "ออกจากระบบและเคลียร์ Active Session สำเร็จ"
       }
-    }).catch(err => console.error("AuditLog Error [LOGOUT_SYSTEM]:", err.message));
+    }).then(() => console.log("✅ [LOGOUT] Session cleared & AuditLog Saved Successfully"))
+      .catch(err => console.error("AuditLog Error [LOGOUT_SYSTEM]:", err.message));
 
     return res.status(200).json({
       success: true,
@@ -517,6 +560,7 @@ const refreshToken = async (req, res) => {
     }
 
     const effectiveRole = user.role?.name ? user.role.name.toUpperCase() : 'USER';
+    const secretKey = process.env.JWT_SECRET || 'default_secret_key';
     
     const newToken = jwt.sign(
       { 
@@ -525,8 +569,8 @@ const refreshToken = async (req, res) => {
         role: effectiveRole, 
         sessionId 
       },
-      process.env.JWT_SECRET,
-      { expiresIn: '10m' }
+      secretKey,
+      { expiresIn: '30m' }
     );
 
     await prisma.user.update({

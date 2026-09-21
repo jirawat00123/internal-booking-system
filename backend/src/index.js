@@ -21,7 +21,8 @@ const notificationRoutes = require('./routes/notifications');
 // 🚀 นำเข้า Route จัดการ User และ Monitor
 const userRoutes = require('./routes/users');
 const monitorRoutes = require('./routes/monitor');
-const reportRoutes = require('./routes/reports');
+const reportRoutes = require('./routes/reports'); // 🟢 เปิดใช้งานการนำเข้าโมดูลกลับมา
+const companyDriverRoutes = require('./routes/companyDrivers');
 
 const app = express();
 const prisma = new PrismaClient(); 
@@ -29,12 +30,15 @@ const prisma = new PrismaClient();
 // ==========================================
 // 🛠️ ตั้งค่า Middleware พื้นฐาน (ต้องอยู่ก่อน Routes เสมอ)
 // ==========================================
-app.use(cors({
+const corsOptions = {
   origin: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true
-}));
+};
+
+app.use(cors(corsOptions));
+app.options(/(.*)/, cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -235,7 +239,7 @@ const swaggerDocument = {
         description: '🔒 ต้องใส่ Token ที่รูปแม่กุญแจก่อน',
         responses: {
           200: { description: 'ดึงข้อมูลสำเร็จ คืนค่าข้อมูลพนักงาน ตำแหน่ง และสิทธิ์ใช้งาน' },
-          441: { description: 'ไม่ได้แนบ Token หรือ Token หมดอายุ' },
+          401: { description: 'ไม่ได้แนบ Token หรือ Token หมดอายุ' },
           404: { description: 'ไม่พบข้อมูลผู้ใช้งานนี้' },
           500: { description: 'ระบบไม่สามารถตรวจสอบ Token ได้' }
         }
@@ -437,6 +441,47 @@ app.get('/', (req, res) => {
 // ==========================================
 const { authenticateToken, isAdmin, requireRole } = require('./middlewares/auth');
 
+app.get('/api/check-license', async (req, res) => {
+  const { name } = req.query;
+  try {
+    if (!name) {
+      return res.status(400).json({ success: false, message: 'กรุณาระบุ name' });
+    }
+
+    const employee = await prisma.employee.findFirst({
+      where: { fullName: name.trim() }
+    });
+
+    if (!employee) {
+      return res.status(200).json({
+        success: true,
+        hasLicense: false,
+        isExpired: false,
+        message: 'ไม่พบข้อมูลพนักงาน'
+      });
+    }
+
+    const hasLicense = Boolean(employee.driverLicenseUrl);
+    const isExpired = employee.driverLicenseExpiryDate
+      ? new Date(employee.driverLicenseExpiryDate) < new Date()
+      : false;
+
+    res.status(200).json({
+      success: true,
+      name: employee.fullName,
+      hasLicense: hasLicense,
+      isExpired: isExpired,
+      isDriver: employee.isDriver,
+      driverLicenseIssueDate: employee.driverLicenseIssueDate,
+      driverLicenseExpiryDate: employee.driverLicenseExpiryDate,
+      driverLicenseUrl: employee.driverLicenseUrl
+    });
+  } catch (error) {
+    console.error('Error checking license:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 // [GET] รถยนต์ว่าง (บังคับใช้ Token)
 app.get('/api/vehicles/available', authenticateToken, async (req, res) => {
   try {
@@ -522,6 +567,10 @@ app.post('/api/vehicle-bookings/book', authenticateToken, async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
+      return res.status(400).json({ message: 'รูปแบบวันที่ไม่ถูกต้อง หรือเวลาเริ่มต้นต้องน้อยกว่าเวลาสิ้นสุด' });
+    }
+
     // 3. ตรวจสอบคิวรถทับซ้อน (Collision Check)
     const overlappingBooking = await prisma.vehicleBooking.findFirst({
       where: {
@@ -599,8 +648,11 @@ app.use('/api/admin/users', userRoutes); // รองรับทั้ง /api/
 app.use('/api/monitor', monitorRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/company-drivers', companyDriverRoutes);
+
 
 // ⚠️ Generic Routes ดักจับภายหลัง (ลงทะเบียน /api ท้ายสุดเพื่อป้องกัน Route Shadowing)
+app.use('/api/auth', authRoutes);
 app.use('/api', authRoutes);              
 app.use('/api', employeeRoutes);
 

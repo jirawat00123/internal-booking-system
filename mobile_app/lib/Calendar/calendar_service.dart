@@ -38,7 +38,7 @@ class CalendarService {
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
         },
       );
 
@@ -58,8 +58,12 @@ class CalendarService {
               continue;
             }
 
-            final start = DateTime.parse(item['startDatetime']);
-            final end = DateTime.parse(item['endDatetime']);
+            final start = DateTime.parse(
+              item['startDatetime'].toString(),
+            ).toLocal();
+            final end = DateTime.parse(
+              item['endDatetime'].toString(),
+            ).toLocal();
             final now = DateTime.now();
 
             // เช็คเวลาปัจจุบัน ถ้าถึงเวลาเริ่มใช้งานแล้ว ให้ปรับสถานะเป็น IN_USE อัตโนมัติ
@@ -150,7 +154,7 @@ class CalendarService {
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
         },
       );
 
@@ -170,8 +174,12 @@ class CalendarService {
               continue;
             }
 
-            final start = DateTime.parse(item['startDatetime']);
-            final end = DateTime.parse(item['endDatetime']);
+            final start = DateTime.parse(
+              item['startDatetime'].toString(),
+            ).toLocal();
+            final end = DateTime.parse(
+              item['endDatetime'].toString(),
+            ).toLocal();
             final now = DateTime.now();
 
             // เช็คเวลาปัจจุบัน ถ้าถึงเวลาเริ่มใช้งานแล้ว ให้ปรับสถานะเป็น IN_USE อัตโนมัติ
@@ -261,7 +269,7 @@ class CalendarService {
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
         },
       );
 
@@ -282,8 +290,8 @@ class CalendarService {
               continue;
             }
 
-            final start = DateTime.parse(item['start']);
-            final end = DateTime.parse(item['end']);
+            final start = DateTime.parse(item['start'].toString()).toLocal();
+            final end = DateTime.parse(item['end'].toString()).toLocal();
             final now = DateTime.now();
 
             // เช็คเวลาปัจจุบัน ถ้าถึงเวลาเริ่มใช้งานแล้ว ให้ปรับสถานะเป็น IN_USE อัตโนมัติ
@@ -324,6 +332,102 @@ class CalendarService {
         throw Exception(
           'เซสชันหมดอายุ หรือไม่มีสิทธิ์เข้าถึง (ถูกระงับ) กรุณาเข้าสู่ระบบใหม่',
         );
+      } else {
+        throw Exception(
+          'ดึงข้อมูลปฏิทินล้มเหลว (Status: ${response.statusCode})',
+        );
+      }
+    } catch (e) {
+      throw Exception('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้: $e');
+    }
+  }
+
+  Future<List<VehicleCalendarGrid>> getCalendarGrid(
+    DateTime startDate,
+    DateTime endDate,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+
+      final startIso = startDate.toIso8601String();
+      final endIso = endDate.toIso8601String();
+
+      final url =
+          '$baseUrl/calendar/vehicles-grid?startDate=$startIso&endDate=$endIso';
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded['success'] == true) {
+          final List<dynamic> data = decoded['data'];
+
+          return data.map((item) {
+            return VehicleCalendarGrid.fromJson(item);
+          }).toList();
+        } else {
+          throw Exception(
+            decoded['message'] ?? 'เกิดข้อผิดพลาดในการดึงข้อมูลปฏิทินแบบตาราง',
+          );
+        }
+      } else {
+        throw Exception(
+          'ดึงข้อมูลปฏิทินล้มเหลว (Status: ${response.statusCode})',
+        );
+      }
+    } catch (e) {
+      throw Exception('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้: $e');
+    }
+  }
+
+  Future<List<RoomCalendarGrid>> getRoomCalendarGrid(
+    DateTime startDate,
+    DateTime endDate, {
+    String? location,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+
+      final startIso = startDate.toIso8601String();
+      final endIso = endDate.toIso8601String();
+
+      String url =
+          '$baseUrl/calendar/rooms-grid?startDate=$startIso&endDate=$endIso';
+      if (location != null && location.isNotEmpty) {
+        url += '&location=$location';
+      }
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = json.decode(response.body);
+        if (decoded['success'] == true) {
+          final List<dynamic> data = decoded['data'];
+
+          return data.map((item) {
+            return RoomCalendarGrid.fromJson(item);
+          }).toList();
+        } else {
+          throw Exception(
+            decoded['message'] ?? 'เกิดข้อผิดพลาดในการดึงข้อมูลปฏิทินแบบตาราง',
+          );
+        }
       } else {
         throw Exception(
           'ดึงข้อมูลปฏิทินล้มเหลว (Status: ${response.statusCode})',

@@ -79,6 +79,7 @@ model User {
   employee            Employee         @relation(fields: [employeeId], references: [id])
   role                Role             @relation(fields: [roleId], references: [id])
   vehicleBookings     VehicleBooking[] @relation("BookingUser")
+  vehicleBookingsDriven VehicleBooking[] @relation("BookingDriver")
   vehicleLogsCheckOut VehicleLog[]     @relation("CheckoutByUser")
   vehicleLogsReturn   VehicleLog[]     @relation("ReturnByUser")
   managedVehicles     Vehicle[]        @relation("VehicleManager")
@@ -353,6 +354,7 @@ enum BookingStatus {
   COMPLETED
   IN_USE    @map("IN USE")
   EXPIRED
+  WAITING_FOR_VEHICLE
 }
 
 enum NotificationType {

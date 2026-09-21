@@ -6,6 +6,8 @@ const uploadMiddleware = require('../middlewares/uploadMiddleware');
 // นำเข้า Middleware
 const authMiddleware = require('../middlewares/auth');
 const verifyToken = authMiddleware.authenticateToken || authMiddleware.verifyToken;
+const verifyOptionalToken = authMiddleware.verifyOptionalToken;
+const optionalAuth = authMiddleware.optionalAuth;
 const requireRole = authMiddleware.requireRole;
 const isAdmin = authMiddleware.isAdmin; // ✅ นำเข้า isAdmin สำหรับสิทธิ์ Admin Management Module (Week 14)
 
@@ -36,21 +38,20 @@ const checkHandler = (handler, name) => {
 
 // 🔓 อนุญาตให้ Guest (ไม่มี Token) สามารถดูรายการรถยนต์ได้
 router.get('/', 
-    checkHandler(verifyToken, 'verifyToken'),
-    checkHandler(requireRole(['ADMIN', 'USER', 'GUARD', 'GUEST']), 'requireRole'),
+    checkHandler(optionalAuth, 'optionalAuth'),
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
 );
 
 // 📺 API Monitor ยานพาหนะสำหรับ Guest/User ดูรายการรถและสถานะ (Requirement Week 13)
 router.get('/monitor/vehicles',
-    checkHandler(verifyToken, 'verifyToken'),
+    checkHandler(verifyOptionalToken, 'verifyOptionalToken'),
     checkHandler(vehicleController.getVehicles, 'vehicleController.getVehicles')
 );
 
 // 📜 ดึงประวัติการใช้งานรถ (ย้ายขึ้นมาก่อน /:id เพื่อป้องกัน Express สับสนคำว่า 'history' เป็น parameter id)
 // ✅ เพิ่ม 'GUEST' ใน requireRole เพื่อเปิดให้ Guest เข้าดูประวัติได้ตาม Requirement Week 13
 router.get('/history', 
-    checkHandler(verifyToken, 'verifyToken'),
+    checkHandler(optionalAuth, 'optionalAuth'),
     checkHandler(requireRole(['ADMIN', 'USER', 'GUARD', 'GUEST']), 'requireRole'), 
     checkHandler(vehicleBookingController.getHistory, 'vehicleBookingController.getHistory')
 );
@@ -75,7 +76,7 @@ router.post('/',
 
 // 🔒 บังคับตรวจสอบ Token (Guest & User: Read Only)
 router.get('/:id', 
-    checkHandler(verifyToken, 'verifyToken'),
+    checkHandler(optionalAuth, 'optionalAuth'),
     checkHandler(vehicleController.getVehicleById, 'vehicleController.getVehicleById')
 );
 

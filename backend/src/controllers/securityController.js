@@ -1,5 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 
 // =========================================================================
 // [GET] /api/security/available - แสดงรายการรถยนต์ที่ถูกจองแล้วและรอการปล่อยตัว
@@ -221,6 +223,11 @@ exports.checkOut = async (req, res, next) => {
         throw new Error('BOOKING_NOT_FOUND');
       }
 
+      const isCompanyDriver = booking.driverType === 'COMPANY' || booking.driverType === 'COMPANY_DRIVER' || booking.driverType === 'บริษัท' || booking.driverType === 'พนักงานขับรถ';
+      if (isCompanyDriver && !booking.companyDriverId && !booking.driverEmployeeId) {
+        throw new Error('DRIVER_NOT_ASSIGNED');
+      }
+
       const now = new Date();
       if (now < booking.startDatetime) {
         const consentLog = await tx.auditLog.findFirst({
@@ -309,6 +316,9 @@ exports.checkOut = async (req, res, next) => {
     if (error.message === 'BOOKING_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลการจองรถยนต์รายการนี้ในระบบ' });
     }
+    if (error.message === 'DRIVER_NOT_ASSIGNED') {
+      return res.status(400).json({ success: false, message: 'ไม่สามารถปล่อยรถได้ เนื่องจากยังไม่ได้ระบุหรือจัดสรรพนักงานขับรถ' });
+    }
     if (error.message === 'EARLY_RELEASE_REQUIRES_APPROVAL') {
       return res.status(409).json({
         success: false,
@@ -365,6 +375,11 @@ exports.checkIn = async (req, res, next) => {
         throw new Error('BOOKING_NOT_FOUND');
       }
 
+      const isCompanyDriver = booking.driverType === 'COMPANY' || booking.driverType === 'COMPANY_DRIVER' || booking.driverType === 'บริษัท' || booking.driverType === 'พนักงานขับรถ';
+      if (isCompanyDriver && !booking.companyDriverId && !booking.driverEmployeeId) {
+        throw new Error('DRIVER_NOT_ASSIGNED');
+      }
+
       const now = new Date();
       if (now < booking.endDatetime) {
         const consentLog = await tx.auditLog.findFirst({
@@ -399,7 +414,7 @@ exports.checkIn = async (req, res, next) => {
         data: { status: 'AVAILABLE' }
       });
 
-      const serverReturnTime = new Date(); // 🎯 ดึงเวลาจาก Server ปัจจุบัน
+      const serverReturnTime = new Date(); 
 
       const getReturnFilePath = (field) => {
         if (req.files && req.files[field] && req.files[field][0]) {
@@ -461,6 +476,9 @@ exports.checkIn = async (req, res, next) => {
   } catch (error) {
     if (error.message === 'BOOKING_NOT_FOUND') {
       return res.status(404).json({ success: false, message: 'ไม่พบข้อมูลการจองรถยนต์รายการนี้ในระบบ' });
+    }
+    if (error.message === 'DRIVER_NOT_ASSIGNED') {
+      return res.status(400).json({ success: false, message: 'ไม่สามารถปล่อยรถได้ เนื่องจากยังไม่ได้ระบุหรือจัดสรรพนักงานขับรถ' });
     }
     if (error.message === 'EARLY_RETURN_REQUIRES_APPROVAL') {
       return res.status(409).json({

@@ -1,5 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 
 // =========================================================================
 // [GET] /api/calendar/rooms - สำหรับแสดงปฏิทินห้องประชุม
@@ -7,6 +9,7 @@ const prisma = new PrismaClient();
 exports.getRoomCalendar = async (req, res, next) => {
   try {
     const { startDate, endDate, roomId, location, departmentId, status } = req.query;
+    console.log('[TRACE] getRoomCalendar START:', { startDate, endDate });
 
     // ต้องระบุช่วงเวลาเสมอ เพื่อไม่ให้ดึงข้อมูลทั้ง Database (Performance Optimization)
     if (!startDate || !endDate) {
@@ -16,25 +19,31 @@ exports.getRoomCalendar = async (req, res, next) => {
       });
     }
 
+    const queryStart = new Date(startDate);
+    const queryEnd = new Date(endDate);
+
+    if (isNaN(queryStart.getTime()) || isNaN(queryEnd.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'รูปแบบ startDate หรือ endDate ไม่ถูกต้อง'
+      });
+    }
+
     // สร้างเงื่อนไขการค้นหา (Filter)
     let whereClause = {
-      // ดึงการจองที่คาบเกี่ยวอยู่ในช่วงเวลาที่ขอดู และเวลายังไม่สิ้นสุด (ไม่แสดงประวัติในอดีต)
-      startDatetime: { lte: new Date(endDate) },
-      endDatetime: { gte: new Date() }
+      room: { isDeleted: false },
+      startDatetime: { lte: queryEnd },
+      endDatetime: { gte: queryStart }
     };
 
     if (roomId) whereClause.roomId = parseInt(roomId);
 
     if (location) {
-      whereClause.room = {
-        location: location
-      };
+      whereClause.room.location = location;
     }
     
     if (status) {
       whereClause.status = status;
-    } else {
-      whereClause.status = { in: ['PENDING', 'APPROVED', 'IN_USE'] };
     }
     
     // Filter ตามแผนก (Department)
@@ -77,6 +86,7 @@ exports.getRoomCalendar = async (req, res, next) => {
 exports.getVehicleCalendar = async (req, res, next) => {
   try {
     const { startDate, endDate, vehicleId, departmentId, status } = req.query;
+    console.log('[TRACE] getVehicleCalendar START:', { startDate, endDate });
 
     if (!startDate || !endDate) {
       return res.status(400).json({ 
@@ -85,10 +95,20 @@ exports.getVehicleCalendar = async (req, res, next) => {
       });
     }
 
+    const queryStart = new Date(startDate);
+    const queryEnd = new Date(endDate);
+
+    if (isNaN(queryStart.getTime()) || isNaN(queryEnd.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'รูปแบบ startDate หรือ endDate ไม่ถูกต้อง'
+      });
+    }
+
     let whereClause = {
-      // ดึงการจองที่คาบเกี่ยวอยู่ในช่วงเวลาที่ขอดู และเวลายังไม่สิ้นสุด (ไม่แสดงประวัติในอดีต)
-      startDatetime: { lte: new Date(endDate) },
-      endDatetime: { gte: new Date() }
+      vehicle: { isDeleted: false },
+      startDatetime: { lte: queryEnd },
+      endDatetime: { gte: queryStart }
     };
 
     if (vehicleId) whereClause.vehicleId = parseInt(vehicleId);
@@ -96,7 +116,7 @@ exports.getVehicleCalendar = async (req, res, next) => {
     if (status) {
       whereClause.status = status;
     } else {
-      whereClause.status = { in: ['PENDING', 'APPROVED', 'IN_USE'] };
+      whereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
     }
     
     if (departmentId) {
@@ -111,6 +131,7 @@ exports.getVehicleCalendar = async (req, res, next) => {
       where: whereClause,
       include: {
         vehicle: true,
+        driverEmployee: true,
         user: {
           include: {
             employee: {
@@ -138,6 +159,7 @@ exports.getVehicleCalendar = async (req, res, next) => {
 exports.getUnifiedCalendar = async (req, res, next) => {
   try {
     const { startDate, endDate, status } = req.query;
+    console.log('[TRACE] getUnifiedCalendar START:', { startDate, endDate });
 
     if (!startDate || !endDate) {
       return res.status(400).json({ 
@@ -146,14 +168,26 @@ exports.getUnifiedCalendar = async (req, res, next) => {
       });
     }
 
+    const queryStart = new Date(startDate);
+    const queryEnd = new Date(endDate);
+
+    if (isNaN(queryStart.getTime()) || isNaN(queryEnd.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'รูปแบบ startDate หรือ endDate ไม่ถูกต้อง'
+      });
+    }
+
     let roomWhereClause = {
-      startDatetime: { lte: new Date(endDate) },
-      endDatetime: { gte: new Date() } // กรองรายการในอดีตออก
+      room: { isDeleted: false },
+      startDatetime: { lte: queryEnd },
+      endDatetime: { gte: queryStart }
     };
 
     let vehicleWhereClause = {
-      startDatetime: { lte: new Date(endDate) },
-      endDatetime: { gte: new Date() } // กรองรายการในอดีตออก
+      vehicle: { isDeleted: false },
+      startDatetime: { lte: queryEnd },
+      endDatetime: { gte: queryStart }
     };
 
     // กรองประวัติที่เสร็จสิ้นหรือยกเลิกแล้วออก เพื่อแสดงเฉพาะรายการที่ยังต้องดำเนินการบนปฏิทิน
@@ -161,9 +195,8 @@ exports.getUnifiedCalendar = async (req, res, next) => {
       roomWhereClause.status = status;
       vehicleWhereClause.status = status;
     } else {
-      const activeStatus = { in: ['PENDING', 'APPROVED', 'IN_USE'] };
-      roomWhereClause.status = activeStatus;
-      vehicleWhereClause.status = activeStatus;
+      roomWhereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
+      vehicleWhereClause.status = { notIn: ['CANCELLED', 'REJECTED'] };
     }
 
     // 1. ดึงข้อมูลการจองห้อง
@@ -220,6 +253,165 @@ exports.getUnifiedCalendar = async (req, res, next) => {
 
   } catch (error) {
     console.error('[getUnifiedCalendar Error]:', error);
+    next(error);
+  }
+};
+
+// =========================================================================
+// [GET] /api/calendar/vehicles-grid - สำหรับแสดงปฏิทินรถยนต์รูปแบบตาราง (Matrix)
+// =========================================================================
+exports.getVehicleCalendarGrid = async (req, res, next) => {
+  try {
+    const { startDate, endDate } = req.query;
+    console.log('[TRACE] getVehicleCalendarGrid START:', { startDate, endDate });
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'กรุณาระบุ startDate และ endDate' 
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'รูปแบบ startDate หรือ endDate ไม่ถูกต้อง'
+      });
+    }
+
+    // 1. ดึงข้อมูลรถยนต์ทั้งหมดในระบบ (แกน Y ของตาราง)
+    const vehicles = await prisma.vehicle.findMany({
+      where: { isDeleted: false },
+      orderBy: { plateNumber: 'asc' }
+    });
+
+    // 2. ดึงรายการจองในช่วงวันที่กำหนด (Overlapping Range)
+    const bookings = await prisma.vehicleBooking.findMany({
+      where: {
+        vehicle: { isDeleted: false },
+        startDatetime: { lte: end },
+        endDatetime: { gte: start },
+        status: { notIn: ['CANCELLED', 'REJECTED'] }
+      },
+      include: {
+        vehicle: true,
+        driverEmployee: true,
+        user: { include: { employee: true } }
+      }
+    });
+
+    console.log(`[DEBUG] Found ${bookings.length} vehicle bookings`);
+
+    // 3. จัดกลุ่มการจองเข้าไปในรถแต่ละคัน (Matrix Data)
+        const result = vehicles.map(vehicle => {
+          const vehicleBookings = bookings.filter(b => b.vehicleId === vehicle.id);
+          return {
+            vehicleId: vehicle.id,
+            vehicleName: `${vehicle.brand || ''} ${vehicle.model || ''}`.trim(),
+            plateNumber: vehicle.plateNumber,
+            upload_url: vehicle.upload_url || vehicle.uploadUrl || vehicle.imageUrl || vehicle.image || null,
+            bookings: vehicleBookings.map(b => ({
+              id: b.id,
+              userName: b.user?.employee?.fullName || b.user?.username || '-',
+              purpose: b.purpose || '-',
+              startDatetime: b.startDatetime,
+              endDatetime: b.endDatetime,
+              status: b.status,
+              driverType: b.driverType,
+              driverName: b.driverEmployee?.fullName || 'ไม่ได้จัดสรรคนขับ'
+            }))
+          };
+        });
+
+    return res.status(200).json({ 
+      success: true, 
+      data: result 
+    });
+
+  } catch (error) {
+    console.error('[getVehicleCalendarGrid Error]:', error);
+    next(error);
+  }
+};
+
+// =========================================================================
+// [GET] /api/calendar/rooms-grid - สำหรับแสดงปฏิทินห้องประชุมรูปแบบตาราง (Matrix)
+// =========================================================================
+exports.getRoomCalendarGrid = async (req, res, next) => {
+  try {
+    const { startDate, endDate, location } = req.query;
+    console.log('[TRACE] getRoomCalendarGrid START:', { startDate, endDate, location });
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'กรุณาระบุ startDate และ endDate' 
+      });
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: 'รูปแบบ startDate หรือ endDate ไม่ถูกต้อง'
+      });
+    }
+
+    let roomWhere = { isDeleted: false };
+    if (location) {
+      roomWhere.location = location;
+    }
+
+    const rooms = await prisma.room.findMany({
+      where: roomWhere,
+      orderBy: { roomName: 'asc' }
+    });
+
+    const bookings = await prisma.roomBooking.findMany({
+      where: {
+        room: { isDeleted: false },
+        startDatetime: { lte: end },
+        endDatetime: { gte: start }
+      },
+      include: {
+        room: true,
+        user: { include: { employee: true } }
+      }
+    });
+
+    console.log(`[DEBUG] Found ${bookings.length} room bookings`);
+
+    const result = rooms.map(room => {
+      const roomBookings = bookings.filter(b => b.roomId === room.id);
+      return {
+        roomId: room.id,
+        roomName: room.roomName,
+        location: room.location,
+        floor: room.floor,
+        upload_url: room.upload_url || room.uploadUrl || room.imageUrl || room.image || null,
+        bookings: roomBookings.map(b => ({
+          id: b.id,
+          userName: b.user?.employee?.fullName || b.user?.username || '-',
+          purpose: b.title || b.purpose || '-',
+          startDatetime: b.startDatetime,
+          endDatetime: b.endDatetime,
+          status: b.status
+        }))
+      };
+    });
+
+    return res.status(200).json({ 
+      success: true, 
+      data: result 
+    });
+
+  } catch (error) {
+    console.error('[getRoomCalendarGrid Error]:', error);
     next(error);
   }
 };

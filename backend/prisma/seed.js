@@ -1,5 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 
 async function seedDatabase() {
   console.log('🌱 กำลังเริ่มตรวจสอบและฝังข้อมูลตั้งต้น (Idempotent Seeding)...');

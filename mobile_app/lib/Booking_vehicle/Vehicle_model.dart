@@ -316,6 +316,7 @@ class VehicleBookingModel {
   final int passengers;
   final List<String> passengerNames;
   final VehicleModel? vehicle; // 🟢 เก็บ Object ข้อมูลรถที่แนบมาด้วย
+  final int? driverEmployeeId; // 🟢 รหัสพนักงานคนขับรถ
   final BookingPermissions permissions; // 🟢 สิทธิ์จาก Backend
   final DateTime?
   createdAt; // 🟢 เพิ่ม createdAt สำหรับจัดเรียงและตรวจสอบประวัติ
@@ -335,6 +336,7 @@ class VehicleBookingModel {
     this.passengers = 1,
     this.passengerNames = const [],
     this.vehicle,
+    this.driverEmployeeId,
     BookingPermissions? permissions,
     this.createdAt,
     this.checkOutImages,
@@ -359,6 +361,27 @@ class VehicleBookingModel {
       default:
         return rawStatus;
     }
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'vehicleId': vehicleId,
+      'userId': userId,
+      'userName': userName,
+      'destination': destination,
+      'startDatetime': startDatetime.toIso8601String(),
+      'endDatetime': endDatetime.toIso8601String(),
+      'expectedReturnDatetime': endDatetime.toIso8601String(),
+      'purpose': purpose,
+      'status': rawStatus,
+      'passengers': passengers,
+      'passengerNames': passengerNames,
+      'driverEmployeeId': driverEmployeeId,
+      'createdAt': createdAt?.toIso8601String(),
+      'checkOutImages': checkOutImages,
+      'checkInImages': checkInImages,
+    };
   }
 
   factory VehicleBookingModel.fromJson(Map<String, dynamic> json) {
@@ -399,6 +422,37 @@ class VehicleBookingModel {
       } catch (_) {}
     }
 
+    // 🟢 แปลงข้อมูล driverEmployeeId จาก Backend
+    int? parsedDriverEmployeeId;
+    if (json['driverEmployeeId'] != null) {
+      parsedDriverEmployeeId = json['driverEmployeeId'] is int
+          ? json['driverEmployeeId']
+          : int.tryParse(json['driverEmployeeId'].toString());
+    } else if (json['driver_employee_id'] != null) {
+      parsedDriverEmployeeId = json['driver_employee_id'] is int
+          ? json['driver_employee_id']
+          : int.tryParse(json['driver_employee_id'].toString());
+    } else if (json['driverEmployee'] != null &&
+        json['driverEmployee'] is Map) {
+      final driverObj = json['driverEmployee'] as Map<String, dynamic>;
+      final rawId =
+          driverObj['id'] ??
+          driverObj['employeeId'] ??
+          driverObj['employee_id'];
+      parsedDriverEmployeeId = rawId is int
+          ? rawId
+          : int.tryParse(rawId?.toString() ?? '');
+    } else if (json['companyDriver'] != null && json['companyDriver'] is Map) {
+      final driverObj = json['companyDriver'] as Map<String, dynamic>;
+      final rawId =
+          driverObj['id'] ??
+          driverObj['employeeId'] ??
+          driverObj['employee_id'];
+      parsedDriverEmployeeId = rawId is int
+          ? rawId
+          : int.tryParse(rawId?.toString() ?? '');
+    }
+
     return VehicleBookingModel(
       id: json['id'],
       vehicleId: json['vehicleId'] ?? json['vehicle_id'],
@@ -409,14 +463,16 @@ class VehicleBookingModel {
         json['startDatetime'] ??
             json['start_datetime'] ??
             DateTime.now().toIso8601String(),
-      ),
+      ).toLocal(),
       endDatetime: DateTime.parse(
-        json['endDatetime'] ??
+        json['expectedReturnDatetime'] ??
+            json['expected_return_datetime'] ??
+            json['endDatetime'] ??
             json['end_datetime'] ??
             json['returnDate'] ??
             json['return_date'] ??
             DateTime.now().toIso8601String(),
-      ),
+      ).toLocal(),
       purpose: json['purpose'] ?? '',
       rawStatus: json['status'] ?? 'PENDING',
       passengers: json['passengers'] ?? 1,
@@ -424,6 +480,7 @@ class VehicleBookingModel {
       vehicle: json['vehicle'] != null
           ? VehicleModel.fromJson(json['vehicle'])
           : null,
+      driverEmployeeId: parsedDriverEmployeeId,
       permissions: BookingPermissions.fromJson(json['permissions']),
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'])
@@ -478,6 +535,24 @@ class VehicleLogModel {
     this.updatedAt,
   });
 
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'vehicleBookingId': vehicleBookingId,
+      'checkoutById': checkoutById,
+      'checkoutTime': checkoutTime.toIso8601String(),
+      'checkoutMileage': checkoutMileage,
+      'checkoutFuelLevel': checkoutFuelLevel,
+      'returnById': returnById,
+      'returnTime': returnTime?.toIso8601String(),
+      'returnMileage': returnMileage,
+      'returnFuelLevel': returnFuelLevel,
+      'remark': remark,
+      'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
+    };
+  }
+
   factory VehicleLogModel.fromJson(Map<String, dynamic> json) {
     return VehicleLogModel(
       id: json['id'],
@@ -487,13 +562,13 @@ class VehicleLogModel {
         json['checkoutTime'] ??
             json['checkout_time'] ??
             DateTime.now().toIso8601String(),
-      ),
+      ).toLocal(),
       checkoutMileage: json['checkoutMileage'] ?? json['checkout_mileage'] ?? 0,
       checkoutFuelLevel:
           json['checkoutFuelLevel'] ?? json['checkout_fuel_level'] ?? 0,
       returnById: json['returnById'] ?? json['return_by_id'],
       returnTime: json['returnTime'] != null
-          ? DateTime.tryParse(json['returnTime'])
+          ? DateTime.tryParse(json['returnTime'])?.toLocal()
           : null,
       returnMileage: json['returnMileage'] ?? json['return_mileage'],
       returnFuelLevel: json['returnFuelLevel'] ?? json['return_fuel_level'],

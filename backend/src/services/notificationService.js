@@ -1,5 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 
 /**
  * 🟢 1. สร้าง Notification สำหรับผู้ใช้ 1 คน

@@ -63,10 +63,16 @@ class _UsersPageState extends State<UsersPage> {
 
       if (response.statusCode == 200) {
         final body = json.decode(response.body);
-        if (body['success'] == true && body['data'] != null) {
+        final isSuccess =
+            body is List || (body is Map && body['success'] == true);
+        final dataList = body is List
+            ? body
+            : (body is Map && body['data'] is List ? body['data'] as List : []);
+
+        if (isSuccess) {
           if (!mounted) return; // 👈 เช็คสถานะ Widget ก่อนอัปเดต State
           setState(() {
-            _employees = (body['data'] as List)
+            _employees = dataList
                 .map((json) => Employee.fromJson(json))
                 .toList();
           });
@@ -89,11 +95,21 @@ class _UsersPageState extends State<UsersPage> {
 
       if (response.statusCode == 200) {
         final body = json.decode(response.body);
-        if (body['success'] == true && body['data'] != null) {
+        final isSuccess =
+            body is List || (body is Map && body['success'] == true);
+        final dataList = body is List
+            ? body
+            : (body is Map && body['data'] is List ? body['data'] as List : []);
+
+        if (isSuccess) {
           List<String> deptList = ['ทั้งหมด'];
-          for (var item in body['data']) {
-            if (item['departmentName'] != null) {
-              deptList.add(item['departmentName']);
+          for (var item in dataList) {
+            final deptName =
+                item['departmentName']?.toString().trim() ??
+                item['name']?.toString().trim() ??
+                '';
+            if (deptName.isNotEmpty && !deptList.contains(deptName)) {
+              deptList.add(deptName);
             }
           }
           if (!mounted) return; // 👈 เช็คสถานะ Widget ก่อนอัปเดต State

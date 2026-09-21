@@ -8,6 +8,10 @@ class Employee {
   final String positionName;
   final String role;
   final bool active;
+  final bool isDriver;
+  final String? driverLicenseIssueDate;
+  final String? driverLicenseUrl;
+  final String? driverLicenseExpiryDate;
 
   Employee({
     required this.id,
@@ -18,6 +22,10 @@ class Employee {
     required this.positionName,
     required this.role,
     required this.active,
+    this.isDriver = false,
+    this.driverLicenseIssueDate,
+    this.driverLicenseUrl,
+    this.driverLicenseExpiryDate,
   });
 
   factory Employee.fromJson(Map<String, dynamic> json) {
@@ -100,6 +108,41 @@ class Employee {
                       emp['isActive'] == 1 ||
                       emp['isActive'] == 'true' ||
                       (json['active'] == null && emp['isActive'] == null))),
+      isDriver: (json['isDriver'] is bool)
+          ? json['isDriver'] as bool
+          : ((emp['isDriver'] is bool)
+                ? emp['isDriver'] as bool
+                : (json['isDriver'] == 1 ||
+                      json['isDriver'] == 'true' ||
+                      emp['isDriver'] == 1 ||
+                      emp['isDriver'] == 'true')),
+      driverLicenseIssueDate:
+          json['driverLicenseIssueDate']?.toString() ??
+          emp['driverLicenseIssueDate']?.toString() ??
+          json['driver_license_issue_date']?.toString() ??
+          emp['driver_license_issue_date']?.toString() ??
+          json['licenseIssueDate']?.toString() ??
+          emp['licenseIssueDate']?.toString() ??
+          json['license_issue_date']?.toString() ??
+          emp['license_issue_date']?.toString(),
+      driverLicenseUrl:
+          json['driverLicenseUrl']?.toString() ??
+          emp['driverLicenseUrl']?.toString() ??
+          json['driver_license_url']?.toString() ??
+          emp['driver_license_url']?.toString() ??
+          json['licenseUrl']?.toString() ??
+          emp['licenseUrl']?.toString() ??
+          json['license_url']?.toString() ??
+          emp['license_url']?.toString(),
+      driverLicenseExpiryDate:
+          json['driverLicenseExpiryDate']?.toString() ??
+          emp['driverLicenseExpiryDate']?.toString() ??
+          json['driver_license_expiry_date']?.toString() ??
+          emp['driver_license_expiry_date']?.toString() ??
+          json['licenseExpiryDate']?.toString() ??
+          emp['licenseExpiryDate']?.toString() ??
+          json['license_expiry_date']?.toString() ??
+          emp['license_expiry_date']?.toString(),
     );
   }
 
@@ -113,6 +156,10 @@ class Employee {
       'positionName': positionName,
       'role': role,
       'active': active,
+      'isDriver': isDriver,
+      'driverLicenseIssueDate': driverLicenseIssueDate,
+      'driverLicenseUrl': driverLicenseUrl,
+      'driverLicenseExpiryDate': driverLicenseExpiryDate,
     };
   }
 }

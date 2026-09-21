@@ -1,5 +1,9 @@
 import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile_app/Booking_vehicle/Vehicle_model.dart';
+import 'package:mobile_app/Booking_vehicle/driver_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
@@ -9,12 +13,14 @@ class VehicleBookingFormBPage extends StatefulWidget {
   // 🟢 1. ประกาศตัวแปรมารับค่าที่ส่งมาจากหน้า A
   final VehicleModel vehicle;
   final String destination;
-  final String startDate;
-  final String endDate;
+  final DateTime startDate;
+  final DateTime endDate;
   final String timeRange;
+  final String returnTime;
   final int passengerCount;
   final List<String> passengerNames;
   final String driverType; // 💡 1. เพิ่มตัวแปร userId ตรงนี้ครับ!
+  final int? driverEmployeeId;
 
   const VehicleBookingFormBPage({
     super.key,
@@ -23,9 +29,11 @@ class VehicleBookingFormBPage extends StatefulWidget {
     required this.startDate,
     required this.endDate,
     required this.timeRange,
+    required this.returnTime,
     required this.passengerCount,
     this.passengerNames = const [],
     required this.driverType, // 💡 2. บังคับรับค่า userId
+    this.driverEmployeeId,
   });
 
   @override
@@ -47,12 +55,177 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
 
   final ImagePicker _picker = ImagePicker();
 
+  // ตัวแปรสำหรับเก็บรายชื่อผู้ขับขี่กรณี "ขับขี่เอง" (ดึงจาก Passenger List)
+  String? _selectedSelfDriveDriver;
+
+  // ตัวแปรสำหรับพนักงานขับรถบริษัท
+  List<CompanyDriver> _companyDrivers = [];
+  CompanyDriver? _selectedCompanyDriver;
+  bool _isLoadingDrivers = false;
+
+  // ✅ ตัวแปรสถานะใบขับขี่
+  bool _hasLicenseInSystem = false;
+  bool _isLicenseExpired = false;
+  bool _isCheckingLicense = false;
+
   @override
   void initState() {
     super.initState();
+    _retrieveLostData();
     _selectedDriverType = (widget.driverType.isNotEmpty)
         ? widget.driverType
         : 'ขับขี่เอง';
+
+    final bool isSelfDrive =
+        _selectedDriverType == 'ขับขี่เอง' ||
+        _selectedDriverType == 'SELF_DRIVE';
+
+    // กำหนดค่าเริ่มต้นผู้ขับขี่กรณีขับขี่เองจากรายชื่อผู้โดยสารคนแรก
+    if (isSelfDrive && widget.passengerNames.isNotEmpty) {
+      _selectedSelfDriveDriver = widget.passengerNames.first;
+      _checkLicenseStatus(widget.driverEmployeeId, _selectedSelfDriveDriver);
+    }
+  }
+
+  Future<void> _retrieveLostData() async {
+    debugPrint('[LicenseImage] Checking lost data...');
+    try {
+      final LostDataResponse response = await _picker.retrieveLostData();
+      if (response.isEmpty) {
+        debugPrint('[LicenseImage] No lost image');
+        return;
+      }
+
+      if (response.file != null) {
+        if (!mounted) return;
+        setState(() {
+          _licenseImage = response.file;
+          _imageRotation = 0;
+        });
+        debugPrint('[LicenseImage] Lost image recovered');
+        return;
+      }
+
+      if (response.files != null && response.files!.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _licenseImage = response.files!.first;
+          _imageRotation = 0;
+        });
+        debugPrint('[LicenseImage] Lost image recovered');
+        return;
+      }
+
+      if (response.exception != null) {
+        debugPrint('[LicenseImage] Recovery error: ${response.exception}');
+      }
+    } catch (e) {
+      debugPrint('[LicenseImage] Recovery error: $e');
+    }
+  }
+
+  Future<void> _fetchCompanyDrivers() async {
+    setState(() => _isLoadingDrivers = true);
+    try {
+      // ดึง Token จาก SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      String token =
+          prefs.getString('token') ??
+          prefs.getString('jwt_token') ??
+          prefs.getString('jwt') ??
+          prefs.getString('accessToken') ??
+          prefs.getString('auth_token') ??
+          '';
+
+      final response = await http.get(
+        Uri.parse('https://192.168.88.25:3002/api/company-drivers'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final resData = json.decode(response.body);
+        final List listData = resData['data'] ?? [];
+        setState(() {
+          _companyDrivers = listData
+              .map((e) => CompanyDriver.fromJson(e))
+              .toList();
+        });
+      }
+    } catch (e) {
+      debugPrint('Fetch drivers error: $e');
+    } finally {
+      setState(() => _isLoadingDrivers = false);
+    }
+  }
+
+  // ✅ ฟังก์ชันตรวจสอบสถานะใบขับขี่
+  Future<void> _checkLicenseStatus(int? employeeId, String? driverName) async {
+    setState(() {
+      _isCheckingLicense = true;
+      _hasLicenseInSystem = false;
+      _isLicenseExpired = false;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token = prefs.getString('token') ?? '';
+
+      if (driverName == null || driverName.isEmpty) {
+        setState(() => _isCheckingLicense = false);
+        return;
+      }
+
+      final String queryParam = 'name=${Uri.encodeComponent(driverName)}';
+      debugPrint('[Check License Request] QueryParam: $queryParam');
+
+      final response = await http.get(
+        Uri.parse('https://192.168.88.25:3002/api/check-license?$queryParam'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      debugPrint(
+        '[Check License Response] Status: ${response.statusCode}, Body: ${response.body}',
+      );
+
+      if (response.statusCode == 200) {
+        final resData = json.decode(response.body);
+        final bool hasLic = resData['hasLicense'] ?? false;
+        final bool isExp = resData['isExpired'] ?? false;
+
+        setState(() {
+          _hasLicenseInSystem = hasLic;
+          _isLicenseExpired = isExp;
+        });
+
+        debugPrint(
+          '[Check License Result] hasLicense: $hasLic, isExpired: $isExp',
+        );
+
+        if (isExp && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'ใบขับขี่ในระบบหมดอายุแล้ว กรุณาอัปโหลดรูปภาพใบขับขี่ใหม่',
+                style: TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[Check License Error] Exception: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isCheckingLicense = false);
+      }
+    }
   }
 
   @override
@@ -202,19 +375,41 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
   }
 
   // 🔥 2. ฟังก์ชันกดปุ่ม "ต่อไป" แก้ให้พาไปหน้า Step 3
-  void _onNextPressed() {
+  Future<void> _onNextPressed() async {
     if (_formKey.currentState!.validate()) {
-      if (_selectedDriverType == 'ขับขี่เอง' && _licenseImage == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'กรุณาอัปโหลดรูปภาพใบขับขี่',
-              style: TextStyle(fontFamily: 'Kanit'),
+      final bool isSelfDrive =
+          _selectedDriverType == 'ขับขี่เอง' ||
+          _selectedDriverType == 'SELF_DRIVE';
+
+      if (isSelfDrive) {
+        if (_selectedSelfDriveDriver == null ||
+            _selectedSelfDriveDriver!.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'กรุณาเลือกผู้ขับรถจากรายชื่อผู้โดยสาร',
+                style: TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.redAccent,
             ),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
+          );
+          return;
+        }
+
+        // ✅ บังคับอัปโหลดเฉพาะกรณีไม่มีใบขับขี่ในระบบ หรือใบขับขี่หมดอายุ
+        if ((!_hasLicenseInSystem || _isLicenseExpired) &&
+            _licenseImage == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'กรุณาอัปโหลดรูปภาพใบขับขี่',
+                style: TextStyle(fontFamily: 'Kanit'),
+              ),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+          return;
+        }
       }
 
       // 🟢 นำรายละเอียดเพิ่มเติม (ถ้ามี) มาต่อท้ายวัตถุประสงค์เพื่อไม่ให้ข้อมูลสูญหาย
@@ -223,7 +418,33 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
         finalPurpose += ' - ${detailsController.text.trim()}';
       }
 
-      // 🚀 นำทางไปหน้า Step 3 (ตรวจสอบข้อมูลและยืนยัน)
+      // ดึงข้อมูล User จาก SharedPreferences แทนตัวแปร Global
+      final prefs = await SharedPreferences.getInstance();
+      final currentUserName =
+          prefs.getString('fullName') ??
+          prefs.getString('username') ??
+          prefs.getString('name') ??
+          'ไม่ระบุชื่อ';
+
+      int currentUserId = 0;
+      final userIdDynamic =
+          prefs.get('userId') ?? prefs.get('user_id') ?? prefs.get('id');
+      if (userIdDynamic != null) {
+        if (userIdDynamic is int) {
+          currentUserId = userIdDynamic;
+        } else if (userIdDynamic is String) {
+          currentUserId = int.tryParse(userIdDynamic) ?? 0;
+        }
+      }
+
+      if (!mounted) return;
+
+      List<String> finalPassengerNames = List.from(widget.passengerNames);
+      if (isSelfDrive && _selectedSelfDriveDriver != null) {
+        finalPassengerNames.remove(_selectedSelfDriveDriver);
+        finalPassengerNames.insert(0, _selectedSelfDriveDriver!);
+      }
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -233,18 +454,36 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
             startDate: widget.startDate,
             endDate: widget.endDate,
             timeRange: widget.timeRange,
+            returnTime: widget.returnTime,
             passengerCount: widget.passengerCount,
-            passengerNames: widget.passengerNames,
+            passengerNames: finalPassengerNames,
             driverType: _selectedDriverType,
-            licenseImage: _licenseImage,
+            licenseImage: isSelfDrive ? _licenseImage : null,
             purpose: finalPurpose,
-            bookerName: globalCurrentUserName, // ดึงชื่อตัวจริงมา
-            userId:
-                globalCurrentUserId, // 💡 เปลี่ยนเลข 2 เป็นตัวแปรที่เก็บ ID ตัวจริงครับ!
+            bookerName: currentUserName,
+            userId: currentUserId,
           ),
         ),
       );
     }
+  }
+
+  String _formatDateThai(DateTime date) {
+    final List<String> months = [
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year + 543}';
   }
 
   @override
@@ -323,7 +562,7 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
                           border: Border.all(color: Colors.grey.shade300),
                         ),
                         child: Text(
-                          'เริ่ม: ${widget.startDate} เวลา ${widget.timeRange} น.\nคืนรถ: ${widget.endDate}',
+                          'เริ่ม: ${_formatDateThai(widget.startDate)} เวลา ${widget.timeRange} น.\nคืนรถ: ${_formatDateThai(widget.endDate)} เวลา ${widget.returnTime} น.',
                           style: const TextStyle(
                             fontFamily: 'Kanit',
                             fontSize: 14,
@@ -414,208 +653,265 @@ class _VehicleBookingFormBPageState extends State<VehicleBookingFormBPage> {
                       ),
                       const SizedBox(height: 20),
 
-                      _buildLabel('ประเภทผู้ขับขี่', isRequired: true),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: RadioListTile<String>(
-                              title: const Text(
-                                'ขับขี่เอง',
-                                style: TextStyle(
-                                  fontFamily: 'Kanit',
-                                  fontSize: 14,
-                                ),
+                      // 🟢 แสดง Dropdown เลือกผู้ขับรถและใบขับขี่เฉพาะกรณี "ขับขี่เอง" / SELF_DRIVE เท่านั้น
+                      if (_selectedDriverType == 'ขับขี่เอง' ||
+                          _selectedDriverType == 'SELF_DRIVE') ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value:
+                              (widget.passengerNames.contains(
+                                _selectedSelfDriveDriver,
+                              ))
+                              ? _selectedSelfDriveDriver
+                              : (widget.passengerNames.isNotEmpty
+                                    ? widget.passengerNames.first
+                                    : null),
+                          decoration: InputDecoration(
+                            labelText: 'ผู้ขับรถ (เลือกจากรายชื่อผู้โดยสาร) *',
+                            labelStyle: const TextStyle(
+                              fontFamily: 'Kanit',
+                              fontSize: 14,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: BorderSide(
+                                color: Colors.grey.shade300,
                               ),
-                              value: 'ขับขี่เอง',
-                              groupValue: _selectedDriverType,
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: const Color(0xFF009CB4),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setState(() {
-                                    _selectedDriverType = value;
-                                  });
-                                }
-                              },
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
                             ),
                           ),
-                          Expanded(
-                            child: RadioListTile<String>(
-                              title: const Text(
-                                'บริษัท',
-                                style: TextStyle(
-                                  fontFamily: 'Kanit',
-                                  fontSize: 14,
-                                ),
-                              ),
-                              value: 'บริษัท',
-                              groupValue: _selectedDriverType,
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: const Color(0xFF009CB4),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  setState(() {
-                                    _selectedDriverType = value;
-                                  });
-                                }
-                              },
-                            ),
+                          style: const TextStyle(
+                            fontFamily: 'Kanit',
+                            color: Colors.black,
                           ),
-                        ],
-                      ),
+                          items: widget.passengerNames.map((name) {
+                            return DropdownMenuItem<String>(
+                              value: name,
+                              child: Text(
+                                name,
+                                style: const TextStyle(fontFamily: 'Kanit'),
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (driverName) {
+                            setState(() {
+                              _selectedSelfDriveDriver = driverName;
+                            });
+                            if (driverName != null) {
+                              _checkLicenseStatus(
+                                widget.driverEmployeeId,
+                                driverName,
+                              );
+                            }
+                          },
+                          validator: (value) => (value == null || value.isEmpty)
+                              ? 'กรุณาเลือกผู้ขับรถ'
+                              : null,
+                        ),
+                      ],
+
                       const SizedBox(height: 20),
 
-                      _buildLabel(
-                        'อัปโหลดรูปภาพใบขับขี่',
-                        isRequired: _selectedDriverType == 'ขับขี่เอง',
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'อัปโหลดใบขับขี่ (ผู้ขับขี่ต้องเป็นพนักงาน)',
-                        style: TextStyle(
-                          fontFamily: 'Kanit',
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // 📸 กล่องอัปโหลดรูปภาพ
-                      InkWell(
-                        onTap: _licenseImage == null
-                            ? _showImageSourceSelector
-                            : null,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          width: double.infinity,
-                          height: 220,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade300),
+                      if (_selectedDriverType == 'ขับขี่เอง' ||
+                          _selectedDriverType == 'SELF_DRIVE') ...[
+                        if (_isCheckingLicense)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Center(child: CircularProgressIndicator()),
                           ),
-                          child: _licenseImage != null
-                              ? Stack(
-                                  children: [
-                                    Positioned.fill(
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: RotatedBox(
-                                          quarterTurns: _imageRotation,
-                                          child: kIsWeb
-                                              ? Image.network(
-                                                  _licenseImage!.path,
-                                                  key: ValueKey(
-                                                    _licenseImage!.path,
-                                                  ),
-                                                  width: double.infinity,
-                                                  height: double.infinity,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) => const Center(
-                                                        child: Icon(
-                                                          Icons.broken_image,
-                                                          color: Colors.grey,
-                                                          size: 40,
-                                                        ),
-                                                      ),
-                                                )
-                                              : Image.file(
-                                                  File(_licenseImage!.path),
-                                                  key: ValueKey(
-                                                    _licenseImage!.path,
-                                                  ),
-                                                  width: double.infinity,
-                                                  height: double.infinity,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder:
-                                                      (
-                                                        context,
-                                                        error,
-                                                        stackTrace,
-                                                      ) => const Center(
-                                                        child: Icon(
-                                                          Icons.broken_image,
-                                                          color: Colors.grey,
-                                                          size: 40,
-                                                        ),
-                                                      ),
-                                                ),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 12,
-                                      right: 12,
-                                      child: InkWell(
-                                        onTap: () {
-                                          setState(() {
-                                            _imageRotation =
-                                                (_imageRotation + 1) % 4;
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.black54,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.rotate_90_degrees_ccw,
-                                            color: Colors.white,
-                                            size: 22,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 12,
-                                      right: 60,
-                                      child: InkWell(
-                                        onTap: _showImageSourceSelector,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.black54,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.edit,
-                                            color: Colors.white,
-                                            size: 22,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.camera_alt_outlined,
-                                      color: Colors.grey.shade400,
-                                      size: 40,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'แตะ ถ่ายรูปหรืออัปโหลดใบขับขี่\n(แนะนำให้ถ่ายแนวนอน)',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontFamily: 'Kanit',
-                                        fontSize: 14,
-                                        color: Colors.grey.shade500,
-                                      ),
-                                    ),
-                                  ],
+
+                        if (!_isCheckingLicense && _isLicenseExpired)
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: Colors.red,
                                 ),
-                        ),
-                      ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'ใบขับขี่ในระบบหมดอายุแล้ว กรุณาอัปโหลดใบขับขี่ใหม่',
+                                    style: TextStyle(
+                                      fontFamily: 'Kanit',
+                                      fontSize: 14,
+                                      color: Colors.red.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                        if (!_isCheckingLicense &&
+                            (!_hasLicenseInSystem || _isLicenseExpired)) ...[
+                          _buildLabel(
+                            'อัปโหลดรูปภาพใบขับขี่',
+                            isRequired: true,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'อัปโหลดใบขับขี่ (ผู้ขับขี่ต้องเป็นพนักงาน)',
+                            style: TextStyle(
+                              fontFamily: 'Kanit',
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          InkWell(
+                            onTap: _licenseImage == null
+                                ? _showImageSourceSelector
+                                : null,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: double.infinity,
+                              height: 220,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.grey.shade300),
+                              ),
+                              child: _licenseImage != null
+                                  ? Stack(
+                                      children: [
+                                        Positioned.fill(
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              8,
+                                            ),
+                                            child: RotatedBox(
+                                              quarterTurns: _imageRotation,
+                                              child: kIsWeb
+                                                  ? Image.network(
+                                                      _licenseImage!.path,
+                                                      key: ValueKey(
+                                                        _licenseImage!.path,
+                                                      ),
+                                                      width: double.infinity,
+                                                      height: double.infinity,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder:
+                                                          (
+                                                            context,
+                                                            error,
+                                                            stackTrace,
+                                                          ) => const Center(
+                                                            child: Icon(
+                                                              Icons
+                                                                  .broken_image,
+                                                              color:
+                                                                  Colors.grey,
+                                                              size: 40,
+                                                            ),
+                                                          ),
+                                                    )
+                                                  : Image.file(
+                                                      File(_licenseImage!.path),
+                                                      key: ValueKey(
+                                                        _licenseImage!.path,
+                                                      ),
+                                                      width: double.infinity,
+                                                      height: double.infinity,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder:
+                                                          (
+                                                            context,
+                                                            error,
+                                                            stackTrace,
+                                                          ) => const Center(
+                                                            child: Icon(
+                                                              Icons
+                                                                  .broken_image,
+                                                              color:
+                                                                  Colors.grey,
+                                                              size: 40,
+                                                            ),
+                                                          ),
+                                                    ),
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: 12,
+                                          right: 12,
+                                          child: InkWell(
+                                            onTap: () {
+                                              setState(() {
+                                                _imageRotation =
+                                                    (_imageRotation + 1) % 4;
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: const BoxDecoration(
+                                                color: Colors.black54,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.rotate_90_degrees_ccw,
+                                                color: Colors.white,
+                                                size: 22,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: 12,
+                                          right: 60,
+                                          child: InkWell(
+                                            onTap: _showImageSourceSelector,
+                                            child: Container(
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: const BoxDecoration(
+                                                color: Colors.black54,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.edit,
+                                                color: Colors.white,
+                                                size: 22,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.camera_alt_outlined,
+                                          color: Colors.grey.shade400,
+                                          size: 40,
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'แตะ ถ่ายรูปหรืออัปโหลดใบขับขี่\n(แนะนำให้ถ่ายแนวนอน)',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontFamily: 'Kanit',
+                                            fontSize: 14,
+                                            color: Colors.grey.shade500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ], // ปิด condition ของ !_hasLicenseInSystem || _isLicenseExpired
+                      ],
                       const SizedBox(height: 20),
                     ],
                   ),

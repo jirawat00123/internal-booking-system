@@ -26,19 +26,27 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
   DateTime startDate = DateTime.now();
   DateTime endDate = DateTime.now().add(const Duration(days: 2));
   TimeOfDay useTime = TimeOfDay.now();
+  TimeOfDay returnTime = TimeOfDay.now();
 
   int passengerCount = 4;
   final List<TextEditingController> passengerControllers = [];
+  String _driverType = 'ขับขี่เอง'; // เพิ่มตัวแปรเก็บประเภทผู้ขับขี่
 
   late VehicleModel selectedVehicle;
 
   List<DateTimeRange> bookedDateRanges = [];
 
   List<String> _allEmployeeNames = [];
+  List<String> _driverEmployeeNames = [];
+  Map<String, int?> _employeeIdMap = {};
 
   @override
   void initState() {
     super.initState();
+    final now = DateTime.now();
+    startDate = DateTime(now.year, now.month, now.day);
+    endDate = startDate.add(const Duration(days: 2));
+
     selectedVehicle =
         widget.vehicle ??
         VehicleModel(
@@ -97,17 +105,52 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
         final body = jsonDecode(response.body);
         if (body['success'] == true && body['data'] != null) {
           final List users = body['data'];
-          final List<String> names = users
-              .map<String>((u) {
-                final emp = u['employee'];
-                return emp != null ? (emp['fullName'] ?? '').toString() : '';
-              })
-              .where((name) => name.isNotEmpty)
-              .toList();
+          final List<String> names = [];
+          final List<String> driverNames = [];
+          final Map<String, int?> empIdMap = {};
+
+          for (var u in users) {
+            final emp = u['employee'];
+            String name = '';
+            int? empId = emp != null ? emp['id'] : null;
+
+            if (emp != null &&
+                emp['fullName'] != null &&
+                emp['fullName'].toString().isNotEmpty) {
+              name = emp['fullName'].toString();
+            } else if (emp != null &&
+                (emp['firstName'] != null || emp['lastName'] != null)) {
+              name = '${emp['firstName'] ?? ''} ${emp['lastName'] ?? ''}'
+                  .trim();
+            } else if (u['fullName'] != null &&
+                u['fullName'].toString().isNotEmpty) {
+              name = u['fullName'].toString();
+            } else if (u['name'] != null && u['name'].toString().isNotEmpty) {
+              name = u['name'].toString();
+            }
+
+            if (name.isNotEmpty) {
+              names.add(name);
+              if (empId != null) {
+                empIdMap[name] = empId;
+              }
+              bool isDriver = false;
+              if (emp != null && emp['isDriver'] == true) {
+                isDriver = true;
+              } else if (u['isDriver'] == true) {
+                isDriver = true;
+              }
+              if (isDriver) {
+                driverNames.add(name);
+              }
+            }
+          }
 
           if (mounted) {
             setState(() {
               _allEmployeeNames = names;
+              _driverEmployeeNames = driverNames;
+              _employeeIdMap = empIdMap;
             });
           }
         }
@@ -171,30 +214,21 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
   }
 
   // ==========================================
-  // 🔒 ฟังก์ชันเช็กว่า วันนี้ว่างไหม? (ถ้าไม่ว่างคืนค่า false)
+  // 🔒 ฟังก์ชันเช็กว่า วันนี้โดนจองเต็มวันหรือไม่?
   // ==========================================
   bool _isSelectable(DateTime day) {
-    DateTime target = DateTime(
-      day.year,
-      day.month,
-      day.day,
-    ); // รีเซ็ตเวลาเป็นเที่ยงคืนเพื่อเทียบแค่วัน
+    DateTime dayStart = DateTime(day.year, day.month, day.day, 0, 0, 0);
+    DateTime dayEnd = DateTime(day.year, day.month, day.day, 23, 59, 59, 999);
 
     for (var range in bookedDateRanges) {
-      DateTime start = DateTime(
-        range.start.year,
-        range.start.month,
-        range.start.day,
-      );
-      DateTime end = DateTime(range.end.year, range.end.month, range.end.day);
-
-      // ถ้าเป้าหมายอยู่ในช่วงที่โดนจอง (รวมวันหัวท้าย)
-      if ((target.isAtSameMomentAs(start) || target.isAfter(start)) &&
-          (target.isAtSameMomentAs(end) || target.isBefore(end))) {
-        return false; // โดนจองแล้ว ห้ามกด!
+      // บล็อกวันเฉพาะเมื่อมีรายการจองที่ครอบคลุมทั้งวัน (ตั้งแต่ก่อน/เท่ากับ 00:00:00 ถึง หลัง/เท่ากับ 23:59:59)
+      if ((range.start.isBefore(dayStart) ||
+              range.start.isAtSameMomentAs(dayStart)) &&
+          (range.end.isAfter(dayEnd) || range.end.isAtSameMomentAs(dayEnd))) {
+        return false;
       }
     }
-    return true; // ว่างจ้า กดได้
+    return true;
   }
 
   // ฟังก์ชันเลื่อนหาวันว่างวันแรก (กรณีวันที่ปัจจุบันโดนจอง)
@@ -209,9 +243,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
   }
 
   String _formatDateThai(DateTime date) {
-    int thaiYear = date.year + 543;
-    String shortYear = thaiYear.toString().substring(2);
-    return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/$shortYear";
+    return "${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}";
   }
 
   // 👈 เพิ่มฟังก์ชันจัดการเวลาที่ต้องการใช้งาน
@@ -225,15 +257,20 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
     final TimeOfDay? picked = await showTimePicker(
       context: context,
       initialTime: useTime,
+      initialEntryMode: TimePickerEntryMode.input,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(primary: Color(0xFF009CB4)),
           ),
-          child: child!,
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
         );
       },
     );
+    if (!mounted) return;
     if (picked != null) {
       setState(() {
         useTime = picked;
@@ -241,13 +278,87 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
     }
   }
 
+  Future<void> _selectReturnTime(BuildContext context) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: returnTime,
+      initialEntryMode: TimePickerEntryMode.input,
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(primary: Color(0xFF009CB4)),
+          ),
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
+        );
+      },
+    );
+    if (!mounted) return;
+    if (picked != null) {
+      setState(() {
+        returnTime = picked;
+      });
+    }
+  }
+
   void _onNextPressed() {
     if (_formKey.currentState!.validate()) {
+      // 1. รวมวันและเวลาที่ผู้ใช้เลือกจริง
+      final DateTime startDateTime = DateTime(
+        startDate.year,
+        startDate.month,
+        startDate.day,
+        useTime.hour,
+        useTime.minute,
+      );
+      final DateTime endDateTime = DateTime(
+        endDate.year,
+        endDate.month,
+        endDate.day,
+        returnTime.hour,
+        returnTime.minute,
+      );
+
+      // 2. ตรวจสอบว่าเวลาคืนรถต้องอยู่หลังเวลาเริ่มใช้งาน
+      if (endDateTime.isBefore(startDateTime) ||
+          endDateTime.isAtSameMomentAs(startDateTime)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('วันและเวลาคืนรถ ต้องอยู่หลังวันและเวลาเริ่มใช้งาน'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // 3. ตรวจสอบการชนกันของช่วงเวลา (Overlap Check)
+      for (var range in bookedDateRanges) {
+        if (startDateTime.isBefore(range.end) &&
+            endDateTime.isAfter(range.start)) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'ช่วงเวลาที่คุณเลือกมีการใช้งานรถคันนี้อยู่แล้ว กรุณาเปลี่ยนช่วงเวลา',
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+          return;
+        }
+      }
+
       // 🟢 กรองเฉพาะชื่อที่ไม่ว่างเปล่าก่อนส่งไปยังหน้าต่อไป
       final List<String> passengerNames = passengerControllers
           .map((controller) => controller.text.trim())
           .where((name) => name.isNotEmpty)
           .toList();
+
+      int? driverEmployeeId;
+      if (_driverType == 'ขับขี่เอง' && passengerNames.isNotEmpty) {
+        driverEmployeeId = _employeeIdMap[passengerNames[0]];
+      }
 
       Navigator.push(
         context,
@@ -255,13 +366,15 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
           builder: (context) => VehicleBookingFormBPage(
             vehicle: selectedVehicle,
             destination: destinationController.text,
-            startDate: _formatDateThai(startDate),
-            endDate: _formatDateThai(endDate),
+            startDate: startDate,
+            endDate: endDate,
             timeRange: _formatTime(useTime),
+            returnTime: _formatTime(returnTime),
             passengerCount:
                 passengerNames.length, // ปรับให้ตรงกับจำนวนจริงที่กรอก
             passengerNames: passengerNames,
-            driverType: 'ขับขี่เอง',
+            driverType: _driverType, // เปลี่ยนมาส่งค่าจากตัวแปร State ที่เลือก
+            driverEmployeeId: driverEmployeeId,
           ),
         ),
       );
@@ -270,21 +383,21 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
 
   // 💡 พระเอกอยู่ตรงนี้: ปฏิทินที่ล็อควันที่ไม่ว่างได้
   Future<void> _selectDate(BuildContext context, bool isStart) async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     DateTime initial = isStart ? startDate : endDate;
 
-    // ป้องกันบัคของ Flutter กรณี initialDate ตรงกับวันที่โดนล็อค
     if (!_isSelectable(initial)) {
-      initial = _getFirstAvailableDate(DateTime.now());
+      initial = _getFirstAvailableDate(today);
     }
 
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(
-        const Duration(days: 365),
-      ), // ให้จองล่วงหน้าได้ 1 ปี
-      selectableDayPredicate: _isSelectable, // 👈 ล็อควันสีเทาตรงนี้เลย!
+      firstDate: today,
+      lastDate: today.add(const Duration(days: 365 * 2)),
+      initialEntryMode: DatePickerEntryMode.calendarOnly,
+      selectableDayPredicate: _isSelectable,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -295,6 +408,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
       },
     );
 
+    if (!mounted) return;
     if (picked != null) {
       setState(() {
         if (isStart) {
@@ -307,13 +421,38 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
     }
   }
 
-  List<String> _searchEmployees(String query) {
+  List<String> _searchEmployees(
+    String query, {
+    bool driverOnly = false,
+    int? currentIndex,
+  }) {
     final cleanQuery = query.trim().toLowerCase();
     if (cleanQuery.isEmpty) return [];
 
-    return _allEmployeeNames
-        .where((name) => name.toLowerCase().contains(cleanQuery))
-        .toList();
+    final Set<int> selectedEmpIds = {};
+    final Set<String> selectedNames = {};
+
+    for (int i = 0; i < passengerControllers.length; i++) {
+      if (currentIndex != null && i == currentIndex) continue;
+      final text = passengerControllers[i].text.trim();
+      if (text.isNotEmpty) {
+        final empId = _employeeIdMap[text];
+        if (empId != null) {
+          selectedEmpIds.add(empId);
+        }
+        selectedNames.add(text.toLowerCase());
+      }
+    }
+
+    final sourceList = driverOnly ? _driverEmployeeNames : _allEmployeeNames;
+    return sourceList.where((name) {
+      if (!name.toLowerCase().contains(cleanQuery)) return false;
+      final empId = _employeeIdMap[name];
+      if (empId != null) {
+        return !selectedEmpIds.contains(empId);
+      }
+      return !selectedNames.contains(name.toLowerCase());
+    }).toList();
   }
 
   @override
@@ -435,24 +574,26 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                                     const SizedBox(height: 8),
                                     _buildClickableField(
                                       text: _formatDateThai(startDate),
-                                      leftIcon: Icons.calendar_today_outlined,
-                                      rightIcon: Icons.calendar_month,
+                                      leftIcon: Icons.calendar_today_rounded,
+                                      rightIcon:
+                                          Icons.keyboard_arrow_down_rounded,
                                       onTap: () => _selectDate(context, true),
                                     ),
                                   ],
                                 ),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _buildLabel('วันที่คืนรถ'),
+                                    _buildLabel('วันที่สิ้นสุด'),
                                     const SizedBox(height: 8),
                                     _buildClickableField(
                                       text: _formatDateThai(endDate),
-                                      leftIcon: Icons.calendar_today_outlined,
-                                      rightIcon: Icons.calendar_month,
+                                      leftIcon: Icons.calendar_today_rounded,
+                                      rightIcon:
+                                          Icons.keyboard_arrow_down_rounded,
                                       onTap: () => _selectDate(context, false),
                                     ),
                                   ],
@@ -460,18 +601,41 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 20),
-                          // 👈 เพิ่มส่วนเลือกเวลาที่ต้องการใช้งาน
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          const SizedBox(height: 16),
+                          Row(
                             children: [
-                              _buildLabel('เวลาที่ต้องการใช้งาน'),
-                              const SizedBox(height: 8),
-                              _buildClickableField(
-                                text: '${_formatTime(useTime)} น.',
-                                leftIcon: Icons.access_time_outlined,
-                                rightIcon: Icons.arrow_drop_down,
-                                onTap: () => _selectTime(context),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildLabel('เวลาที่ต้องการใช้งาน'),
+                                    const SizedBox(height: 8),
+                                    _buildClickableField(
+                                      text: '${_formatTime(useTime)} น.',
+                                      leftIcon: Icons.access_time_rounded,
+                                      rightIcon:
+                                          Icons.keyboard_arrow_down_rounded,
+                                      onTap: () => _selectTime(context),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildLabel('เวลาคืน'),
+                                    const SizedBox(height: 8),
+                                    _buildClickableField(
+                                      text: '${_formatTime(returnTime)} น.',
+                                      leftIcon: Icons.access_time_rounded,
+                                      rightIcon:
+                                          Icons.keyboard_arrow_down_rounded,
+                                      onTap: () => _selectReturnTime(context),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
@@ -546,6 +710,53 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                             ),
                           ),
                           const SizedBox(height: 24),
+                          _buildLabel('ประเภทผู้ขับขี่', isRequired: true),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: RadioListTile<String>(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text(
+                                    'ขับขี่เอง',
+                                    style: TextStyle(
+                                      fontFamily: 'Kanit',
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  value: 'ขับขี่เอง',
+                                  groupValue: _driverType,
+                                  activeColor: const Color(0xFF009CB4),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _driverType = value!;
+                                    });
+                                  },
+                                ),
+                              ),
+                              Expanded(
+                                child: RadioListTile<String>(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text(
+                                    'บริษัท',
+                                    style: TextStyle(
+                                      fontFamily: 'Kanit',
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  value: 'บริษัท',
+                                  groupValue: _driverType,
+                                  activeColor: const Color(0xFF009CB4),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _driverType = value!;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
                           _buildPassengerFields(),
                         ],
                       ),
@@ -781,35 +992,52 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
     IconData? rightIcon,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            if (leftIcon != null) ...[
-              Icon(leftIcon, color: Colors.grey.shade500, size: 18),
-              const SizedBox(width: 8),
-            ],
-            Expanded(
-              child: Text(
-                text,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Color(0xFF4B5563),
-                  fontFamily: 'Kanit',
+    return Material(
+      color: const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        highlightColor: const Color(0xFF009CB4).withOpacity(0.05),
+        splashColor: const Color(0xFF009CB4).withOpacity(0.1),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFCBD5E1)),
+          ),
+          child: Row(
+            children: [
+              if (leftIcon != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF009CB4).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    leftIcon,
+                    size: 18,
+                    color: const Color(0xFF009CB4),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F172A),
+                    fontFamily: 'Kanit',
+                  ),
                 ),
               ),
-            ),
-            if (rightIcon != null)
-              Icon(rightIcon, color: Colors.grey.shade500, size: 18),
-          ],
+              if (rightIcon != null)
+                Icon(rightIcon, size: 20, color: const Color(0xFF94A3B8)),
+            ],
+          ),
         ),
       ),
     );
@@ -832,7 +1060,9 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'ผู้โดยสาร ${index + 1}',
+                    (_driverType == 'ขับขี่เอง' && index == 0)
+                        ? 'ผู้ขับขี่'
+                        : 'ผู้โดยสาร ${index + 1}',
                     style: TextStyle(
                       fontFamily: 'Kanit',
                       fontSize: 13,
@@ -842,6 +1072,7 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                   ),
                   const SizedBox(height: 6),
                   Autocomplete<String>(
+                    key: ValueKey('passenger_$index'),
                     initialValue: TextEditingValue(
                       text: passengerControllers[index].text,
                     ),
@@ -849,17 +1080,17 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                       if (textEditingValue.text.trim().isEmpty) {
                         return const Iterable<String>.empty();
                       }
-                      return _searchEmployees(textEditingValue.text);
+                      return _searchEmployees(
+                        textEditingValue.text,
+                        driverOnly: false,
+                        currentIndex: index,
+                      );
                     },
                     onSelected: (String selection) {
                       passengerControllers[index].text = selection;
                     },
                     fieldViewBuilder:
                         (context, controller, focusNode, onFieldSubmitted) {
-                          controller.addListener(() {
-                            passengerControllers[index].text = controller.text;
-                          });
-
                           return TextFormField(
                             controller: controller,
                             focusNode: focusNode,
@@ -897,9 +1128,38 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
                                 ),
                               ),
                             ),
+                            onChanged: (value) {
+                              passengerControllers[index].text = value;
+                            },
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
-                                return 'กรุณากรอกชื่อ-นามสกุลผู้โดยสาร ${index + 1}';
+                                return (_driverType == 'ขับขี่เอง' &&
+                                        index == 0)
+                                    ? 'กรุณากรอกชื่อ-นามสกุลผู้ขับขี่'
+                                    : 'กรุณากรอกชื่อ-นามสกุลผู้โดยสาร ${index + 1}';
+                              }
+                              final trimmedValue = value.trim();
+                              final currentEmpId = _employeeIdMap[trimmedValue];
+                              for (
+                                int i = 0;
+                                i < passengerControllers.length;
+                                i++
+                              ) {
+                                if (i == index) continue;
+                                final otherText = passengerControllers[i].text
+                                    .trim();
+                                if (otherText.isEmpty) continue;
+
+                                final otherEmpId = _employeeIdMap[otherText];
+                                if (currentEmpId != null &&
+                                    otherEmpId != null) {
+                                  if (currentEmpId == otherEmpId) {
+                                    return 'ไม่สามารถเลือกผู้โดยสารซ้ำกันได้';
+                                  }
+                                } else if (trimmedValue.toLowerCase() ==
+                                    otherText.toLowerCase()) {
+                                  return 'ไม่สามารถเลือกผู้โดยสารซ้ำกันได้';
+                                }
                               }
                               return null;
                             },
@@ -945,30 +1205,6 @@ class _VehicleBookingStep2PageState extends State<VehicleBookingStep2Page> {
               ),
             );
           },
-        ),
-        OutlinedButton.icon(
-          onPressed: () {
-            setState(() {
-              passengerCount++;
-              _updatePassengerControllers();
-            });
-          },
-          icon: const Icon(Icons.add, color: Color(0xFF009CB4), size: 18),
-          label: const Text(
-            'เพิ่มผู้โดยสาร',
-            style: TextStyle(
-              fontFamily: 'Kanit',
-              color: Color(0xFF009CB4),
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: Color(0xFF009CB4)),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            minimumSize: const Size(double.infinity, 44),
-          ),
         ),
       ],
     );

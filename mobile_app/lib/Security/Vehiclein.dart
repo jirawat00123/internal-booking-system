@@ -21,13 +21,83 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
   XFile? frontImage;
   XFile? backImage;
   XFile? plateImage;
-  
+
   bool _isSubmitting = false;
+  bool _isLoadingBooking = true;
+  String? _driverType;
+  dynamic _companyDriverId;
+  dynamic _driverId;
 
   final ImagePicker _picker = ImagePicker();
 
+  @override
+  void initState() {
+    super.initState();
+    _fetchBookingDetails();
+  }
+
+  Future<void> _fetchBookingDetails() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String token =
+          prefs.getString('token') ?? prefs.getString('jwt_token') ?? '';
+
+      String baseUrl = kIsWeb
+          ? 'https://192.168.88.25:3002'
+          : 'https://192.168.88.25:3002';
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/vehicle-bookings/${widget.bookingId}'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final booking = data['data'] ?? data;
+        final driverEmpId =
+            booking['driverEmployeeId'] ??
+            booking['companyDriverId'] ??
+            (booking['driverEmployee'] is Map
+                ? booking['driverEmployee']['id']
+                : null) ??
+            (booking['companyDriver'] is Map
+                ? booking['companyDriver']['id']
+                : null);
+
+        print('[FETCH_BOOKING] Raw Data: $booking');
+        print(
+          '[FETCH_BOOKING] driverType: ${booking['driverType']}, driverEmployeeId: $driverEmpId, companyDriverId: ${booking['companyDriverId']}, driverId: ${booking['driverId']}, userId: ${booking['userId']}, createdById: ${booking['createdById']}',
+        );
+        if (mounted) {
+          setState(() {
+            _driverType = booking['driverType']?.toString();
+            _companyDriverId = driverEmpId;
+            _driverId =
+                booking['driverId'] ??
+                booking['driverUserId'] ??
+                driverEmpId ??
+                booking['userId'] ??
+                booking['createdById'];
+            _isLoadingBooking = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isLoadingBooking = false);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoadingBooking = false);
+    }
+  }
+
   Future<void> _pickImage(String imageType) async {
-    final XFile? image = await _picker.pickImage(source: ImageSource.camera);
+    // 🎯 บังคับใช้กล้อง และระบุให้เบราว์เซอร์เปิดกล้องหลัง + ลดขนาดภาพเพื่อแก้ปัญหาจอดำบนมือถือ
+    final XFile? image = await _picker.pickImage(
+      source: ImageSource.camera,
+      preferredCameraDevice: CameraDevice.rear,
+      maxWidth: 1920,
+      maxHeight: 1080,
+      imageQuality: 85,
+    );
     if (image != null) {
       setState(() {
         if (imageType == 'front') {
@@ -42,14 +112,30 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
   }
 
   void _checkAndSubmit() {
+    bool isUnassignedCompanyDriver =
+        (_driverType == 'COMPANY' || _driverType == 'COMPANY_DRIVER') &&
+        (_companyDriverId == null ||
+            _companyDriverId.toString().isEmpty ||
+            _companyDriverId == 0);
+
+    if (isUnassignedCompanyDriver) {
+      _showErrorDialog(
+        'ยังไม่ได้จัดสรรพนักงานขับรถ',
+        title: 'ข้อมูลไม่ครบถ้วน',
+      );
+      return;
+    }
     if (frontImage == null || backImage == null || plateImage == null) {
-      _showErrorDialog('กรุณาถ่ายรูปให้ครบทั้ง 3 มุมก่อนดำเนินการต่อ');
+      _showErrorDialog(
+        'กรุณาถ่ายรูปให้ครบทั้ง 3 มุมก่อนดำเนินการต่อ',
+        title: 'ข้อมูลไม่ครบถ้วน',
+      );
       return;
     }
     _showConfirmDialog();
   }
 
-  void _showErrorDialog(String msg) {
+  void _showErrorDialog(String msg, {String title = 'แจ้งเตือน'}) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -59,9 +145,9 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
           children: [
             const Icon(Icons.error, color: Colors.red, size: 60),
             const SizedBox(height: 16),
-            const Text(
-              'ข้อมูลไม่ครบถ้วน',
-              style: TextStyle(
+            Text(
+              title,
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 fontFamily: 'Kanit',
@@ -185,7 +271,9 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
         _showErrorDialog(
           'ไม่พบข้อมูลการเข้าสู่ระบบ (Token สูญหาย) กรุณาเข้าสู่ระบบใหม่',
         );
-        setState(() { _isSubmitting = false; });
+        setState(() {
+          _isSubmitting = false;
+        });
         return;
       }
 
@@ -201,8 +289,8 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
 
       request.headers.addAll({'Authorization': 'Bearer $token'});
 
-      // 🎯 เปลี่ยนสถานะเป็น Completed
-      request.fields['status'] = 'COMPLETED';
+      // 🎯 เปลี่ยนสถานะเป็น RETURNED เพื่อให้สอดคล้องกับสถานะ 🟢 คืนรถแล้ว ในปฏิทิน
+      request.fields['status'] = 'RETURNED';
 
       // ตรวจสอบชนิดไฟล์จากนามสกุลรูปภาพแบบไดนามิกเพื่อป้องกัน Error จาก MimeType
       MediaType getMediaType(XFile file) {
@@ -241,9 +329,14 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
       var response = await request.send();
       final respStr = await response.stream.bytesToString();
 
+      print('[SUBMIT] Status Code: ${response.statusCode}');
+      print('[SUBMIT] Response Body: $respStr');
+
       if (!mounted) return;
       Navigator.pop(context); // ปิดตัวโหลด
-      setState(() { _isSubmitting = false; });
+      setState(() {
+        _isSubmitting = false;
+      });
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         Navigator.pushReplacement(
@@ -280,7 +373,9 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
-      setState(() { _isSubmitting = false; });
+      setState(() {
+        _isSubmitting = false;
+      });
       print('Network Error: $e');
       _showErrorDialog('เชื่อมต่อเซิร์ฟเวอร์ผิดพลาด');
     }
@@ -459,6 +554,12 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
 
   @override
   Widget build(BuildContext context) {
+    bool isUnassignedCompanyDriver =
+        (_driverType == 'COMPANY' || _driverType == 'COMPANY_DRIVER') &&
+        (_companyDriverId == null ||
+            _companyDriverId.toString().isEmpty ||
+            _companyDriverId == 0);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FA),
       appBar: AppBar(
@@ -576,11 +677,28 @@ class _VehicleInScreenState extends State<VehicleInScreen> {
               ),
               const SizedBox(height: 32),
 
+              if (isUnassignedCompanyDriver) ...[
+                const Center(
+                  child: Text(
+                    'ยังไม่ได้จัดสรรพนักงานขับรถ',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Kanit',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  onPressed: _checkAndSubmit,
+                  onPressed: (_isLoadingBooking || isUnassignedCompanyDriver)
+                      ? null
+                      : _checkAndSubmit,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF009CB4),
                     shape: RoundedRectangleBorder(

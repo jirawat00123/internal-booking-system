@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile_app/Manage.dart';
 import 'package:mobile_app/Security/SecurityPin.dart';
 import 'package:mobile_app/Admin_pin.dart';
@@ -145,17 +146,26 @@ class LoginSelectionPage extends StatelessWidget {
                                   icon: Icons.person,
                                   title: 'Guest',
                                   subtitle: 'ผู้ใช้งานทั่วไป',
-                                  onTap: () {
+                                  onTap: () async {
                                     debugPrint(
                                       "Guest user selected",
                                     ); // เปลี่ยนจาก print เป็น debugPrint ตามมาตรฐาน Flutter ที่ดีกว่าสำหรับ Production
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            const UserMenuPage(isGuest: true),
-                                      ),
-                                    );
+
+                                    // เคลียร์ Token ที่อาจค้างอยู่ออก ป้องกันการส่ง Token หมดอายุเมื่อเข้าด้วยสิทธิ์ Guest
+                                    final prefs =
+                                        await SharedPreferences.getInstance();
+                                    await prefs.remove('token');
+                                    await prefs.remove('jwt_token');
+
+                                    if (context.mounted) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) =>
+                                              const UserMenuPage(isGuest: true),
+                                        ),
+                                      );
+                                    }
                                   },
                                 ),
                               ],

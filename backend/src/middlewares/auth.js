@@ -34,6 +34,10 @@ const authenticateToken = async (req, res, next) => {
     token = token.replace(/^"(.*)"$/, '$1').trim();
   }
 
+  if (token === 'null' || token === 'undefined') {
+    token = null;
+  }
+
   if (!token) {
     // 🚨 [Requirement 7] LOG สาเหตุ 401: ไม่มี Token
     console.log('[EVIDENCE] 7. 401 Failure Cause: [NO_TOKEN] Token does not exist in request headers.');
@@ -207,10 +211,54 @@ const isUser = (req, res, next) => {
     next();
 };
 
+const verifyOptionalToken = (req, res, next) => {
+    if (req.method === 'OPTIONS') {
+        return next();
+    }
+
+    const authHeader = req.headers['authorization'];
+    let token = authHeader && authHeader.split(' ')[1];
+
+    if (!token && req.query && req.query.token) {
+        token = req.query.token;
+    }
+
+    if (token) {
+        token = token.replace(/^"(.*)"$/, '$1').trim();
+    }
+
+    if (token === 'null' || token === 'undefined') {
+        token = null;
+    }
+
+    // ถ้าไม่มี Token ให้กำหนด role เป็น GUEST และอนุญาตให้ผ่านการตรวจสอบ
+    if (!token) {
+        req.user = { role: 'GUEST' };
+        return next();
+    }
+
+    // ถ้ามี Token ให้ทำการตรวจสอบ (Verify) ตามปกติ
+    try {
+        const secretKey = JWT_SECRET || process.env.JWT_SECRET || 'default_secret_key';
+        const decoded = jwt.verify(token, secretKey);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        // หาก Token มีปัญหา หรือหมดอายุ ให้ fallback กลับไปเป็นสิทธิ์ GUEST 
+        req.user = { role: 'GUEST' };
+        next();
+    }
+};
+
+// เพิ่ม Middleware optionalAuth โดยใช้ Logic ที่มีการดักจับ Guest ไว้อยู่แล้ว
+const optionalAuth = verifyOptionalToken;
+
 module.exports = {
     JWT_SECRET,
     authenticateToken,
     verifyToken,
+    verifyOptionalToken,
+    optionalAuth,
     requireRole,
     isAdmin,
     isUser

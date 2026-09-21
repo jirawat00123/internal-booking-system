@@ -5,6 +5,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum RefreshStatus { success, unauthorized, networkOrServerError, noToken }
+
 class AuthService {
   AuthService._internal();
   static final AuthService instance = AuthService._internal();
@@ -39,6 +41,44 @@ class AuthService {
   bool? _pinResetRequired;
   String? _fullName;
   Timer? _refreshTimer;
+
+  // 🟢 เพิ่ม Flag ป้องกันการเรียก API ซ้ำซ้อน (Lock flags)
+  bool _isLoggingOut = false;
+  bool _isRefreshing = false;
+  bool _isTransactionInProgress = false;
+
+  /// ซ่อน Token เพื่อให้ Log ปลอดภัย
+  String _maskToken(String? token) {
+    if (token == null || token.length < 12) return 'invalid_token';
+    return '${token.substring(0, 6)}...${token.substring(token.length - 6)}';
+  }
+
+  /// ตรวจสอบว่า Token ยังไม่หมดอายุในเครื่อง
+  bool isTokenValid(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return false;
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      if (payload['exp'] == null) return false;
+      final exp = payload['exp'] as int;
+      final currentTime = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      return (exp - currentTime) > 60;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// ล็อค/ปลดล็อค เมื่อมีการทำ Transaction สำคัญ เช่น กดส่งจองรถ/จองห้อง
+  void setTransactionInProgress(bool inProgress) {
+    _isTransactionInProgress = inProgress;
+    if (inProgress) {
+      debugPrint('🔒 [AUTH] Transaction in progress - locking silent refresh');
+    } else {
+      debugPrint('🔓 [AUTH] Transaction completed - unlocking silent refresh');
+    }
+  }
 
   Future<void> saveToken(String token) async {
     _accessToken = token;
@@ -113,24 +153,52 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    if (_isLoggingOut) return; // 🟢 ป้องกันการกดซ้ำ
+    _isLoggingOut = true;
+    stopSilentRefresh(); // 🟢 หยุด Silent Refresh ทันที ป้องกันการยิง Refresh Token แทรกระหว่างออกจากระบบ
+
     try {
       final token = await getToken();
-      if (token != null && token.isNotEmpty) {
-        await http
+      // 🟢 ดึง employeeCode จากเครื่องเพื่อส่งเป็นข้อมูลสำรองไปให้ Backend
+      final currentEmployeeCode = await getEmployeeCode();
+
+      // 🟢 อนุญาตให้ยิง API ถ้ามี Token "หรือ" มี employeeCode สำรอง
+      if ((token != null && token.isNotEmpty) ||
+          (currentEmployeeCode != null && currentEmployeeCode.isNotEmpty)) {
+        final response = await http
             .post(
-              Uri.parse('$baseUrl/api/logout'),
+              Uri.parse('$baseUrl/api/auth/logout'),
               headers: {
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer $token',
+                // 🟢 แนบ Token เฉพาะเมื่อมีค่า ป้องกัน Header Error
+                if (token != null && token.isNotEmpty)
+                  'Authorization': 'Bearer $token',
               },
+              // 🟢 แนบ Body สำรองไว้ กรณี Token หมดอายุ Backend จะได้หา User เจอจาก employeeCode
+              body: jsonEncode({
+                if (currentEmployeeCode != null &&
+                    currentEmployeeCode.isNotEmpty)
+                  'employeeCode': currentEmployeeCode,
+              }),
             )
-            .timeout(const Duration(seconds: 3));
+            .timeout(
+              const Duration(seconds: 10),
+            ); // 🟢 ขยาย Timeout เป็น 10 วินาที ป้องกัน Request ขาดกลางคัน
+        debugPrint('✅ Logout API Status: ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('⚠️ Logout API Error: $e');
     } finally {
       await deleteToken();
+      _isLoggingOut = false; // 🟢 ปลดล็อคเมื่อทำงานเสร็จ
     }
+  }
+
+  /// ตั้งค่าเข้าสู่ระบบในฐานะ Guest โดยล้าง Token ทั้งหมด และกำหนด Role/Mode เป็น GUEST
+  Future<void> loginAsGuest() async {
+    await deleteToken();
+    await saveRole('GUEST');
+    await saveMode('GUEST');
   }
 
   Future<void> saveRole(String role) async {
@@ -327,19 +395,41 @@ class AuthService {
     return _fullName;
   }
 
-  /// ยิง API ไปยัง /api/auth/refresh เพื่อขอ Token ใหม่
-  Future<bool> refreshToken() async {
+  /// รีเฟรช Token และระบุสถานะของผลลัพธ์อย่างละเอียด
+  Future<RefreshStatus> refreshTokenDetailed() async {
+    if (_isRefreshing) {
+      debugPrint('[AUTH] Refresh skipped - another refresh in progress');
+      return RefreshStatus.networkOrServerError;
+    }
+    if (_isTransactionInProgress) {
+      debugPrint('[AUTH] Refresh skipped - request in progress');
+      return RefreshStatus.networkOrServerError;
+    }
+
+    _isRefreshing = true;
+
     try {
       final token = await getToken();
-      if (token == null || token.isEmpty) return false;
+      if (token == null || token.isEmpty) {
+        debugPrint('[AUTH] Refresh failed: No token found');
+        return RefreshStatus.noToken;
+      }
 
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/auth/refresh'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
+      debugPrint(
+        '[AUTH] Silent refresh request started with token: ${_maskToken(token)}',
       );
+
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/auth/refresh'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      debugPrint('[AUTH] Refresh response: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -351,27 +441,55 @@ class AuthService {
           await prefs.setString(_tokenKey, newToken);
           await prefs.setString('token', newToken);
 
-          debugPrint('🔄 Silent Refresh Token Success');
-          return true;
+          debugPrint('[AUTH] Token updated: ${_maskToken(newToken)}');
+          return RefreshStatus.success;
         }
+      } else if (response.statusCode == 401) {
+        debugPrint('[AUTH] Session invalid - logout');
+        return RefreshStatus.unauthorized;
+      } else {
+        debugPrint(
+          '[AUTH] Refresh failed: Server status ${response.statusCode}',
+        );
+        return RefreshStatus.networkOrServerError;
       }
-      debugPrint('⚠️ Refresh Token Failed: ${response.statusCode}');
-      return false;
     } catch (e) {
-      debugPrint('❌ Error during refreshToken: $e');
-      return false;
+      debugPrint(
+        '[AUTH] Refresh failed: $e (Network or Timeout - Session preserved)',
+      );
+      return RefreshStatus.networkOrServerError;
+    } finally {
+      _isRefreshing = false;
     }
+
+    return RefreshStatus.networkOrServerError;
   }
 
-  /// เริ่มระบบ Timer.periodic สั่งยิง Silent Refresh ทุกๆ 8 นาที
+  Future<bool> refreshToken() async {
+    final status = await refreshTokenDetailed();
+    return status == RefreshStatus.success;
+  }
+
+  /// เริ่มระบบ Silent Refresh ทุกๆ 20 นาที
   void startSilentRefresh() {
     stopSilentRefresh();
-    _refreshTimer = Timer.periodic(const Duration(minutes: 8), (timer) async {
-      debugPrint('⏰ Triggering 8-minute Silent Refresh...');
-      final success = await refreshToken();
-      if (!success) {
-        debugPrint('⚠️ Silent refresh failed, stopping timer.');
+    debugPrint('[AUTH] Silent refresh started (Every 20 minutes)');
+
+    _refreshTimer = Timer.periodic(const Duration(minutes: 20), (timer) async {
+      if (_isTransactionInProgress) {
+        debugPrint('[AUTH] Refresh skipped - request in progress');
+        return;
+      }
+
+      final result = await refreshTokenDetailed();
+      if (result == RefreshStatus.unauthorized) {
+        debugPrint('[AUTH] Session invalid - logout');
         stopSilentRefresh();
+        await deleteToken();
+      } else if (result == RefreshStatus.networkOrServerError) {
+        debugPrint(
+          '[AUTH] Refresh failed - network error, keeping session for next cycle',
+        );
       }
     });
   }
@@ -380,5 +498,185 @@ class AuthService {
   void stopSilentRefresh() {
     _refreshTimer?.cancel();
     _refreshTimer = null;
+  }
+
+  /// ตรวจสอบสถานะ PIN ของพนักงานก่อนเข้าสู่ระบบ
+  Future<Map<String, dynamic>> checkPinStatus(String employeeCode) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/auth/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'employeeCode': employeeCode}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {
+          'success': true,
+          'pinInitialized': data['pinInitialized'] ?? false,
+          'pinResetRequired': data['pinResetRequired'] ?? false,
+          'requireSetupPin': data['requireSetupPin'] ?? false,
+          'message': data['message'] ?? '',
+          'error': null,
+          'statusCode': response.statusCode,
+        };
+      } else {
+        return {
+          'success': false,
+          'pinInitialized': false,
+          'pinResetRequired': false,
+          'requireSetupPin': false,
+          'message': null,
+          'error':
+              data['error'] ??
+              data['message'] ??
+              'เกิดข้อผิดพลาดในการตรวจสอบสถานะ PIN',
+          'statusCode': response.statusCode,
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ checkPinStatus Error: $e');
+      return {
+        'success': false,
+        'pinInitialized': false,
+        'pinResetRequired': false,
+        'requireSetupPin': false,
+        'message': null,
+        'error': 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้',
+        'statusCode': 500,
+      };
+    }
+  }
+
+  /// เข้าสู่ระบบด้วย employeeCode และ PIN
+  Future<Map<String, dynamic>> login({
+    required String employeeCode,
+    required String pin,
+    String? expectedRole,
+    bool force = false,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/auth/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'employeeCode': employeeCode,
+              'pin': pin,
+              if (expectedRole != null) 'expectedRole': expectedRole,
+              if (force) 'force': true,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        if (data['token'] != null) {
+          final token = data['token'] as String;
+          await saveToken(token);
+          if (data['role'] != null) await saveRole(data['role']);
+          await saveEmployeeCode(employeeCode);
+          if (data['fullName'] != null) await saveFullName(data['fullName']);
+          await savePinStatus(
+            hasPin: data['pinInitialized'] ?? true,
+            pinResetRequired: data['pinResetRequired'] ?? false,
+          );
+          debugPrint('[AUTH] Login success');
+          debugPrint(
+            '[AUTH] Token expires in: 30m (Masked: ${_maskToken(token)})',
+          );
+          startSilentRefresh();
+        }
+        return {...data, 'error': null, 'statusCode': response.statusCode};
+      } else {
+        return {
+          'success': false,
+          'token': null,
+          'role': null,
+          'message': data['message'],
+          'error': data['error'] ?? data['message'] ?? 'เข้าสู่ระบบไม่สำเร็จ',
+          'statusCode': response.statusCode,
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Login Error: $e');
+      return {
+        'success': false,
+        'token': null,
+        'role': null,
+        'message': null,
+        'error': 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้',
+        'statusCode': 500,
+      };
+    }
+  }
+
+  /// เข้าสู่ระบบด้วย PIN อย่างเดียว หรือ PIN + employeeCode (/login-pin)
+  Future<Map<String, dynamic>> loginPin({
+    required String pin,
+    String? employeeCode,
+    String? expectedRole,
+    bool force = false,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/auth/login-pin'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'pin': pin,
+              if (employeeCode != null && employeeCode.isNotEmpty)
+                'employeeCode': employeeCode,
+              if (expectedRole != null && expectedRole.isNotEmpty)
+                'expectedRole': expectedRole,
+              if (force) 'force': true,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        if (data['token'] != null) {
+          final token = data['token'] as String;
+          await saveToken(token);
+          if (data['role'] != null) await saveRole(data['role']);
+          if (employeeCode != null && employeeCode.isNotEmpty) {
+            await saveEmployeeCode(employeeCode);
+          }
+          debugPrint('[AUTH] Login success');
+          debugPrint(
+            '[AUTH] Token expires in: 30m (Masked: ${_maskToken(token)})',
+          );
+          startSilentRefresh();
+        }
+        return {...data, 'error': null, 'statusCode': response.statusCode};
+      } else {
+        return {
+          'success': false,
+          'token': null,
+          'role': null,
+          'message': data['message'],
+          'error':
+              data['error'] ??
+              data['message'] ??
+              'เข้าสู่ระบบด้วย PIN ไม่สำเร็จ',
+          'statusCode': response.statusCode,
+        };
+      }
+    } catch (e) {
+      debugPrint('❌ Login PIN Error: $e');
+      return {
+        'success': false,
+        'token': null,
+        'role': null,
+        'message': null,
+        'error': 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้',
+        'statusCode': 500,
+      };
+    }
   }
 }

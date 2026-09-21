@@ -12,9 +12,10 @@ import '../auth_service.dart';
 class VehicleBookingConfirmPage extends StatelessWidget {
   final VehicleModel vehicle;
   final String destination;
-  final String startDate;
-  final String endDate;
+  final DateTime startDate;
+  final DateTime endDate;
   final String timeRange;
+  final String returnTime;
   final int passengerCount;
   final List<String> passengerNames;
   final String driverType;
@@ -22,6 +23,8 @@ class VehicleBookingConfirmPage extends StatelessWidget {
   final int userId; // 💡 1. เพิ่มตัวแปร userId ตรงนี้ครับ!
   final String? purpose;
   final XFile? licenseImage;
+  final int? companyDriverId;
+  final String? companyDriverName;
 
   const VehicleBookingConfirmPage({
     super.key,
@@ -30,6 +33,7 @@ class VehicleBookingConfirmPage extends StatelessWidget {
     required this.startDate,
     required this.endDate,
     required this.timeRange,
+    required this.returnTime,
     required this.passengerCount,
     this.passengerNames = const [],
     required this.driverType,
@@ -37,13 +41,15 @@ class VehicleBookingConfirmPage extends StatelessWidget {
     required this.userId, // 💡 2. บังคับรับค่า userId
     this.purpose,
     this.licenseImage,
+    this.companyDriverId,
+    this.companyDriverName,
   });
 
   @override
   Widget build(BuildContext context) {
     String imagePath = vehicle.uploadUrl ?? '';
 
-    String displayTime = timeRange;
+    String displayTime = '$timeRange - $returnTime';
     if (!displayTime.contains('น.')) {
       displayTime += ' น.';
     }
@@ -220,7 +226,7 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                         ),
                         _buildInfoRow(
                           'วันที่เดินทาง :',
-                          '$startDate ถึง $endDate',
+                          '${_formatDateThai(startDate)} ถึง ${_formatDateThai(endDate)}',
                         ),
                         _buildInfoRow('เวลา :', displayTime),
                         _buildInfoRow(
@@ -230,7 +236,14 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                                     passengerNames
                                         .asMap()
                                         .entries
-                                        .map((e) => '${e.key + 1}. ${e.value}')
+                                        .map((e) {
+                                          if ((driverType == 'ขับขี่เอง' ||
+                                                  driverType == 'SELF_DRIVE') &&
+                                              e.key == 0) {
+                                            return 'ผู้ขับขี่: ${e.value}';
+                                          }
+                                          return 'ผู้โดยสาร ${e.key + 1}: ${e.value}';
+                                        })
                                         .join('\n')
                               : '$passengerCount คน',
                         ),
@@ -295,6 +308,8 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                           return words.isNotEmpty ? words.join(' ') : '-';
                         }()),
                         _buildInfoRow('การขับขี่ :', driverType),
+                        if (driverType == 'บริษัท' && companyDriverName != null)
+                          _buildInfoRow('พนักงานขับรถ :', companyDriverName!),
                       ],
                     ),
                   ),
@@ -359,41 +374,27 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                 final prefs = await SharedPreferences.getInstance();
                 final token = prefs.getString('token') ?? '';
 
-                String convertToIso(String dateStr, String timeStr) {
+                String convertToIso(DateTime date, String timeStr) {
                   try {
-                    final dateParts = dateStr.split('/');
-                    final day = int.parse(dateParts[0]);
-                    final month = int.parse(dateParts[1]);
-                    final yearBE = int.parse(dateParts[2]) + 2500;
-                    final yearCE = yearBE - 543;
-
                     final timeClean = timeStr.replaceAll(' น.', '').trim();
                     final timeParts = timeClean.split(':');
                     final hour = int.parse(timeParts[0]);
                     final minute = int.parse(timeParts[1]);
 
                     return DateTime(
-                      yearCE,
-                      month,
-                      day,
+                      date.year,
+                      date.month,
+                      date.day,
                       hour,
                       minute,
                     ).toIso8601String();
                   } catch (e) {
-                    return DateTime.now().toIso8601String();
+                    return date.toIso8601String();
                   }
                 }
 
-                // 💡 1. แยกเวลาใช้งาน และกำหนดเวลาคืนรถอัตโนมัติ (เนื่องจากตัดเวลาคืนออกจากหน้า UI)
                 String startTimeStr = timeRange;
-                String endTimeStr =
-                    '18:00'; // ตั้งเวลาคืนรถเริ่มต้นเป็น 18:00 น.
-
-                if (timeRange.contains('-')) {
-                  final parts = timeRange.split('-');
-                  startTimeStr = parts[0].trim();
-                  endTimeStr = parts[1].trim();
-                }
+                String endTimeStr = returnTime;
 
                 final isoStart = convertToIso(startDate, startTimeStr);
                 String isoEnd = convertToIso(endDate, endTimeStr);
@@ -406,7 +407,24 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                   isoEnd = dtStart
                       .add(const Duration(hours: 4))
                       .toIso8601String();
+                  dtEnd = DateTime.parse(isoEnd);
                 }
+
+                print('\n[VEHICLE-DATETIME][Flutter] START');
+                print('start object = $startDate');
+                print(
+                  'start.toIso8601String() = ${startDate.toIso8601String()}',
+                );
+                print('start.isUtc = ${startDate.isUtc}');
+                print('start.timeZoneOffset = ${startDate.timeZoneOffset}');
+                print('isoStart (Payload) = $isoStart');
+
+                print('\n[VEHICLE-DATETIME][Flutter] END');
+                print('end object = $endDate');
+                print('end.toIso8601String() = ${endDate.toIso8601String()}');
+                print('end.isUtc = ${endDate.isUtc}');
+                print('end.timeZoneOffset = ${endDate.timeZoneOffset}');
+                print('isoEnd (Payload) = $isoEnd\n');
 
                 // 📦 3. เปลี่ยนเป็น MultipartRequest เพื่อรองรับการอัปโหลดไฟล์รูปภาพใบขับขี่
                 final uri = Uri.parse(
@@ -421,12 +439,34 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                 request.fields['destination'] = destination;
                 request.fields['startDatetime'] = isoStart;
                 request.fields['endDatetime'] = isoEnd;
+                request.fields['expectedReturnDatetime'] = isoEnd;
                 request.fields['passengers'] = passengerCount.toString();
                 // 🟢 แปลง List<String> เป็น JSON String เพื่อให้ Backend Node.js ใช้ JSON.parse() หรือรับเป็น Array ได้ง่ายขึ้น
                 if (passengerNames.isNotEmpty) {
                   request.fields['passengerNames'] = jsonEncode(passengerNames);
                 }
-                request.fields['driverType'] = driverType;
+
+                final isSelfDrive =
+                    driverType == 'ขับขี่เอง' || driverType == 'SELF_DRIVE';
+                request.fields['driverType'] = isSelfDrive
+                    ? 'SELF_DRIVE'
+                    : 'COMPANY';
+
+                if (isSelfDrive) {
+                  if (passengerNames.isNotEmpty) {
+                    request.fields['driverName'] = passengerNames.first;
+                  }
+                } else {
+                  if (companyDriverId != null) {
+                    request.fields['companyDriverId'] = companyDriverId
+                        .toString();
+                  }
+                  if (companyDriverName != null &&
+                      companyDriverName!.isNotEmpty) {
+                    request.fields['driverName'] = companyDriverName!;
+                  }
+                }
+
                 if (purpose != null && purpose!.isNotEmpty) {
                   request.fields['purpose'] = purpose!;
                 }
@@ -457,6 +497,12 @@ class VehicleBookingConfirmPage extends StatelessWidget {
                 print('Fields: ${request.fields}');
                 print(
                   'Files: ${request.files.map((f) => f.filename).toList()}',
+                );
+                print(
+                  '[VEHICLE-REQUEST] startDatetime payload = ${request.fields['startDatetime']}',
+                );
+                print(
+                  '[VEHICLE-REQUEST] endDatetime payload = ${request.fields['endDatetime']}',
                 );
 
                 final streamedResponse = await request.send();
@@ -525,6 +571,24 @@ class VehicleBookingConfirmPage extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _formatDateThai(DateTime date) {
+    final List<String> months = [
+      'ม.ค.',
+      'ก.พ.',
+      'มี.ค.',
+      'เม.ย.',
+      'พ.ค.',
+      'มิ.ย.',
+      'ก.ค.',
+      'ส.ค.',
+      'ก.ย.',
+      'ต.ค.',
+      'พ.ย.',
+      'ธ.ค.',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year + 543}';
   }
 
   Widget _buildInfoRow(String title, String value) {

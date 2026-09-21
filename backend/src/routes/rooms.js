@@ -8,14 +8,16 @@ const {
 } = require('../middlewares/auth');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
 
 // ==========================================
 // 🚨 จุดสำคัญ: โยง Route ไปหา Controller เท่านั้น ห้ามมี Logic ลบข้อมูลในหน้านี้
 // ==========================================
-router.get('/monitor/rooms', authenticateToken, roomController.getAllRooms);
+router.get('/monitor/rooms', roomController.getAllRooms);
 router.get('/', roomController.getAllRooms);
 // ดึงข้อมูลห้องตาม ID
-router.get('/:id', authenticateToken, roomController.getRoomById);
+router.get('/:id', roomController.getRoomById);
 
 // 🔒 ADMIN ONLY: จัดการข้อมูลห้องและสถานะ (ใช้ isAdmin)
 router.post('/', authenticateToken, isAdmin, uploadMiddleware.single('image'), roomController.createRoom);
@@ -28,7 +30,7 @@ router.patch('/:id/status', authenticateToken, isAdmin, roomController.updateRoo
 router.delete('/:id', authenticateToken, isAdmin, roomController.deleteRoom);
 
 // 💡 API: ดึงตารางเวลาการจองของห้องประชุมรายห้อง (เพื่อแก้ 404 และกันการจองซ้อน)
-router.get('/:id/schedule', authenticateToken, async (req, res, next) => {
+router.get('/:id/schedule', async (req, res, next) => {
   try {
     const roomId = parseInt(req.params.id, 10);
     if (isNaN(roomId)) {

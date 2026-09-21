@@ -46,6 +46,8 @@ class WelcomeScreen extends StatefulWidget {
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen> {
+  bool _isProcessing = true; // 🟢 เพิ่ม Flag ล็อกการกระทำระหว่างรอเช็ค Auth
+
   @override
   void initState() {
     super.initState();
@@ -53,28 +55,54 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
   }
 
   Future<void> _checkAuth() async {
-    final hasToken = await AuthService.instance.isLoggedIn();
-    if (hasToken) {
-      final success = await AuthService.instance.refreshToken();
-      if (success) {
+    final token = await AuthService.instance.getToken();
+    if (token != null && token.isNotEmpty) {
+      if (AuthService.instance.isTokenValid(token)) {
         AuthService.instance.startSilentRefresh();
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/digitel');
         }
         return;
-      } else {
+      }
+
+      final status = await AuthService.instance.refreshTokenDetailed();
+      if (status == RefreshStatus.success) {
+        AuthService.instance.startSilentRefresh();
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/digitel');
+        }
+        return;
+      } else if (status == RefreshStatus.unauthorized) {
         await AuthService.instance.deleteToken();
       }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isProcessing =
+            false; // 🟢 ปลดล็อกให้กดหน้าจอได้เมื่อเช็ค Auth เสร็จสิ้นและไม่มี Session
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        // เปลี่ยนมาใช้ Named Route เพื่อให้สอดคล้องกับที่ลงทะเบียนไว้ใน WelcomeApp
-        Navigator.pushNamed(context, '/login');
-      },
+      onTap: _isProcessing
+          ? null
+          : () {
+              setState(() {
+                _isProcessing = true; // 🟢 ล็อกปุ่มกันกดซ้ำ (Double Tap Guard)
+              });
+              // เปลี่ยนมาใช้ Named Route เพื่อให้สอดคล้องกับที่ลงทะเบียนไว้ใน WelcomeApp
+              Navigator.pushNamed(context, '/login').then((_) {
+                if (mounted) {
+                  setState(() {
+                    _isProcessing = false; // 🟢 ปลดล็อกเมื่อกดย้อนกลับมาหน้านี้
+                  });
+                }
+              });
+            },
       child: Scaffold(
         body: Container(
           width: double.infinity,

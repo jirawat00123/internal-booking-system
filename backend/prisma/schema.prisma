@@ -30,21 +30,27 @@ model Position {
 }
 
 model Employee {
-  id           Int                        @id @default(autoincrement())
-  employeeCode String                     @unique @map("employee_code")
-  fullName     String                     @map("full_name")
-  positionId   Int?                       @map("position_id")
-  departmentId Int                        @map("departments_id")
-  isActive     Boolean                    @default(true) @map("is_active")
-  avatarUrl    String?                    @map("avatar_url")
-  email        String?                    @unique @map("email")
-  phone        String?                    @map("phone")
-  department   Department                 @relation(fields: [departmentId], references: [id])
-  position     Position?                  @relation(fields: [positionId], references: [id])
-  users        User[]
-  passengers   VehicleBookingPassenger[]
+  id                      Int                       @id @default(autoincrement())
+  employeeCode            String                    @unique @map("employee_code")
+  fullName                String                    @map("full_name")
+  positionId              Int?                      @map("position_id")
+  departmentId            Int                       @map("departments_id")
+  isActive                Boolean                   @default(true) @map("is_active")
+  avatarUrl               String?                   @map("avatar_url")
+  email                   String?                   @unique @map("email")
+  phone                   String?                   @map("phone")
+  isDriver                Boolean                   @default(false) @map("is_driver")
+  driverLicenseIssueDate  DateTime?                 @map("driver_license_issue_date")
+  driverLicenseUrl        String?                   @map("driver_license_url")
+  driverLicenseExpiryDate DateTime?                 @map("driver_license_expiry_date")
+  department              Department                @relation(fields: [departmentId], references: [id])
+  position                Position?                 @relation(fields: [positionId], references: [id])
+  users                   User[]
+  passengers              VehicleBookingPassenger[]
+  vehicleBookingsDriven   VehicleBooking[]          @relation("BookingDriverEmployee")
 
   @@index([positionId])
+  @@index([isDriver])
   @@map("employees")
 }
 
@@ -185,45 +191,48 @@ model VehicleBooking {
   endDatetime      DateTime                  @map("return_date")
   updatedAt        DateTime                  @updatedAt @map("updated_at")
   passengers       Int                       @default(1) @map("passengers")
-  driverType       String?                   @default("ขับขี่เอง") @map("driver_type")
+  driverType       String?                   @default("SELF_DRIVE") @map("driver_type")
   driverLicenseUrl String?                   @map("driver_license_url")
+  driverEmployeeId Int?                      @map("driver_employee_id")
   userId           Int                       @map("user_id")
   bookingCode      String?                   @unique @default(uuid()) @map("booking_code")
   status           BookingStatus             @default(PENDING)
   attachments      Attachment[]
   user             User                      @relation("BookingUser", fields: [userId], references: [id])
+  driverEmployee   Employee?                 @relation("BookingDriverEmployee", fields: [driverEmployeeId], references: [id])
   vehicle          Vehicle                   @relation(fields: [vehicleId], references: [id])
   vehicleLogs      VehicleLog?
   passengerDetails VehicleBookingPassenger[]
 
   @@index([vehicleId])
   @@index([userId])
+  @@index([driverEmployeeId])
   @@map("vehicle_bookings")
 }
 
 model VehicleLog {
-  id                 Int            @id @default(autoincrement())
-  createdAt          DateTime       @default(now()) @map("created_at")
-  checkoutMileage    Int            @map("checkout_mileage")
-  checkoutTime       DateTime       @map("checkout_time")
-  remark             String?
-  returnMileage      Int?           @map("return_mileage")
-  updatedAt          DateTime       @updatedAt @map("updated_at")
-  vehicleBookingId   Int            @unique @map("vehicle_booking_id")
-  returnTime         DateTime?      @map("return_time")
-  checkoutById       Int            @map("checkout_by")
-  checkoutFuelLevel  Int            @map("checkout_fuel_level")
-  returnById         Int?           @map("return_by")
-  returnFuelLevel    Int?           @map("return_fuel_level")
+  id                   Int            @id @default(autoincrement())
+  createdAt            DateTime       @default(now()) @map("created_at")
+  checkoutMileage      Int            @map("checkout_mileage")
+  checkoutTime         DateTime       @map("checkout_time")
+  remark               String?
+  returnMileage        Int?           @map("return_mileage")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
+  vehicleBookingId     Int            @unique @map("vehicle_booking_id")
+  returnTime           DateTime?      @map("return_time")
+  checkoutById         Int            @map("checkout_by")
+  checkoutFuelLevel    Int            @map("checkout_fuel_level")
+  returnById           Int?           @map("return_by")
+  returnFuelLevel      Int?           @map("return_fuel_level")
   checkoutBackPhoto    String?        @map("checkout_back_photo")
   checkoutFrontPhoto   String?        @map("checkout_front_photo")
   checkoutMileagePhoto String?        @map("checkout_mileage_photo")
-  returnBackPhoto    String?        @map("return_back_photo")
-  returnFrontPhoto   String?        @map("return_front_photo")
-  returnMileagePhoto String?        @map("return_mileage_photo")
-  checkoutBy         User           @relation("CheckoutByUser", fields: [checkoutById], references: [id])
-  returnBy           User?          @relation("ReturnByUser", fields: [returnById], references: [id])
-  booking            VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
+  returnBackPhoto      String?        @map("return_back_photo")
+  returnFrontPhoto     String?        @map("return_front_photo")
+  returnMileagePhoto   String?        @map("return_mileage_photo")
+  checkoutBy           User           @relation("CheckoutByUser", fields: [checkoutById], references: [id])
+  returnBy             User?          @relation("ReturnByUser", fields: [returnById], references: [id])
+  booking              VehicleBooking @relation(fields: [vehicleBookingId], references: [id])
 
   @@index([vehicleBookingId])
   @@index([checkoutById])
@@ -363,6 +372,7 @@ enum BookingStatus {
   COMPLETED
   IN_USE    @map("IN USE")
   EXPIRED
+  WAITING_FOR_VEHICLE
 }
 
 enum NotificationType {
@@ -381,6 +391,7 @@ model VehicleBookingPassenger {
   bookingId  Int            @map("booking_id")
   employeeId Int?           @map("employee_id")
   fullName   String         @map("full_name")
+  routeType  RouteType      @default(OUTBOUND) @map("route_type")
   createdAt  DateTime       @default(now()) @map("created_at")
   booking    VehicleBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   employee   Employee?      @relation(fields: [employeeId], references: [id])
@@ -388,4 +399,14 @@ model VehicleBookingPassenger {
   @@index([bookingId])
   @@index([employeeId])
   @@map("vehicle_booking_passengers")
+}
+
+enum DrivingType {
+  SELF_DRIVE
+  COMPANY
+}
+
+enum RouteType {
+  OUTBOUND
+  INBOUND
 }
